@@ -31,11 +31,11 @@ from .onboarding import ONBOARDING_PROMPT, can_finish, missing_fields
 from .plan import generate_plan, plan_to_text
 from .profile import merge_patch, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
-from .review import review_context_text
+from .review import e1rm, last_weight, review_context_text
 from .safety import SafetyHit, check_red_flags, soft_note
 from .validate import coerce_checkin
 
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_ROUNDS = 6
 HISTORY_LIMIT = 20
 MAX_CONTEXT_CHARS = 16000  # 约 8-10k token 的中文对话预算
 
@@ -172,20 +172,85 @@ APPLY_ADJUSTMENT_TOOL = {
     "function": {
         "name": "apply_adjustment",
         "description": (
-            "应用一项计划调整（生成新计划版本）。必须先经用户确认。"
-            "action 只能是：increase_weight/hold_weight/decrease_weight/"
-            "add_volume/deload/reduce_frequency"
+            "应用一项计划调整（生成新计划版本）。"
+            "只能应用 get_adjustment_suggestions 返回过、且用户已确认的建议，"
+            "传入对应的 suggestion_id。未获取建议或未经用户确认不得调用。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string"},
-                "target": {"type": "string",
-                           "description": "调整对象：动作名或'整体'或'计划频率'"},
-                "reason": {"type": "string",
-                           "description": "调整理由（会写入计划版本历史，可追溯）"},
+                "suggestion_id": {
+                    "type": "string",
+                    "description": "get_adjustment_suggestions 返回的建议 id，如 adj-1",
+                },
             },
-            "required": ["action", "target", "reason"],
+            "required": ["suggestion_id"],
+        },
+    },
+}
+
+RECORD_EXERCISE_FEEDBACK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "record_exercise_feedback",
+        "description": (
+            "用户反馈动作感受时调用：发力感、偏好、不适、想避开。"
+            "如'保加利亚分腿蹲找不到臀的感觉''杠铃卧推肩膀不舒服'。"
+            "必须附用户原话作依据（evidence）。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "exercise": {"type": "string", "description": "动作名（用户叫法即可）"},
+                "preference": {"type": "integer",
+                               "description": "-2 讨厌 … +2 最爱，可选"},
+                "feel": {"type": "integer",
+                         "description": "目标肌群发力感 0-3，可选"},
+                "discomfort": {"type": "string",
+                               "description": "不适描述，如'肩前侧不适'，可选"},
+                "status": {"type": "string", "enum": ["active", "avoid", "learning"],
+                           "description": "avoid=用户明确不想练或说'先不练'；"
+                                          "learning=动作不熟还在学。可选"},
+                "evidence": {"type": "string", "description": "用户原话（必填）"},
+            },
+            "required": ["exercise", "evidence"],
+        },
+    },
+}
+
+ADD_COACH_NOTE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "add_coach_note",
+        "description": (
+            "记录值得记住的定性观察（教练笔记），如'周三常加班''硬拉时下背先酸'。"
+            "必须附依据（用户原话或打卡内容）。可设过期天数。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "note": {"type": "string"},
+                "evidence": {"type": "string",
+                             "description": "依据：用户原话或打卡内容（必填）"},
+                "expires_days": {"type": "integer",
+                                 "description": "可选，过期天数，不设则长期"},
+            },
+            "required": ["note", "evidence"],
+        },
+    },
+}
+
+CLOSE_COACH_NOTE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "close_coach_note",
+        "description": "某条教练笔记不再适用时调用关闭（如'最近不加班了'）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "note_id": {"type": "integer"},
+            },
+            "required": ["note_id"],
         },
     },
 }
@@ -219,6 +284,12 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 # 用户档案
 {profile}
 
+# 动作反馈（用户对具体动作的感受，回应时参考）
+{exercise_feedback}
+
+# 教练笔记（你的定性观察，相关时自然使用）
+{coach_notes}
+
 # 用户当前计划
 {plan}
 
@@ -240,7 +311,14 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 4. 结合档案个性化回答——同一问题，不同档案答案不同
 5. 用户提供新的个人信息（体重变化、伤病等）时调用 update_profile
 6. 档案中有待跟进的安全记录时，自然地询问近况；用户确认无恙后调用 resolve_pain_flag 关闭
-7. 调整计划只能通过 apply_adjustment 落库；工具返回成功前，绝不能说"计划已更新"
+7. 用户问进度/复盘/练得怎么样时调用 get_review；问"计划要不要调整/怎么调"时**必须**
+   调用 get_adjustment_suggestions——注入的近期动态只是提示，不能代替规则引擎
+8. 调整计划只能通过 apply_adjustment 落库（传 get_adjustment_suggestions 返回的
+   suggestion_id，且须用户确认）；工具返回成功前，绝不能说"计划已更新"
+9. 用户反馈动作感受（发力感/偏好/不适/想避开）时调用 record_exercise_feedback，
+   必须附用户原话
+10. 值得记住的定性观察（如"周三常加班""硬拉时下背先酸"）用 add_coach_note 记录，
+    必须附依据；观察失效时用 close_coach_note 关闭
 """
 
 # R3：输出侧数字承诺兜底（"30 天瘦 5 斤"类）
@@ -248,6 +326,10 @@ _PROMISE_RE = re.compile(
     r"[0-9一二两三四五六七八九十]+\s*(?:天|周|个?月|星期)\s*(?:内)?"
     r"[^，。！？!?\n]{0,8}(?:瘦|减|掉|增重|增肌|长)\s*\d+(?:\.\d+)?\s*(?:斤|公斤|千克|kg)"
 )
+
+# A6 输出侧护栏：未落库却声称计划已改
+_PLAN_CLAIM_STRONG = re.compile(r"计划[^。！？\n]{0,6}已(?:经)?(?:更新|调整|生效|改好)")
+_PLAN_CLAIM_SOFT = re.compile(r"(?:已落库|已更新|已调整|已生效|改好了|加好了|调好了|搞定)")
 
 
 def _sanitize_output(reply: str) -> str:
@@ -265,6 +347,8 @@ class CoachAgent:
         self.llm = LLMClient()
         self.kb = KnowledgeBase()
         self.profile = self.db.get_profile(user_id)
+        self._turn_tools: set[str] = set()
+        self._turn_tool_results: list[str] = []
         self.messages: list[dict] = [
             {"role": "system", "content": self._build_system_prompt()}
         ] + self.db.recent_messages(user_id, HISTORY_LIMIT)
@@ -278,17 +362,70 @@ class CoachAgent:
             dynamic = "（打卡数据读取异常，复盘暂缺）"
         return SYSTEM_TEMPLATE.format(
             profile=profile_summary(self.profile),
+            exercise_feedback=self._exercise_feedback_text(),
+            coach_notes=self._coach_notes_text(),
             plan=plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）",
             dynamic=dynamic,
             principles=self.kb.l1_principles,
             knowledge_index=self.kb.l2_index,
         )
 
+    def _exercise_feedback_text(self) -> str:
+        rows = self.db.exercise_feedback_rows(self.user_id)
+        if not rows:
+            return "（暂无）"
+        lines = []
+        for r in rows:
+            info = exercise_lib.get(r["exercise_id"]) or {}
+            name = info.get("name") or r["exercise_id"]
+            parts = []
+            if r.get("status"):
+                parts.append({"active": "在练", "avoid": "避开", "learning": "学习中"}
+                             .get(r["status"], r["status"]))
+            if r.get("feel") is not None:
+                parts.append(f"发力感 {r['feel']}/3")
+            if r.get("preference") is not None:
+                parts.append(f"偏好 {r['preference']:+d}")
+            if r.get("discomfort"):
+                parts.append(f"不适：{r['discomfort']}")
+            if r.get("best_e1rm"):
+                parts.append(f"最佳 e1RM {r['best_e1rm']}kg")
+            lines.append(f"- {name}：{'，'.join(parts)}"[:120])
+        return "\n".join(lines)
+
+    def _coach_notes_text(self) -> str:
+        notes = self.db.open_coach_notes(self.user_id)
+        if not notes:
+            return "（暂无）"
+        return "\n".join(
+            f"- [{n['id']}] {n['note']}（依据：{str(n['evidence'])[:40]}）"
+            for n in notes
+        )
+
     def _refresh_system_prompt(self) -> None:
         self.messages[0] = {"role": "system", "content": self._build_system_prompt()}
 
+    def _finalize_onboarding(self) -> str:
+        """收尾建档（幂等）：档案齐→生成计划→定级回写（G3）。可被
+        finish_onboarding 工具或"档案齐了"的兜底路径调用，重复调用不产生新版本。"""
+        if self.profile.get("onboarding_done"):
+            plan = self.db.get_active_plan(self.user_id)
+            if plan:
+                return "建档已完成，当前计划：\n" + plan_to_text(plan)
+        self.profile["onboarding_done"] = True
+        plan = generate_plan(self.profile)
+        # G3：定级是系统字段，由代码回写，保证档案与计划一致
+        self.profile.setdefault("experience", {})["level"] = plan["level"]
+        self.db.save_profile(self.user_id, self.profile)
+        self.db.create_plan(self.user_id, plan)
+        self._refresh_system_prompt()
+        return "建档完成！已生成首份计划：\n" + plan_to_text(plan)
+
     # ---- 主入口 ----
     def chat(self, user_input: str) -> str:
+        self._turn_tools = set()
+        self._turn_tool_results = []
+        self._plan_before = self._plan_snapshot()
         # ① 安全前置（确定性规则，先于一切）
         hit = check_red_flags(user_input)
         if hit is not None and hit.mode == "block":
@@ -315,6 +452,7 @@ class CoachAgent:
             _log.exception("对话循环异常")
             reply = "（教练这边出了点小状况，刚才那句没接住——换个说法再说一次？）"
         reply = _sanitize_output(reply)
+        reply = self._guard_plan_claim(reply)
 
         self.messages.append({"role": "assistant", "content": reply})
         self.db.add_message(self.user_id, "assistant", reply)
@@ -332,6 +470,29 @@ class CoachAgent:
             "status": "open",
         })
         self.db.save_profile(self.user_id, self.profile)
+
+    def _plan_snapshot(self) -> str:
+        plan = self.db.get_active_plan(self.user_id)
+        return json.dumps(plan, ensure_ascii=False, sort_keys=True)
+
+    def _guard_plan_claim(self, reply: str) -> str:
+        """叙述-执行一致性护栏（A6 输出侧兜底）：
+        回复声称计划已改，但本轮计划内容其实没变 → 追加更正。
+        强计划声称一律拦；软完成声称（已落库/搞定）仅在还有待执行建议时拦，
+        避免误伤"档案已更新""打卡已落库"这类与计划无关的措辞。"""
+        if self._plan_snapshot() != self._plan_before:
+            return reply  # 计划确实变了（apply_adjustment 生效），放行
+        strong = _PLAN_CLAIM_STRONG.search(reply)
+        soft = (_PLAN_CLAIM_SOFT.search(reply)
+                and self.profile.get("pending_adjustments")
+                and re.search(r"(计划|方案|重量|下次|加重|减重|组数|容量|\d+\s*kg)", reply))
+        if not (strong or soft):
+            return reply
+        _log.warning("未落库的计划更新声称: %s", reply[:60])
+        return reply + (
+            "\n\n（更正在此：以上是调整**建议**的说明，还没有写进你的计划"
+            "——确认要执行的话说一声，我立刻应用。）"
+        )
 
     def _log_unmatched_exercise(self, raw_name: str) -> None:
         """未识别动作队列（设计书 20.4：不静默丢弃，由发起人补别名）"""
@@ -365,21 +526,28 @@ class CoachAgent:
                 GET_ADJUSTMENTS_TOOL,
                 APPLY_ADJUSTMENT_TOOL,
                 RESOLVE_PAIN_FLAG_TOOL,
+                RECORD_EXERCISE_FEEDBACK_TOOL,
+                ADD_COACH_NOTE_TOOL,
+                CLOSE_COACH_NOTE_TOOL,
             ]
             self._refresh_system_prompt()
 
-        for _ in range(MAX_TOOL_ROUNDS):
+        for round_i in range(MAX_TOOL_ROUNDS):
             self._trim_messages()
-            result = self.llm.chat(self.messages, tools=tools)
+            # 最后一轮强制纯文本回复，保证用户一定能拿到话（不再有"思考超时"）
+            result = self.llm.chat(
+                self.messages,
+                tools=tools if round_i < MAX_TOOL_ROUNDS - 1 else None)
             if not result["tool_calls"]:
                 reply = result["content"]
                 self.messages.append({"role": "assistant", "content": reply})
                 return reply
             for tc in result["tool_calls"]:
+                self._turn_tools.add(tc["name"])
                 tool_result = self._handle_tool(tc, mode)
                 self._append_tool_exchange(tc, tool_result)
 
-        return "（思考超时，请换个方式描述你的问题）"
+        return "（刚才那轮处理卡住了，换个说法再说一次？）"
 
     def _trim_messages(self) -> None:
         """上下文预算控制：从最旧开始整条丢弃（tool 调用与其结果成对）。
@@ -411,7 +579,22 @@ class CoachAgent:
             return self.kb.load(args.get("path", ""))
 
         if name == "update_profile":
-            self.profile, report = merge_patch(self.profile, args.get("patch", {}))
+            patch = args.get("patch", {})
+            self.profile, report = merge_patch(self.profile, patch)
+            # G2 兜底：没附原话时，用触发本条的用户消息回填（用户原话本就是最好的依据）
+            cond_patch = patch.get("conditions", {}) if isinstance(patch, dict) else {}
+            if isinstance(cond_patch, dict) and (
+                    "injuries" in cond_patch or "health_screen" in cond_patch):
+                c = self.profile.setdefault("conditions", {})
+                last_user = next(
+                    (m["content"] for m in reversed(self.messages)
+                     if m.get("role") == "user"), "")
+                if "injuries" in cond_patch \
+                        and not (c.get("injuries_evidence") or "").strip():
+                    c["injuries_evidence"] = last_user[:80]
+                if "health_screen" in cond_patch \
+                        and not (c.get("health_screen_evidence") or "").strip():
+                    c["health_screen_evidence"] = last_user[:80]
             self.db.save_profile(self.user_id, self.profile)
             notes = []
             if report["dropped"]:
@@ -420,8 +603,12 @@ class CoachAgent:
             notes += report["warnings"]
             suffix = ("；" + "；".join(notes)) if notes else ""
             if mode == "onboarding":
+                still = missing_fields(self.profile)
+                if not still and can_finish(self.profile)[0]:
+                    # 兜底：档案齐了就直接由代码收尾，不等 LLM（它有时会漏调）
+                    return self._finalize_onboarding()
                 return "已保存" + suffix + "。仍缺：" + (
-                    "、".join(missing_fields(self.profile)) or "无，可以 finish_onboarding"
+                    "、".join(still) or "无，可以 finish_onboarding"
                 )
             return "档案已更新" + suffix + "。"
 
@@ -429,13 +616,7 @@ class CoachAgent:
             ok, why = can_finish(self.profile)
             if not ok:
                 return f"信息不足，不能结束建档。{why}。请继续询问用户。"
-            self.profile["onboarding_done"] = True
-            plan = generate_plan(self.profile)
-            # G3：定级是系统字段，由代码回写，保证档案与计划一致
-            self.profile.setdefault("experience", {})["level"] = plan["level"]
-            self.db.save_profile(self.user_id, self.profile)
-            self.db.create_plan(self.user_id, plan)
-            return "建档完成！已生成首份计划：\n" + plan_to_text(plan)
+            return self._finalize_onboarding()
 
         if name == "save_checkin":
             ctype = args.get("type", "training")
@@ -450,6 +631,10 @@ class CoachAgent:
                         if official != raw_name:
                             ex["name_raw"] = raw_name
                         ex["name"] = official
+                        self.db.update_exercise_state(
+                            self.user_id, ex_id,
+                            ex.get("weight_kg"), ex.get("rpe"),
+                            e1rm(ex.get("weight_kg"), ex.get("reps")))
                     else:
                         self._log_unmatched_exercise(raw_name)
                         notes.append(
@@ -469,27 +654,85 @@ class CoachAgent:
         if name == "get_adjustment_suggestions":
             plan = self.db.get_active_plan(self.user_id)
             sugs = suggest_adjustments(self.db, self.user_id, plan)
+            # A6 两步确认：建议带 id 落 pending，apply 只接受 pending 里的 id
+            pending = [{"id": f"adj-{i + 1}", **s} for i, s in enumerate(sugs)]
+            self.profile["pending_adjustments"] = pending
+            self.db.save_profile(self.user_id, self.profile)
             if not sugs:
                 return "当前数据下没有需要调整的信号（或打卡数据不足）。"
             lines = ["规则引擎建议："]
-            for s in sugs:
-                lines.append(f"- [{s['action']}] {s['target']}：{s['reason']}")
-            lines.append("请先向用户解释建议，用户确认后再调用 apply_adjustment。")
+            for s in pending:
+                lines.append(f"- [{s['id']}] {s['action']}｜{s['target']}：{s['reason']}")
+            lines.append("请先向用户解释建议；用户确认后调用 "
+                         "apply_adjustment(suggestion_id=对应id)。")
             return "\n".join(lines)
 
         if name == "apply_adjustment":
             plan = self.db.get_active_plan(self.user_id)
             if not plan:
                 return "当前没有生效的计划。"
+            sid = args.get("suggestion_id", "")
+            pending = self.profile.get("pending_adjustments") or []
+            sug = next((s for s in pending if s.get("id") == sid), None)
+            if not sug:
+                return (
+                    f"没有待执行的建议「{sid}」。请先用 get_adjustment_suggestions "
+                    "获取建议并向用户确认，再传入对应的 suggestion_id。"
+                )
+            lw = None
+            if sug["action"] in ("increase_weight", "decrease_weight"):
+                lw = last_weight(
+                    self.db.list_checkins(self.user_id, 200), sug["target"])
             try:
                 new_plan = apply_adjustment(
-                    plan, args.get("action", ""), args.get("target", ""),
-                    args.get("reason", ""))
+                    plan, sug["action"], sug["target"], sug["reason"],
+                    last_weight=lw)
             except ValueError as e:
                 return str(e)
             self.db.create_plan(self.user_id, new_plan)
+            pending.remove(sug)
+            self.db.save_profile(self.user_id, self.profile)
             self._refresh_system_prompt()
-            return f"计划已更新（新版本）。调整理由：{args.get('reason')}"
+            return (f"计划已更新（新版本）：{sug['action']}｜{sug['target']}。"
+                    f"调整理由：{sug['reason']}")
+
+        if name == "record_exercise_feedback":
+            ex_input = args.get("exercise", "")
+            ex_id, official, _via = exercise_lib.normalize(ex_input)
+            if not ex_id:
+                self._log_unmatched_exercise(ex_input)
+                return (f"未识别动作「{ex_input}」，已进待补队列；"
+                        "反馈未保存。可请用户换个说法或稍后再记。")
+            evidence = (args.get("evidence") or "").strip()
+            if not evidence:
+                return "缺 evidence：动作反馈必须附用户原话作依据，未保存。"
+            self.db.record_exercise_feedback(
+                self.user_id, ex_id,
+                preference=args.get("preference"),
+                feel=args.get("feel"),
+                discomfort=args.get("discomfort"),
+                status=args.get("status"),
+                evidence=evidence,
+            )
+            self._refresh_system_prompt()
+            return f"已记录「{official}」的动作反馈。"
+
+        if name == "add_coach_note":
+            note = (args.get("note") or "").strip()
+            evidence = (args.get("evidence") or "").strip()
+            if not note or not evidence:
+                return "教练笔记必须同时给 note 和 evidence（依据），未保存。"
+            note_id = self.db.add_coach_note(
+                self.user_id, note, evidence, args.get("expires_days"))
+            self._refresh_system_prompt()
+            return f"教练笔记已记录（#{note_id}）。"
+
+        if name == "close_coach_note":
+            note_id = args.get("note_id")
+            if self.db.close_coach_note(self.user_id, note_id):
+                self._refresh_system_prompt()
+                return f"教练笔记 #{note_id} 已关闭。"
+            return f"没有找到 open 状态的教练笔记 #{note_id}。"
 
         if name == "resolve_pain_flag":
             flags = self.profile.get("conditions", {}).get("pain_flags", [])
@@ -513,6 +756,7 @@ class CoachAgent:
         return f"未知工具：{name}"
 
     def _append_tool_exchange(self, tc: dict, result: str) -> None:
+        self._turn_tool_results.append(result)
         self.messages.append({
             "role": "assistant",
             "content": "",

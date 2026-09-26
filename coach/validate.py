@@ -8,6 +8,11 @@ from __future__ import annotations
 import re
 
 
+def round_half(x: float) -> float:
+    """取整到 0.5kg（处方重量最小刻度）"""
+    return round(x * 2) / 2
+
+
 def _to_number(v) -> float | None:
     """数字或含数字的字符串 → float；失败返回 None"""
     if isinstance(v, bool):

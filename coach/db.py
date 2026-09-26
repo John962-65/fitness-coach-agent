@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "coach.db"
@@ -35,6 +35,31 @@ CREATE TABLE IF NOT EXISTS messages (
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
     created_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS user_exercise (
+    user_id      TEXT NOT NULL,
+    exercise_id  TEXT NOT NULL,
+    preference   INTEGER,               -- -2 讨厌 … +2 最爱
+    feel         INTEGER,               -- 目标肌群发力感 0-3
+    discomfort   TEXT,
+    status       TEXT,                  -- active / avoid / learning
+    evidence     TEXT,                  -- 用户原话（反馈依据）
+    best_e1rm    REAL,
+    last_weight  REAL,
+    last_rpe     REAL,
+    notes        TEXT,
+    updated_at   TEXT,
+    PRIMARY KEY (user_id, exercise_id)
+);
+CREATE TABLE IF NOT EXISTS coach_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    note        TEXT NOT NULL,
+    evidence    TEXT NOT NULL,          -- 依据（用户原话/打卡）
+    status      TEXT DEFAULT 'open',    -- open / closed
+    expires_at  TEXT,                   -- 可空
+    created_at  TEXT,
+    closed_at   TEXT
 );
 """
 
@@ -141,3 +166,97 @@ class Database:
             (user_id, limit),
         ).fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+    # ---- user_exercise ----
+    def update_exercise_state(self, user_id: str, exercise_id: str,
+                              weight: float | None, rpe: float | None,
+                              e1rm_: float | None) -> None:
+        """打卡驱动的自动状态（best_e1rm/last_weight/last_rpe），不碰反馈字段"""
+        row = self.conn.execute(
+            "SELECT best_e1rm FROM user_exercise WHERE user_id=? AND exercise_id=?",
+            (user_id, exercise_id)).fetchone()
+        best = e1rm_
+        if row and row["best_e1rm"] is not None:
+            best = max(row["best_e1rm"], e1rm_ or 0) or row["best_e1rm"]
+        self.conn.execute(
+            "INSERT INTO user_exercise(user_id, exercise_id, best_e1rm,"
+            " last_weight, last_rpe, updated_at) VALUES(?,?,?,?,?,?)"
+            " ON CONFLICT(user_id, exercise_id) DO UPDATE SET"
+            " best_e1rm=?, last_weight=?, last_rpe=?, updated_at=?",
+            (user_id, exercise_id, best, weight, rpe, _now(),
+             best, weight, rpe, _now()))
+        self.conn.commit()
+
+    def record_exercise_feedback(self, user_id: str, exercise_id: str,
+                                 preference=None, feel=None, discomfort=None,
+                                 status=None, evidence: str = "",
+                                 notes: str = "") -> None:
+        """LLM 上报的动作反馈（18.1 第②层）；只写给了的字段，evidence 必填"""
+        row = self.conn.execute(
+            "SELECT * FROM user_exercise WHERE user_id=? AND exercise_id=?",
+            (user_id, exercise_id)).fetchone()
+        if not row:
+            self.conn.execute(
+                "INSERT INTO user_exercise(user_id, exercise_id, updated_at)"
+                " VALUES(?,?,?)", (user_id, exercise_id, _now()))
+        sets, params = [], []
+        for col, val in (("preference", preference), ("feel", feel),
+                         ("discomfort", discomfort), ("status", status),
+                         ("evidence", evidence), ("notes", notes)):
+            if val is not None and val != "":
+                sets.append(f"{col}=?")
+                params.append(val)
+        sets.append("updated_at=?")
+        params.append(_now())
+        params += [user_id, exercise_id]
+        self.conn.execute(
+            f"UPDATE user_exercise SET {', '.join(sets)}"
+            " WHERE user_id=? AND exercise_id=?", params)
+        self.conn.commit()
+
+    def exercise_feedback_rows(self, user_id: str) -> list[dict]:
+        """有反馈内容（偏好/发力感/不适/状态任一）的动作行，供 system prompt"""
+        rows = self.conn.execute(
+            "SELECT * FROM user_exercise WHERE user_id=? AND"
+            " (preference IS NOT NULL OR feel IS NOT NULL"
+            "  OR discomfort IS NOT NULL OR status IS NOT NULL)"
+            " ORDER BY updated_at DESC LIMIT 10",
+            (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_user_exercise(self, user_id: str, exercise_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM user_exercise WHERE user_id=? AND exercise_id=?",
+            (user_id, exercise_id)).fetchone()
+        return dict(row) if row else None
+
+    # ---- coach_notes ----
+    def add_coach_note(self, user_id: str, note: str, evidence: str,
+                       expires_days: int | None = None) -> int:
+        expires = None
+        if expires_days:
+            expires = (datetime.now() + timedelta(days=expires_days)
+                       ).isoformat(timespec="seconds")
+        cur = self.conn.execute(
+            "INSERT INTO coach_notes(user_id, note, evidence, status,"
+            " expires_at, created_at) VALUES(?,?,?,'open',?,?)",
+            (user_id, note, evidence, expires, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def close_coach_note(self, user_id: str, note_id: int) -> bool:
+        cur = self.conn.execute(
+            "UPDATE coach_notes SET status='closed', closed_at=?"
+            " WHERE user_id=? AND id=? AND status='open'",
+            (_now(), user_id, note_id))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def open_coach_notes(self, user_id: str, limit: int = 8) -> list[dict]:
+        now = _now()
+        rows = self.conn.execute(
+            "SELECT * FROM coach_notes WHERE user_id=? AND status='open'"
+            " AND (expires_at IS NULL OR expires_at > ?)"
+            " ORDER BY id DESC LIMIT ?",
+            (user_id, now, limit)).fetchall()
+        return [dict(r) for r in rows]

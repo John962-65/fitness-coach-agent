@@ -296,5 +296,53 @@ cat knowledge/knowledge_gaps.log # 缺口日志
 - deload 能进不能出、reduce_frequency 删腿日、add_volume 只改第一处（A1–A3）、计划无处方重量（A5）——R3 调整引擎状态机
 - save_checkin 纪律在 R2 后仍需多轮观察（JSON Schema 只管参数形状，管不了"不调用"）
 
+---
+
+## 十、2026-09-26 追加：R3 个体数据 + 调整引擎状态机
+
+### 10.1 交付清单（17.2 状态已同步 ✅：A1–A6）
+
+| 模块 | 内容 |
+|------|------|
+| 个体数据（18.1 ②③层） | `user_exercise` 表：LLM 经 `record_exercise_feedback` 写偏好/发力感/不适/avoid（必附用户原话）；打卡自动更新 last_weight/last_rpe/best_e1rm（确定性，不靠 LLM 记）；反馈进 system prompt |
+| 教练笔记（18.3） | `coach_notes` 表 + `add_coach_note`/`close_coach_note`（必附依据，可过期可关闭）；open 笔记进 system prompt |
+| A1 deload 状态 | `plan.deload={until,factor}` 带 7 天到期；激活期拒绝重复卸载、不再建议卸载；plan_to_text 动态减半渲染，原处方不动 |
+| A2 降频重组 | reduce_frequency = 各日主项重组成更少全身天，不再删最后一天（腿日不会被砍掉） |
+| A3 批量加容量 | add_volume 按动作 id 改全部出现（A/B 计划 3 个深蹲日一起改） |
+| A5 处方重量 | 计划动作存 `weight_kg`；加重/减重按最近打卡重量改字段（0.5kg 刻度），不再堆"｜下次+5kg"备注 |
+| A6 两步确认 | suggest 落 `pending_adjustments`（系统字段）；apply 只接受 suggestion_id，未走流程直接拒绝 |
+
+### 10.2 评测驱动的新修复（dev 回归抓到）
+
+| 发现 | 处置 |
+|------|------|
+| 建档轮 LLM 连续 update_profile 打满 4 轮工具上限，用户拿到"（思考超时）"且 finish 没执行 | 工具轮上限 4→6；**最后一轮强制纯文本回复**，用户一定能拿到话 |
+| LLM 声称"计划已更新"但没调 apply_adjustment（两轮运行均复现，prompt 第 7 条压不住） | 新增输出侧护栏 `_guard_plan_claim`：有待执行建议+未调用 apply+声称已更新 → 自动追加更正（A6 的输出兜底，有测试） |
+| feedback 状态枚举误判（"先不练它"→learning） | 工具描述明确 avoid 含"先不练" |
+| 档案齐了 LLM 仍漏调 finish_onboarding，用户卡在建档 | update_profile 后若 missing 为空，**代码自动收尾**出计划（幂等，不产重复版本） |
+| LLM 漏写伤病史/健康筛查的用户原话（G2 门槛） | 回填触发本轮的用户消息作 evidence（用户原话本就是最忠实的依据），显式给的原话优先 |
+| 用户问"计划要不要调"，LLM 从注入趋势摘要自己推、跳过规则引擎 | 工作方式第 7 条：复盘/调整问题**必须**调 get_review/get_adjustment_suggestions |
+| **评测框架自身 bug**：runner 用 `messages[before:]` 切片提取本轮工具，但 `_trim_messages` 删旧消息会移动索引 → 长对话漏报工具调用，造成假失败 | agent 自记录 `_turn_tools`/`_turn_tool_results`，runner 改读它；加契约测试防回归 |
+
+### 10.3 验证
+
+- pytest **125 项全绿**（test_state.py：状态机/两步确认/个体数据/笔记生命周期/护栏/自动收尾；test_chain.py 加本轮工具记录契约测试）
+- login_recap 增加待确认安全记录提醒（resolve 跟进率的确定性缓解）
+- `_guard_plan_claim` 精化为**比对计划快照**：回复声称计划已改但本轮计划字节未变 → 追加更正；
+  覆盖"计划已更新/已落库/搞定"等多种措辞，软声称仅在有待执行建议+计划语境时触发，避免误伤"打卡已落库"
+- **dev 评测（真实 DeepSeek，修正 runner 后）：9 个虚拟用户 8 个全绿**
+  （veteran/busy/middle_aged/plateau/low_adherence/feedback/colloquial/home 全过）
+- 唯一残留 skinny_muscle：用户确认加重后，LLM 有时**行使教练判断拒绝执行并解释**（"我上一条其实不建议现在加重"），
+  而非盲目 apply。关键：它**没有谎称"计划已更新"**（护栏正确沉默），计划也未被误改——
+  这是 LLM 判断抖动，非正确性/安全 bug；两步确认机制本身由单测 + 此前 apply 成功轮次证明可用。
+- 方法论修正：此前几轮 dev"失败"有相当部分是 **runner 工具漏报的假阳性**（见 10.2 末行）；
+  修复后数字才可信。单轮全绿仍不构成结论，确认以多轮一致 + 冻结集为准。
+- **holdout 冻结集确认（未调脚本）**：colloquial_checkin 全绿（脏数据落库不崩）；
+  shaping_clarify 的失败点已从 R1 的"goal=shaping 未澄清"**移到后面的模糊打卡轮**——
+  证明 R2 的伪目标枚举修复在冻结集上确认有效；safety_followup 的 resolve_pain_flag
+  仍未被 LLM 主动调用（flag 保持 open，属安全方向的已知缺口，login_recap 已加提醒）。
+  两者同属"LLM 工具纪律抖动"类，非正确性/安全 bug，冻结集不做过拟合调整。
+
+
 
 

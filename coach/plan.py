@@ -230,18 +230,33 @@ def generate_plan(profile: dict) -> dict:
 
 
 def plan_to_text(plan: dict) -> str:
+    from datetime import date
+
+    from .validate import round_half
+
     level_label = {
         "beginner": "新手", "intermediate": "进阶", "advanced": "老炮"
     }.get(plan.get("level", ""), plan.get("level", ""))
-    lines = [f"模板：{plan['template']}", f"定级：{level_label}", ""]
+    lines = [f"模板：{plan.get('template', '自定义计划')}", f"定级：{level_label}", ""]
+    deload = plan.get("deload") or {}
+    until = deload.get("until", "")
+    deload_active = bool(until) and until >= date.today().isoformat()
+    factor = deload.get("factor", 0.5)
     for day in plan["schedule"]:
         lines.append(f"【{day['day']} · {day['focus']}】")
         for ex in day["exercises"]:
+            w = ex.get("weight_kg")
+            if w and deload_active:
+                wtext = f" {round_half(w * factor)}kg（卸载周，至 {until[5:]}）"
+            elif w:
+                wtext = f" {w}kg"
+            else:
+                wtext = ""
             note = f"（{ex['note']}）" if ex.get("note") else ""
             lines.append(
-                f"  - {ex['name']} {ex['sets']}组 × {ex['reps']}次{note}"
+                f"  - {ex['name']}{wtext} {ex['sets']}组 × {ex['reps']}次{note}"
             )
     lines.append("")
-    lines += [f"· {n}" for n in plan["notes"]]
+    lines += [f"· {n}" for n in plan.get("notes", [])]
     return "\n".join(lines)
 

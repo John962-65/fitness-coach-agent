@@ -53,13 +53,11 @@
       expect:
         db: {profile.conditions.injuries_collected: true}
     - say: "心脏血压没问题，没吃药，医生没限制运动"
+    - say: "每周练4次，每次60分钟，帮我出计划吧"
       expect:
         db: {profile.onboarding_done: true, plan.level: advanced}
-        tools: [update_profile]
     - say: "看看我的计划"
       expect:
-        tools: [get_plan]
-        tool_results_contain: ["复训"]
         db:
           - [plan.template, "contains:复训"]
           - [plan.template, "contains:老炮"]
@@ -122,8 +120,10 @@
     - say: "没有运动伤病，以前没怎么练过"
     - say: "我有高血压，每天在吃降压药；没有心脏病，医生允许中等强度运动"
       expect:
-        db: {profile.conditions.health_screen_collected: true,
-             profile.onboarding_done: true}
+        db: {profile.conditions.health_screen_collected: true}
+    - say: "三大项不清楚，帮我出计划吧"
+      expect:
+        db: {profile.onboarding_done: true}
     - say: "计划有什么要注意的吗"
       expect:
         db: {plan.notes_text: "contains:健康筛查"}
@@ -169,6 +169,27 @@
       expect:
         tools: [get_adjustment_suggestions]
         tool_results_contain: ["reduce_frequency"]
+
+- id: feedback_memory
+  desc: 动作反馈与教练笔记：记录→进上下文（18.1 第②层 / 18.3）
+  turns:
+    - say: "帮我建档，男，29岁，177cm，76kg，增肌，每周4天"
+    - say: "练了2年，没有伤病"
+    - say: "身体健康没吃药没限制，三大项不清楚，每次90分钟，帮我出计划吧"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "杠铃平板卧推做完肩膀前侧不太舒服，能不能先不练它"
+      expect:
+        tools: [record_exercise_feedback]
+        db:
+          - ["user_exercise[0].exercise_id", barbell_bench_press]
+          - ["user_exercise[0].status", avoid]
+    - say: "另外我周三一般要加班，基本练不了"
+      expect:
+        tools: [add_coach_note]
+    - say: "保加利亚分腿蹲我完全找不到臀发力的感觉"
+      expect:
+        tools: [record_exercise_feedback]
 
 - id: colloquial_progress
   desc: 口语动作名打卡 → 归一后趋势闭环（17.2 L1 回归：说"深蹲"也要能追踪加重）

@@ -135,6 +135,18 @@ def rpe_drift(checkins: list[dict], exercise: str, window: int = 6) -> str | Non
     return "rising" if rpes[-1] - rpes[0] >= 1 else "stable"
 
 
+def last_weight(checkins: list[dict], exercise: str) -> float | None:
+    """某动作最近一次的使用重量（调整引擎算处方重量用，A5）"""
+    best_day, best_w = "", None
+    for day, ex in _iter_exercise_rows(checkins):
+        if not _same_exercise(exercise, ex.get("name", "")):
+            continue
+        w = _to_number(ex.get("weight_kg"))
+        if w and day >= best_day:
+            best_day, best_w = day, w
+    return best_w
+
+
 # ---------- 追踪主项（L3：全部 track_e1rm 动作） ----------
 
 def _tracked_exercises(plan: dict | None) -> list[str]:
@@ -210,10 +222,21 @@ def _brief(c: dict) -> str:
 def login_recap(db, user_id: str, plan: dict | None) -> str:
     """登录复盘 banner（方案 A：零 LLM 成本，启动时展示）"""
     s = build_summary(db, user_id, plan)
+    lines: list[str] = []
+    try:
+        from .profile import open_pain_flags
+        flags = open_pain_flags(db.get_profile(user_id))
+        if flags:
+            kws = "、".join(
+                f.get("kw", "?") if isinstance(f, dict) else str(f)[:10]
+                for f in flags)
+            lines = [f"⚠️ 有 {len(flags)} 条安全记录待确认（{kws}），"
+                     "见面先问一句近况。"]
+    except Exception:
+        pass
     if s["total_checkins"] == 0:
-        return ""
-
-    lines = ["📋 快速回顾"]
+        return "\n".join(lines)
+    lines.append("📋 快速回顾")
     if s["days_since_last"] is not None:
         d = s["days_since_last"]
         if d == 0:

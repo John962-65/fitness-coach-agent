@@ -138,3 +138,22 @@ def test_chat_survives_llm_exception(monkeypatch):
     monkeypatch.setattr(agent.llm, "chat", boom)
     r = agent.chat("今天练得怎么样")
     assert "没接住" in r
+
+
+# ---- 本轮工具记录契约（eval runner 依赖，防 _trim_messages 索引漏报）----
+
+def test_turn_tools_tracked():
+    agent = _agent()
+    agent.profile["onboarding_done"] = True
+    agent.chat("今天深蹲80kg做了5组5次")
+    assert "save_checkin" in agent._turn_tools
+    assert agent._turn_tool_results  # 工具结果也被记录
+
+
+def test_turn_tools_reset_each_turn():
+    agent = _agent()
+    agent.profile["onboarding_done"] = True
+    agent.chat("今天深蹲80kg做了5组5次")
+    assert "save_checkin" in agent._turn_tools
+    agent.chat("你好")  # 不触发工具的轮次
+    assert "save_checkin" not in agent._turn_tools

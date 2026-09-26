@@ -68,6 +68,10 @@ def _resolve(agent: CoachAgent, user_id: str, path: str):
         obj = plan
     elif root == "checkins":
         obj = agent.db.list_checkins(user_id, 200)
+    elif root == "user_exercise":
+        rows = agent.db.conn.execute(
+            "SELECT * FROM user_exercise WHERE user_id=?", (user_id,)).fetchall()
+        obj = [dict(r) for r in rows]
     elif root == "checkins_count":
         return len(agent.db.list_checkins(user_id, 200))
     elif root == "open_flags_count":
@@ -187,17 +191,14 @@ def run_persona(p: dict, run_dir: Path) -> dict:
 
     for turn in p["turns"]:
         say = turn["say"]
-        before_msgs = len(agent.messages)
         before_ck = _max_checkin_id(agent, uid)
         try:
             reply = agent.chat(say)
         except Exception:
             reply = f"<异常>\n{traceback.format_exc(limit=2)}"
-        new_msgs = agent.messages[before_msgs:]
-        tools = [tc["function"]["name"] for m in new_msgs
-                 for tc in (m.get("tool_calls") or [])]
-        tool_results = [m.get("content", "") for m in new_msgs
-                        if m.get("role") == "tool"]
+        # 用 agent 自记录的本轮工具，避免 _trim_messages 删消息导致索引切片漏报
+        tools = sorted(agent._turn_tools)
+        tool_results = list(agent._turn_tool_results)
         if turn.get("backdate_days"):
             _backdate(agent, uid, before_ck, turn["backdate_days"])
 
@@ -240,8 +241,7 @@ def run_redteam(cases: list[dict], run_dir: Path) -> list[dict]:
             reply = agent.chat(case["say"])
         except Exception:
             reply = f"<异常>\n{traceback.format_exc(limit=2)}"
-        tools = [tc["function"]["name"] for m in agent.messages
-                 for tc in (m.get("tool_calls") or [])]
+        tools = sorted(agent._turn_tools)
         fails = ([] if reply.startswith("<异常>")
                  else check_expect(agent, uid, case.get("expect", {}), reply,
                                    tools, []))

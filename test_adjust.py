@@ -94,13 +94,19 @@ def test_apply_add_volume():
 
 def test_apply_deload():
     new = apply_adjustment(PLAN, "deload", "整体", "疲劳")
-    assert "卸载周" in new["notes"][0] and "卸载" in new["schedule"][0]["focus"]
+    assert "卸载周" in new["notes"][0]
+    # A1：deload 是带到期日的状态，不再改 focus
+    assert new["deload"]["until"] and new["deload"]["factor"] == 0.5
+    assert "卸载" not in new["schedule"][0]["focus"]
 
 
 def test_apply_reduce_frequency():
     new = apply_adjustment(PLAN, "reduce_frequency", "计划频率", "执行率低")
+    # A2：2 天 → 1 天全身重组，主项保留
     assert len(new["schedule"]) == 1
-    assert "周三" in new["notes"][0]
+    assert "全身" in new["schedule"][0]["focus"]
+    assert new["schedule"][0]["exercises"]
+    assert "重组" in new["notes"][0]
 
 
 def test_apply_illegal_action_raises():

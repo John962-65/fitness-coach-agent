@@ -12,10 +12,12 @@ R2：按动作库 id 匹配目标（根治 17.2 L1 匹配方向问题）；
 from __future__ import annotations
 
 import copy
+from datetime import date, timedelta
 
 from .exercises import library as exercise_lib
 from .review import (_same_exercise, _tracked_exercises, adherence, rpe_drift,
                      strength_trend)
+from .validate import round_half
 
 # 调整动作空间（LLM 只能从这里选）
 ACTIONS = [
@@ -26,6 +28,17 @@ ACTIONS = [
     "deload",             # 卸载周
     "reduce_frequency",   # 降低计划频率（匹配真实执行力）
 ]
+
+DELOAD_DAYS = 7
+DELOAD_FACTOR = 0.5
+
+
+def is_deload_active(plan: dict | None) -> bool:
+    """卸载周是否仍在有效期内（A1：deload 是带到期日的状态）"""
+    d = (plan or {}).get("deload") or {}
+    until = d.get("until", "")
+    return bool(until) and until >= date.today().isoformat()
+
 
 # 动作 → 加重幅度（kg）：按动作模式，下肢大肌群 5，其余 2.5
 def _increment(exercise: str) -> float:
@@ -50,16 +63,17 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
     tracked = _tracked_exercises(plan)
     out: list[dict] = []
 
-    # 规则 1：任一主力动作 RPE 漂移上升 → 卸载（整体，只建议一次）
-    for ex in tracked:
-        if rpe_drift(checkins, ex) == "rising":
-            out.append({
-                "action": "deload",
-                "target": "整体",
-                "reason": f"{ex} 同重量 RPE 持续上升，疲劳在累积",
-                "evidence": "rpe_drift=rising",
-            })
-            break
+    # 规则 1：任一主力动作 RPE 漂移上升 → 卸载（整体，有效期内不重复建议）
+    if not is_deload_active(plan):
+        for ex in tracked:
+            if rpe_drift(checkins, ex) == "rising":
+                out.append({
+                    "action": "deload",
+                    "target": "整体",
+                    "reason": f"{ex} 同重量 RPE 持续上升，疲劳在累积",
+                    "evidence": "rpe_drift=rising",
+                })
+                break
 
     # 规则 2/3：每个主力动作独立判断停滞（加容量）或进步（加重）
     for ex in tracked:
@@ -100,8 +114,12 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
     return out
 
 
-def apply_adjustment(plan: dict, action: str, target: str, reason: str) -> dict:
-    """确定性执行调整，返回新计划（不修改原对象）"""
+def apply_adjustment(plan: dict, action: str, target: str, reason: str,
+                     last_weight: float | None = None) -> dict:
+    """确定性执行调整，返回新计划（不修改原对象）。
+
+    last_weight：目标动作最近打卡重量（A5 算处方重量用，可空）。
+    """
     if action not in ACTIONS:
         raise ValueError(f"非法调整动作: {action}")
 
@@ -109,43 +127,72 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str) -> dict:
     new["adjust_reason"] = reason
     new["adjust_action"] = action
 
-    def _find(ex_name: str):
-        for day in new["schedule"]:
-            for ex in day["exercises"]:
-                if _same_exercise(ex_name, ex["name"]):
-                    return ex
-        return None
+    def _find_all(ex_name: str) -> list[dict]:
+        return [ex for day in new["schedule"] for ex in day["exercises"]
+                if _same_exercise(ex_name, ex["name"])]
 
     if action in ("increase_weight", "hold_weight", "decrease_weight", "add_volume"):
-        ex = _find(target)
-        if ex is None:
+        matches = _find_all(target)
+        if not matches:
             raise ValueError(
                 f"计划中找不到目标动作「{target}」，未做任何修改。"
                 "请用计划里的动作名或其常用叫法。"
             )
         if action == "increase_weight":
-            inc = _increment(ex["name"])
-            ex["note"] = (ex.get("note") or "") + f"｜下次 +{inc}kg"
+            for ex in matches:
+                inc = _increment(ex["name"])
+                base = ex.get("weight_kg") or last_weight
+                if base:
+                    ex["weight_kg"] = round_half(base + inc)
+                else:
+                    ex["note"] = (ex.get("note") or "") + f"｜下次按最近完成重量 +{inc}kg"
         elif action == "hold_weight":
-            ex["note"] = (ex.get("note") or "") + "｜重量不变，打磨动作质量"
+            for ex in matches:
+                ex["note"] = (ex.get("note") or "") + "｜重量不变，打磨动作质量"
         elif action == "decrease_weight":
-            ex["note"] = (ex.get("note") or "") + "｜减重 10% 重新爬坡"
+            for ex in matches:
+                base = ex.get("weight_kg") or last_weight
+                if base:
+                    ex["weight_kg"] = round_half(base * 0.9)
+                else:
+                    ex["note"] = (ex.get("note") or "") + "｜减重 10% 重新爬坡"
         elif action == "add_volume":
-            ex["sets"] = int(ex["sets"]) + 2
+            for ex in matches:  # A3：按动作 id 批量修改全部出现
+                ex["sets"] = int(ex["sets"]) + 2
 
     elif action == "deload":
-        new["notes"] = ["⚠️ 本周卸载周：所有动作强度降到 50%，以恢复为目的"] + list(
-            new.get("notes", [])
-        )
-        for day in new["schedule"]:
-            day["focus"] += "（卸载）"
+        if is_deload_active(new):
+            raise ValueError(
+                f"当前已在卸载周（至 {new['deload']['until']}），到期前不能重复卸载"
+            )
+        until = (date.today() + timedelta(days=DELOAD_DAYS)).isoformat()
+        new["deload"] = {"until": until, "factor": DELOAD_FACTOR}
+        new["notes"] = [
+            f"⚠️ 本周卸载周（至 {until}）：所有动作强度按 "
+            f"{int(DELOAD_FACTOR * 100)}%，以恢复为目的"
+        ] + list(new.get("notes", []))
 
     elif action == "reduce_frequency":
-        if len(new["schedule"]) > 1:
-            dropped = new["schedule"].pop()
-            new["notes"] = [
-                f"频率调整：砍掉「{dropped['day']}·{dropped['focus']}」，"
-                "先把现有天数练满再说"
-            ] + list(new.get("notes", []))
+        days = new["schedule"]
+        if len(days) <= 1:
+            raise ValueError("计划只有 1 天，无法再降频")
+        # A2：降频 = 主项重组成更少的全身天，不是砍掉最后一天
+        pool: list[dict] = []
+        for day in days:
+            for ex in day["exercises"][:2]:
+                if not any(_same_exercise(ex["name"], p["name"]) for p in pool):
+                    pool.append(copy.deepcopy(ex))
+        if not pool:
+            raise ValueError("计划里没有可重组的动作")
+        n = len(days) - 1
+        new_days = [{"day": f"第 {i + 1} 练", "focus": "全身（降频重组）",
+                     "exercises": []} for i in range(n)]
+        for i, ex in enumerate(pool):
+            new_days[i % n]["exercises"].append(ex)
+        new["schedule"] = new_days
+        new["notes"] = [
+            f"频率调整：{len(days)} 天 → {n} 天全身重组，"
+            "主项全部保留、辅助动作暂减，先把主项练满"
+        ] + list(new.get("notes", []))
 
     return new
