@@ -1,0 +1,20 @@
+id: lying_leg_curl
+name: 俯卧腿弯举
+aliases: [腿弯举, 俯卧腿弯举, 卧姿腿弯举]
+pattern: isolation
+primary: [hamstrings]
+secondary: [calves]
+equipment: [machine]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: [romanian_deadlift]
+knowledge_refs: []
+status: approved

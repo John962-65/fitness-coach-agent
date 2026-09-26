@@ -1,0 +1,20 @@
+id: barbell_row
+name: 杠铃划船
+aliases: [划船, 杠铃划船, 俯身划船, 杠铃俯身划船]
+pattern: h_pull
+primary: [lats, mid_back]
+secondary: [biceps, erectors]
+equipment: [barbell]
+location: [gym]
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 3, shoulder: 1, wrist: 1}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: [seated_row]
+progressions: []
+substitutes: [seated_row]
+knowledge_refs: []
+status: approved

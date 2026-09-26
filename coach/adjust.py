@@ -5,12 +5,17 @@
 - apply_adjustment()：确定性执行，生成新计划版本（带理由）
 - LLM 的角色：把建议翻译成人话、在用户确认后选择执行哪个
   （动作空间被 ACTIONS 约束，LLM 不能自由生成计划）
+
+R2：按动作库 id 匹配目标（根治 17.2 L1 匹配方向问题）；
+每个 track_e1rm 主力动作独立评估（17.2 L3）；目标未命中直接报错。
 """
 from __future__ import annotations
 
 import copy
 
-from .review import adherence, rpe_drift, strength_trend
+from .exercises import library as exercise_lib
+from .review import (_same_exercise, _tracked_exercises, adherence, rpe_drift,
+                     strength_trend)
 
 # 调整动作空间（LLM 只能从这里选）
 ACTIONS = [
@@ -22,17 +27,16 @@ ACTIONS = [
     "reduce_frequency",   # 降低计划频率（匹配真实执行力）
 ]
 
-# 动作 → 加重幅度（kg）
+# 动作 → 加重幅度（kg）：按动作模式，下肢大肌群 5，其余 2.5
 def _increment(exercise: str) -> float:
+    ex_id, _, _ = exercise_lib.normalize(exercise)
+    if ex_id:
+        pattern = exercise_lib.get(ex_id).get("pattern")
+        if pattern in ("squat", "hinge", "lunge"):
+            return 5.0
+        return 2.5
     lower = ["深蹲", "硬拉", "倒蹬", "腿举"]
     return 5.0 if any(k in exercise for k in lower) else 2.5
-
-
-def _main_exercise(plan: dict) -> str:
-    try:
-        return plan["schedule"][0]["exercises"][0]["name"]
-    except (IndexError, KeyError):
-        return "深蹲"
 
 
 def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
@@ -43,40 +47,43 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
     if not checkins:
         return []
 
-    main_ex = _main_exercise(plan)
+    tracked = _tracked_exercises(plan)
     out: list[dict] = []
 
-    # 规则 1：RPE 漂移上升 → 卸载（优先级最高，疲劳管理）
-    if rpe_drift(checkins, main_ex) == "rising":
-        out.append({
-            "action": "deload",
-            "target": "整体",
-            "reason": f"{main_ex} 同重量 RPE 持续上升，疲劳在累积",
-            "evidence": "rpe_drift=rising",
-        })
-
-    # 规则 2：主力动作停滞（近 3 次 e1RM 无变化）→ 换刺激
-    trend = strength_trend(checkins, main_ex)
-    if len(trend) >= 3:
-        recent = trend[-3:]
-        if abs(recent[-1][1] - recent[0][1]) < 0.5:
+    # 规则 1：任一主力动作 RPE 漂移上升 → 卸载（整体，只建议一次）
+    for ex in tracked:
+        if rpe_drift(checkins, ex) == "rising":
             out.append({
-                "action": "add_volume",
-                "target": main_ex,
-                "reason": f"{main_ex} 连续 {len(recent)} 次停滞在 "
-                          f"{recent[-1][1]}kg，需要新刺激",
-                "evidence": f"e1rm_flat={recent[-1][1]}",
+                "action": "deload",
+                "target": "整体",
+                "reason": f"{ex} 同重量 RPE 持续上升，疲劳在累积",
+                "evidence": "rpe_drift=rising",
             })
-    # 规则 3：正常进步 → 按计划继续加重（与停滞规则独立判断，17.2 L2）
-    if len(trend) >= 2 and trend[-1][1] > trend[-2][1]:
-        inc = _increment(main_ex)
-        out.append({
-            "action": "increase_weight",
-            "target": main_ex,
-            "reason": f"{main_ex} e1RM 在涨（{trend[-2][1]} → {trend[-1][1]}kg），"
-                      f"按计划下次 +{inc}kg",
-            "evidence": f"e1rm_up={trend[-1][1]}",
-        })
+            break
+
+    # 规则 2/3：每个主力动作独立判断停滞（加容量）或进步（加重）
+    for ex in tracked:
+        trend = strength_trend(checkins, ex)
+        if len(trend) >= 3:
+            recent = trend[-3:]
+            if abs(recent[-1][1] - recent[0][1]) < 0.5:
+                out.append({
+                    "action": "add_volume",
+                    "target": ex,
+                    "reason": f"{ex} 连续 {len(recent)} 次停滞在 "
+                              f"{recent[-1][1]}kg，需要新刺激",
+                    "evidence": f"e1rm_flat={recent[-1][1]}",
+                })
+                continue
+        if len(trend) >= 2 and trend[-1][1] > trend[-2][1]:
+            inc = _increment(ex)
+            out.append({
+                "action": "increase_weight",
+                "target": ex,
+                "reason": f"{ex} e1RM 在涨（{trend[-2][1]} → {trend[-1][1]}kg），"
+                          f"按计划下次 +{inc}kg",
+                "evidence": f"e1rm_up={trend[-1][1]}",
+            })
 
     # 规则 4：执行率 < 50% → 降频率（计划要匹配真实生活）
     planned = len(plan.get("schedule") or []) or plan.get("days_per_week", 3)
@@ -105,29 +112,25 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str) -> dict:
     def _find(ex_name: str):
         for day in new["schedule"]:
             for ex in day["exercises"]:
-                if ex_name in ex["name"]:
+                if _same_exercise(ex_name, ex["name"]):
                     return ex
         return None
 
-    if action == "increase_weight":
+    if action in ("increase_weight", "hold_weight", "decrease_weight", "add_volume"):
         ex = _find(target)
-        if ex is not None:
+        if ex is None:
+            raise ValueError(
+                f"计划中找不到目标动作「{target}」，未做任何修改。"
+                "请用计划里的动作名或其常用叫法。"
+            )
+        if action == "increase_weight":
             inc = _increment(ex["name"])
             ex["note"] = (ex.get("note") or "") + f"｜下次 +{inc}kg"
-
-    elif action == "hold_weight":
-        ex = _find(target)
-        if ex is not None:
+        elif action == "hold_weight":
             ex["note"] = (ex.get("note") or "") + "｜重量不变，打磨动作质量"
-
-    elif action == "decrease_weight":
-        ex = _find(target)
-        if ex is not None:
+        elif action == "decrease_weight":
             ex["note"] = (ex.get("note") or "") + "｜减重 10% 重新爬坡"
-
-    elif action == "add_volume":
-        ex = _find(target)
-        if ex is not None:
+        elif action == "add_volume":
             ex["sets"] = int(ex["sets"]) + 2
 
     elif action == "deload":

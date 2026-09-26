@@ -1,0 +1,20 @@
+id: face_pull
+name: 面拉
+aliases: [面拉, 绳索面拉, 面部拉]
+pattern: h_pull
+primary: [rear_delt]
+secondary: [rotator_cuff, mid_back]
+equipment: [cable]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: []
+knowledge_refs: []
+status: approved

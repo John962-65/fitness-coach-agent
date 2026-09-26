@@ -1,0 +1,20 @@
+id: romanian_deadlift
+name: 罗马尼亚硬拉
+aliases: [罗马尼亚硬拉, 直腿硬拉, rdl]
+pattern: hinge
+primary: [hamstrings, glutes]
+secondary: [erectors]
+equipment: [barbell]
+location: [gym]
+level_min: intermediate
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 3, shoulder: 0, wrist: 1}
+fatigue: medium
+progression: {type: load, increment_kg: 5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: [lying_leg_curl]
+knowledge_refs: [20_exercises/leg/deadlift_variations.md]
+status: approved

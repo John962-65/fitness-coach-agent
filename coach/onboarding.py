@@ -26,13 +26,15 @@ ONBOARDING_PROMPT = """你是一位专业的私人健身教练，正在进行新
 2. 用户回答后，立即调用 update_profile 工具把信息落库
 3. 用户说"想塑形"这类模糊目标时，追问澄清（是想先减脂还是先有线条？）
 4. 必须询问伤病史——用户回答后立即用 update_profile 落库
-   （conditions.injuries 字段；没有就传空数组）
+   （conditions.injuries 字段；没有就传空数组；
+   同时把用户原话写进 conditions.injuries_evidence）
 5. 必须做健康筛查（PAR-Q），逐项问、用户亲口答：
    - 是否有心血管疾病史、高血压（conditions.health_screen.heart）
    - 是否怀孕或备孕（女性必问；conditions.health_screen.pregnancy）
    - 是否长期用药（conditions.health_screen.medication）
    - 医生是否嘱咐过限制运动（conditions.health_screen.clearance）
-   各项用用户原话或"无"填写，一次 update_profile 落库
+   各项用用户原话或"无"填写，一次 update_profile 落库；
+   同时把用户原话写进 conditions.health_screen_evidence
 6. 必须了解训练背景（决定定级，不能只按用户自述）：
    - 练了多久（experience.training_years）
    - 三大项水平（experience.big3: {{squat, bench, deadlift}}，用户不知道可以不填）
@@ -49,9 +51,10 @@ ONBOARDING_PROMPT = """你是一位专业的私人健身教练，正在进行新
                   "big3": {{"squat": 0, "bench": 0, "deadlift": 0}},
                   "recent_layoff_weeks": 0}},
   "goal": {{"primary": "fat_loss|muscle_gain|strength|health", "phase": ""}},
-  "conditions": {{"injuries": [],
+  "conditions": {{"injuries": [], "injuries_evidence": "用户原话",
                   "health_screen": {{"heart": "", "pregnancy": "",
-                                     "medication": "", "clearance": ""}}}},
+                                     "medication": "", "clearance": ""}},
+                  "health_screen_evidence": "用户原话"}},
   "resources": {{"location": "gym|home", "days_per_week": 0, "session_minutes": 60}}
 }}
 
@@ -72,10 +75,15 @@ def missing_fields(profile: dict) -> list[str]:
     for (sec, key), label in REQUIRED:
         if not profile.get(sec, {}).get(key):
             missing.append(label)
-    if not profile.get("conditions", {}).get("injuries_collected"):
+    c = profile.get("conditions", {})
+    if not c.get("injuries_collected"):
         missing.append("伤病史（没有也要明确说'没有'）")
-    if not profile.get("conditions", {}).get("health_screen_collected"):
+    elif not (c.get("injuries_evidence") or "").strip():
+        missing.append("伤病史的用户原话（injuries_evidence）")
+    if not c.get("health_screen_collected"):
         missing.append("健康筛查（心血管/高血压/怀孕/用药/医嘱）")
+    elif not (c.get("health_screen_evidence") or "").strip():
+        missing.append("健康筛查的用户原话（health_screen_evidence）")
     return missing
 
 

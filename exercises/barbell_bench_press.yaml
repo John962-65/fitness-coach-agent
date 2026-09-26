@@ -1,0 +1,20 @@
+id: barbell_bench_press
+name: 杠铃平板卧推
+aliases: [卧推, 杠铃卧推, 平板卧推, 杠铃平板卧推, 平板杠铃卧推, bench, bench_press]
+pattern: h_push
+primary: [chest]
+secondary: [triceps, front_delt]
+equipment: [barbell, rack, bench]
+location: [gym]
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 3, wrist: 2}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: [dumbbell_bench_press]
+progressions: []
+substitutes: [dumbbell_bench_press]
+knowledge_refs: [20_exercises/chest/bench_press_technique.md]
+status: approved

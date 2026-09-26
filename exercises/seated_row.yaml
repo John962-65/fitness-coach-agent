@@ -1,0 +1,20 @@
+id: seated_row
+name: 坐姿划船
+aliases: [坐姿划船, 器械划船, 绳索划船, 坐姿绳索划船]
+pattern: h_pull
+primary: [lats, mid_back]
+secondary: [biceps, rear_delt]
+equipment: [cable, machine]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 1, wrist: 1}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: [barbell_row]
+knowledge_refs: []
+status: approved

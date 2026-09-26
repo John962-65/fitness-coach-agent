@@ -1,0 +1,20 @@
+id: incline_bench_press
+name: 杠铃上斜卧推
+aliases: [上斜卧推, 杠铃上斜卧推, 上斜杠铃卧推, 上斜推]
+pattern: h_push
+primary: [upper_chest]
+secondary: [triceps, front_delt]
+equipment: [barbell, rack, bench]
+location: [gym]
+level_min: intermediate
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 3, wrist: 2}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: [barbell_bench_press]
+progressions: []
+substitutes: [dumbbell_bench_press, barbell_bench_press]
+knowledge_refs: []
+status: approved

@@ -646,19 +646,19 @@ Phase 2（12周）：增肌期 → 切换知识模块 + 盈余饮食
 
 | # | 级别 | 问题 | 位置 | 修复方向 | 状态 |
 |---|---|---|---|---|---|
-| L1 | 高 | 动作名不归一：复盘要求"计划名 ⊆ 打卡名"，计划是"杠铃深蹲"、用户说"深蹲"即失配 → 复盘/调整无输出也不报错；adjust 的匹配方向正好相反 | `review.py:41`、`adjust.py:108` | 动作库 + 别名归一（第 20 章） | ⏳ |
+| L1 | 高 | 动作名不归一：复盘要求"计划名 ⊆ 打卡名"，计划是"杠铃深蹲"、用户说"深蹲"即失配 → 复盘/调整无输出也不报错；adjust 的匹配方向正好相反 | `review.py:41`、`adjust.py:108` | 动作库 + 别名归一（第 20 章） |✅（2026-09-26 R2：动作库 + 别名归一接入 save_checkin/review/adjust） |
 | L2 | 高 | if/elif 写错：数据点 ≥3 后永远不再给"加重"建议（测试只覆盖了 2 个点） | `adjust.py:60-79` | 各规则独立判断；补 ≥3 点的测试 |✅（2026-09-26：规则独立判断 + ≥3 点测试（R1 评测抓到后提前修复）） |
-| L3 | 中 | 只追踪一个动作（第一个训练日的第一个动作） | `review.py:131`、`adjust.py:31` | 按动作库 `track_e1rm` 追踪全部主力动作 | ⏳ |
-| D1 | 高 | 脏数据致启动即崩：reps 为列表或 "5x5"、体重 "84.5kg" → `e1rm()`/`weekly_weight()` 抛异常；构造 CoachAgent 时就会触发，该用户以后每次启动都崩 | `review.py:19,62`、`agent.py:68-75` | 工具参数写完整 JSON Schema；落库前校验；读取时跳过坏行 | ⏳ |
-| D2 | 中 | update_profile 无类型校验：`squat: "130kg"` 使 `assess_level` 崩溃 | `profile.py`、`plan.py` | 同上 | ⏳ |
+| L3 | 中 | 只追踪一个动作（第一个训练日的第一个动作） | `review.py:131`、`adjust.py:31` | 按动作库 `track_e1rm` 追踪全部主力动作 |✅（2026-09-26 R2：追踪计划内全部 track_e1rm 动作（上限 4）） |
+| D1 | 高 | 脏数据致启动即崩：reps 为列表或 "5x5"、体重 "84.5kg" → `e1rm()`/`weekly_weight()` 抛异常；构造 CoachAgent 时就会触发，该用户以后每次启动都崩 | `review.py:19,62`、`agent.py:68-75` | 工具参数写完整 JSON Schema；落库前校验；读取时跳过坏行 |✅（2026-09-26 R2：工具 JSON Schema + 落库强转 + 读侧逐行容错） |
+| D2 | 中 | update_profile 无类型校验：`squat: "130kg"` 使 `assess_level` 崩溃 | `profile.py`、`plan.py` | 同上 |✅（2026-09-26 R2：profile patch 数字字段强转，不可转丢弃并报告） |
 
 **代码把关（G）**
 
 | # | 级别 | 问题 | 位置 | 修复方向 | 状态 |
 |---|---|---|---|---|---|
-| G1 | 高 | `merge_patch` 接受任意 key：LLM 可写 `onboarding_done`（跳过建档且不生成计划）、改 `experience.level`、清空 `pain_flags` | `profile.py:36` | 字段白名单 + 类型校验；系统字段只允许代码写 | ⏳ |
-| G2 | 高 | 建档门槛只检查"写过没有"：LLM 传 `injuries: []` 即过，而 prompt 又允许"用户嫌烦就用默认值补全" | `onboarding.py:36`、`profile.py:55` | 伤病史不可默认补全，须以用户原话为依据 | ⏳ |
-| G3 | 中 | 定级结果不回写档案：system prompt 显示"水平：beginner"，计划显示"定级：老炮" | `agent.py:276`、`plan.py` | 定级写回 `experience.level`（系统字段） | ⏳ |
+| G1 | 高 | `merge_patch` 接受任意 key：LLM 可写 `onboarding_done`（跳过建档且不生成计划）、改 `experience.level`、清空 `pain_flags` | `profile.py:36` | 字段白名单 + 类型校验；系统字段只允许代码写 |✅（2026-09-26 R2：merge_patch 白名单 + 系统字段只许代码写） |
+| G2 | 高 | 建档门槛只检查"写过没有"：LLM 传 `injuries: []` 即过，而 prompt 又允许"用户嫌烦就用默认值补全" | `onboarding.py:36`、`profile.py:55` | 伤病史不可默认补全，须以用户原话为依据 |✅（2026-09-26 R2：伤病史/健康筛查须附用户原话（*_evidence）才能 finish） |
+| G3 | 中 | 定级结果不回写档案：system prompt 显示"水平：beginner"，计划显示"定级：老炮" | `agent.py:276`、`plan.py` | 定级写回 `experience.level`（系统字段） |✅（2026-09-26 R2：定级回写 experience.level） |
 
 **调整引擎（A）**
 
@@ -667,7 +667,7 @@ Phase 2（12周）：增肌期 → 切换知识模块 + 盈余饮食
 | A1 | 中 | deload 能进不能出；再执行一次变成"（卸载）（卸载）" | `adjust.py:133` | deload 做成带到期日的状态 | ⏳ |
 | A2 | 中 | reduce_frequency 直接删最后一天：每周 3 练的推拉蹲删掉唯一的腿日 | `adjust.py:140` | 降频 = 重排分化（如 3 天推拉蹲 → 2 天全身） | ⏳ |
 | A3 | 低 | add_volume 只改第一个匹配（新手 A/B 里深蹲出现 3 次，只改周一） | `adjust.py:128` | 按动作 id 批量修改 | ⏳ |
-| A4 | 中 | target 找不到时静默不改，却照样生成新版本并回报"已更新"（"工具加组数、LLM 说加次数"这类不一致的根源之一） | `adjust.py:105`、`agent.py:305` | 未命中返回错误 | ⏳ |
+| A4 | 中 | target 找不到时静默不改，却照样生成新版本并回报"已更新"（"工具加组数、LLM 说加次数"这类不一致的根源之一） | `adjust.py:105`、`agent.py:305` | 未命中返回错误 |✅（2026-09-26 R2：target 未命中抛 ValueError，不再静默生成版本） |
 | A5 | 中 | 计划没有重量字段，"加重"只是往备注追加"｜下次 +5kg"，且无限累积 | `adjust.py:112` | 计划存处方重量 | ⏳ |
 | A6 | 中 | "须经用户确认"只写在工具描述里 | `agent.py:120` | 两步确认：suggest 返回 id → 用户下一轮确认 → apply 只接受该 id | ⏳ |
 

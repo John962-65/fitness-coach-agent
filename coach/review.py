@@ -4,10 +4,18 @@
 - 本模块只做"确定性计算"（e1RM/周均体重/执行率/RPE 漂移）
 - 叙事表达留给 LLM（Agent 把本模块的输出注入上下文后生成）
 - 登录复盘（login_recap）是纯文本，不调 LLM，零成本
+
+R2 数据契约：
+- 动作按动作库 id 匹配（读侧归一，兼容归一前落库的旧数据），根治 17.2 L1
+- 追踪计划内全部 track_e1rm 动作，不再只追第一个（17.2 L3）
+- 逐行容错：坏数据行跳过并计数，绝不让一条脏打卡炸掉整个复盘（17.2 D1）
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+
+from .exercises import library as exercise_lib
+from .validate import _to_number, _to_reps
 
 
 # ---------- 基础计算 ----------
@@ -29,22 +37,38 @@ def _parse(at: str) -> datetime:
     return datetime.fromisoformat(at)
 
 
+def _same_exercise(name_a: str, name_b: str) -> bool:
+    """按动作库 id 判断两个叫法是否同一动作；都未入库时退化为子串匹配"""
+    id_a, _, _ = exercise_lib.normalize(name_a or "")
+    id_b, _, _ = exercise_lib.normalize(name_b or "")
+    if id_a and id_b:
+        return id_a == id_b
+    return bool(name_a and name_b and (name_a in name_b or name_b in name_a))
+
+
+def _iter_exercise_rows(checkins: list[dict]):
+    """逐条产出 (日期, ex dict)，坏行跳过（D1 读侧容错）"""
+    for c in checkins:
+        if c["type"] != "training" or not isinstance(c.get("data"), dict):
+            continue
+        for ex in (c["data"].get("exercises") or []):
+            if isinstance(ex, dict) and ex.get("name"):
+                yield _day(c), ex
+
+
 # ---------- 趋势计算 ----------
 
 def strength_trend(checkins: list[dict], exercise: str) -> list[tuple[str, float]]:
     """某动作每次训练的最好 e1RM，按日期升序"""
     by_day: dict[str, float] = {}
-    for c in checkins:
-        if c["type"] != "training":
+    for day, ex in _iter_exercise_rows(checkins):
+        if not _same_exercise(exercise, ex.get("name", "")):
             continue
-        for ex in (c["data"].get("exercises") or []):
-            if exercise not in (ex.get("name") or ""):
-                continue
-            score = e1rm(ex.get("weight_kg"), ex.get("reps"))
-            if score is None:
-                continue
-            day = _day(c)
-            by_day[day] = max(score, by_day.get(day, 0))
+        w = _to_number(ex.get("weight_kg"))
+        score = e1rm(w, _to_reps(ex.get("reps")))
+        if score is None:
+            continue
+        by_day[day] = max(score, by_day.get(day, 0))
     return sorted(by_day.items())
 
 
@@ -52,14 +76,17 @@ def weekly_weight(checkins: list[dict], weeks: int = 4) -> list[tuple[str, float
     """按 ISO 周聚合体重均值，返回最近 N 周"""
     by_week: dict[str, list[float]] = {}
     for c in checkins:
-        if c["type"] != "body":
+        if c["type"] != "body" or not isinstance(c.get("data"), dict):
             continue
-        w = c["data"].get("weight_kg")
+        w = _to_number(c["data"].get("weight_kg"))
         if not w:
             continue
-        iso = _parse(c["at"]).isocalendar()
+        try:
+            iso = _parse(c["at"]).isocalendar()
+        except ValueError:
+            continue
         key = f"{iso[0]}-W{iso[1]:02d}"
-        by_week.setdefault(key, []).append(float(w))
+        by_week.setdefault(key, []).append(w)
     result = [(k, round(sum(v) / len(v), 1)) for k, v in by_week.items()]
     return sorted(result)[-weeks:]
 
@@ -89,12 +116,13 @@ def days_since_last(checkins: list[dict]) -> int | None:
 def rpe_drift(checkins: list[dict], exercise: str, window: int = 6) -> str | None:
     """同一重量下 RPE 持续上升 = 疲劳累积。返回 'rising'/'stable'/None"""
     points = []
-    for c in checkins:
-        if c["type"] != "training":
+    for day, ex in _iter_exercise_rows(checkins):
+        if not _same_exercise(exercise, ex.get("name", "")):
             continue
-        for ex in (c["data"].get("exercises") or []):
-            if exercise in (ex.get("name") or "") and ex.get("rpe") and ex.get("weight_kg"):
-                points.append((_day(c), ex["weight_kg"], ex["rpe"]))
+        rpe = _to_number(ex.get("rpe"))
+        w = _to_number(ex.get("weight_kg"))
+        if rpe and w:
+            points.append((day, w, rpe))
     if len(points) < 2:
         return None
     points.sort(key=lambda p: p[0])
@@ -107,6 +135,23 @@ def rpe_drift(checkins: list[dict], exercise: str, window: int = 6) -> str | Non
     return "rising" if rpes[-1] - rpes[0] >= 1 else "stable"
 
 
+# ---------- 追踪主项（L3：全部 track_e1rm 动作） ----------
+
+def _tracked_exercises(plan: dict | None) -> list[str]:
+    """计划内所有在动作库中 track_e1rm=true 的动作（官方名，按计划顺序）"""
+    if not plan:
+        return ["深蹲"]
+    names = [ex.get("name", "") for day in (plan.get("schedule") or [])
+             for ex in (day.get("exercises") or [])]
+    tracked = exercise_lib.track_e1rm_names(names)
+    if tracked:
+        return tracked[:4]
+    try:
+        return [plan["schedule"][0]["exercises"][0]["name"]]
+    except (IndexError, KeyError):
+        return ["深蹲"]
+
+
 # ---------- 汇总与叙事 ----------
 
 def build_summary(db, user_id: str, plan: dict | None) -> dict:
@@ -115,27 +160,30 @@ def build_summary(db, user_id: str, plan: dict | None) -> dict:
     # 分母用计划实际排的天数（不是用户声称的天数）
     planned = len((plan or {}).get("schedule") or []) \
         or (plan or {}).get("days_per_week", 3)
-    main_ex = _main_exercise(plan)
+    tracked = _tracked_exercises(plan)
+    trends = {}
+    for name in tracked:
+        t = strength_trend(checkins, name)
+        if t:
+            trends[name] = t
+    drifts = {}
+    for name in tracked:
+        d = rpe_drift(checkins, name)
+        if d:
+            drifts[name] = d
+    main_ex = tracked[0] if tracked else None
     return {
         "total_checkins": len(checkins),
         "days_since_last": days_since_last(checkins),
         "adherence": adherence(checkins, planned),
         "weight_trend": weekly_weight(checkins),
         "main_exercise": main_ex,
-        "strength_trend": strength_trend(checkins, main_ex) if main_ex else [],
-        "rpe_drift": rpe_drift(checkins, main_ex) if main_ex else None,
+        "strength_trend": trends.get(main_ex, []),
+        "strength_trends": trends,
+        "rpe_drift": drifts.get(main_ex),
+        "rpe_drifts": drifts,
         "recent": [_brief(c) for c in checkins[:5]],
     }
-
-
-def _main_exercise(plan: dict | None) -> str:
-    """取计划第一个训练日的第一个动作作为追踪主项"""
-    if not plan:
-        return "深蹲"
-    try:
-        return plan["schedule"][0]["exercises"][0]["name"]
-    except (IndexError, KeyError):
-        return "深蹲"
 
 
 def _brief(c: dict) -> str:
@@ -145,6 +193,8 @@ def _brief(c: dict) -> str:
         exs = data.get("exercises") or []
         parts = []
         for ex in exs[:3]:
+            if not isinstance(ex, dict):
+                continue
             w = f"{ex['weight_kg']}kg" if ex.get("weight_kg") else ""
             sr = ""
             if ex.get("sets") and ex.get("reps"):
@@ -180,19 +230,20 @@ def login_recap(db, user_id: str, plan: dict | None) -> str:
         f"· 本周执行率：{ad['trained_days']}/{ad['planned_days']} 练"
         f"（{int(ad['rate'] * 100)}%）"
     )
-    if len(s["strength_trend"]) >= 2:
-        first, last = s["strength_trend"][0], s["strength_trend"][-1]
+    for name, trend in s["strength_trends"].items():
+        if len(trend) < 2:
+            continue
+        first, last = trend[0], trend[-1]
         delta = round(last[1] - first[1], 1)
         arrow = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
-        lines.append(
-            f"· {s['main_exercise']} e1RM：{first[1]} → {last[1]}kg（{arrow}{abs(delta)}）"
-        )
+        lines.append(f"· {name} e1RM：{first[1]} → {last[1]}kg（{arrow}{abs(delta)}）")
     if len(s["weight_trend"]) >= 2:
         first, last = s["weight_trend"][0], s["weight_trend"][-1]
         delta = round(last[1] - first[1], 1)
         lines.append(f"· 周均体重：{first[1]} → {last[1]}kg（{delta:+}）")
-    if s["rpe_drift"] == "rising":
-        lines.append(f"· ⚠️ {s['main_exercise']} 同重量 RPE 持续上升，疲劳在累积，考虑卸载")
+    for name, drift in s["rpe_drifts"].items():
+        if drift == "rising":
+            lines.append(f"· ⚠️ {name} 同重量 RPE 持续上升，疲劳在累积，考虑卸载")
     return "\n".join(lines)
 
 
@@ -205,16 +256,16 @@ def review_context_text(db, user_id: str, plan: dict | None) -> str:
         f"累计打卡 {s['total_checkins']} 次，距上次 {s['days_since_last']} 天",
         f"本周执行率 {s['adherence']['trained_days']}/{s['adherence']['planned_days']}",
     ]
-    if s["strength_trend"]:
-        pts = " → ".join(f"{v}kg" for _, v in s["strength_trend"][-4:])
-        lines.append(f"{s['main_exercise']} e1RM 趋势：{pts}")
+    for name, trend in s["strength_trends"].items():
+        pts = " → ".join(f"{v}kg" for _, v in trend[-3:])
+        lines.append(f"{name} e1RM 趋势：{pts}")
     if s["weight_trend"]:
         pts = " → ".join(f"{v}" for _, v in s["weight_trend"])
         lines.append(f"周均体重趋势：{pts}")
-    if s["rpe_drift"] == "rising":
-        lines.append(f"⚠️ {s['main_exercise']} RPE 漂移上升（疲劳信号）")
+    for name, drift in s["rpe_drifts"].items():
+        if drift == "rising":
+            lines.append(f"⚠️ {name} RPE 漂移上升（疲劳信号）")
     if s["recent"]:
         lines.append("最近打卡：")
         lines += [f"  - {b}" for b in s["recent"]]
     return "\n".join(lines)
-

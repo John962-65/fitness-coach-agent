@@ -44,7 +44,9 @@ DEFAULT_PROFILE = {
                   "recent_layoff_weeks": 0},
     "goal": {"primary": "", "phase": "", "target": ""},
     "conditions": {"injuries": [], "injuries_collected": False,
+                   "injuries_evidence": "",
                    "health_screen": {}, "health_screen_collected": False,
+                   "health_screen_evidence": "",
                    "pain_flags": []},
     "resources": {"location": "gym", "days_per_week": 0, "session_minutes": 60},
     "nutrition": {"meals_per_day": 3, "sleep_hours": 7},
@@ -59,6 +61,7 @@ def _now() -> str:
 class Database:
     def __init__(self, path: Path = DB_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)

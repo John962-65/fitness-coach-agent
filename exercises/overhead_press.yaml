@@ -1,0 +1,20 @@
+id: overhead_press
+name: 站姿推举
+aliases: [推举, 站姿推举, 杠铃推举, 站姿杠铃推举, 肩上推举, 实力举, ohp]
+pattern: v_push
+primary: [front_delt, side_delt]
+secondary: [triceps, core]
+equipment: [barbell, rack]
+location: [gym]
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 2, shoulder: 3, wrist: 2}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: [dumbbell_shoulder_press]
+progressions: []
+substitutes: [dumbbell_shoulder_press]
+knowledge_refs: []
+status: approved

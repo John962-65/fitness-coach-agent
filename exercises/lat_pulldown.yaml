@@ -1,0 +1,20 @@
+id: lat_pulldown
+name: 高位下拉
+aliases: [高位下拉, 下拉, 宽握高位下拉]
+pattern: v_pull
+primary: [lats]
+secondary: [biceps, mid_back]
+equipment: [cable, machine]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 2, wrist: 1}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: [pull_up]
+substitutes: [pull_up]
+knowledge_refs: []
+status: approved

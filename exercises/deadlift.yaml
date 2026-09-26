@@ -1,0 +1,20 @@
+id: deadlift
+name: 硬拉
+aliases: [硬拉, 杠铃硬拉, 传统硬拉, 杠铃传统硬拉]
+pattern: hinge
+primary: [erectors, glutes, hamstrings]
+secondary: [lats, traps, quads]
+equipment: [barbell]
+location: [gym]
+level_min: intermediate
+skill: high
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 3, shoulder: 1, wrist: 1}
+fatigue: high
+progression: {type: load, increment_kg: 5}
+track_e1rm: true
+regressions: [romanian_deadlift]
+progressions: []
+substitutes: [romanian_deadlift]
+knowledge_refs: [20_exercises/leg/deadlift_variations.md]
+status: approved

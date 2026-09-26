@@ -1,0 +1,20 @@
+id: dumbbell_shoulder_press
+name: 哑铃推举
+aliases: [哑铃推举, 坐姿哑铃推肩, 哑铃肩推, 哑铃推肩, 坐姿推肩]
+pattern: v_push
+primary: [front_delt, side_delt]
+secondary: [triceps]
+equipment: [dumbbell, bench]
+location: [gym, home]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 2, wrist: 1}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: [overhead_press]
+substitutes: [overhead_press, lateral_raise]
+knowledge_refs: []
+status: approved

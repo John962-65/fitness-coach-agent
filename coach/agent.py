@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .db import Database
+from .exercises import library as exercise_lib
 from .knowledge import LOAD_KNOWLEDGE_TOOL, KnowledgeBase
 from .llm import LLMClient
 from .onboarding import ONBOARDING_PROMPT, can_finish, missing_fields
@@ -32,6 +33,7 @@ from .profile import merge_patch, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
 from .review import review_context_text
 from .safety import SafetyHit, check_red_flags, soft_note
+from .validate import coerce_checkin
 
 MAX_TOOL_ROUNDS = 4
 HISTORY_LIMIT = 20
@@ -78,6 +80,7 @@ SAVE_CHECKIN_TOOL = {
         "description": (
             "用户汇报训练/饮食/体重数据时调用，将打卡结构化落库。"
             "落库后再给用户自然语言的反馈。"
+            "动作名用用户原话即可，系统会自动归一。"
         ),
         "parameters": {
             "type": "object",
@@ -89,11 +92,41 @@ SAVE_CHECKIN_TOOL = {
                 },
                 "data": {
                     "type": "object",
-                    "description": (
-                        "training: {exercises:[{name,weight_kg,sets,reps,rpe}], note}；"
-                        "diet: {meals:[{time,description}], hunger_level}；"
-                        "body: {weight_kg, waist_cm}"
-                    ),
+                    "properties": {
+                        "exercises": {
+                            "type": "array",
+                            "description": "training 必填。每个动作一条",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "weight_kg": {"type": "number"},
+                                    "sets": {"type": "integer"},
+                                    "reps": {"type": ["integer", "string"],
+                                             "description": "每组次数，如 5 或 '5'"},
+                                    "rpe": {"type": "number",
+                                            "description": "自感强度 6-10，可选"},
+                                },
+                                "required": ["name"],
+                            },
+                        },
+                        "meals": {
+                            "type": "array",
+                            "description": "diet 用",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "time": {"type": "string"},
+                                    "description": {"type": "string"},
+                                },
+                            },
+                        },
+                        "hunger_level": {"type": "string"},
+                        "weight_kg": {"type": "number",
+                                      "description": "body 用：体重公斤数（纯数字）"},
+                        "waist_cm": {"type": "number"},
+                        "note": {"type": "string"},
+                    },
                 },
             },
             "required": ["type", "data"],
@@ -300,6 +333,18 @@ class CoachAgent:
         })
         self.db.save_profile(self.user_id, self.profile)
 
+    def _log_unmatched_exercise(self, raw_name: str) -> None:
+        """未识别动作队列（设计书 20.4：不静默丢弃，由发起人补别名）"""
+        path = self.db.path.parent / "unmatched_exercises.jsonl"
+        try:
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "at": datetime.now().isoformat(timespec="seconds"),
+                    "user_id": self.user_id, "raw": raw_name,
+                }, ensure_ascii=False) + "\n")
+        except OSError:
+            _log.warning("未识别动作队列写入失败: %s", raw_name)
+
     # ---- 对话-工具循环 ----
     def _loop(self, mode: str) -> str:
         if mode == "onboarding":
@@ -366,29 +411,52 @@ class CoachAgent:
             return self.kb.load(args.get("path", ""))
 
         if name == "update_profile":
-            self.profile = merge_patch(self.profile, args.get("patch", {}))
+            self.profile, report = merge_patch(self.profile, args.get("patch", {}))
             self.db.save_profile(self.user_id, self.profile)
+            notes = []
+            if report["dropped"]:
+                notes.append("已拒绝字段（系统字段或不在档案 Schema）："
+                             + "、".join(report["dropped"]))
+            notes += report["warnings"]
+            suffix = ("；" + "；".join(notes)) if notes else ""
             if mode == "onboarding":
-                return "已保存。仍缺：" + (
+                return "已保存" + suffix + "。仍缺：" + (
                     "、".join(missing_fields(self.profile)) or "无，可以 finish_onboarding"
                 )
-            return "档案已更新。"
+            return "档案已更新" + suffix + "。"
 
         if name == "finish_onboarding":
             ok, why = can_finish(self.profile)
             if not ok:
                 return f"信息不足，不能结束建档。{why}。请继续询问用户。"
             self.profile["onboarding_done"] = True
-            self.db.save_profile(self.user_id, self.profile)
             plan = generate_plan(self.profile)
+            # G3：定级是系统字段，由代码回写，保证档案与计划一致
+            self.profile.setdefault("experience", {})["level"] = plan["level"]
+            self.db.save_profile(self.user_id, self.profile)
             self.db.create_plan(self.user_id, plan)
             return "建档完成！已生成首份计划：\n" + plan_to_text(plan)
 
         if name == "save_checkin":
-            self.db.add_checkin(
-                self.user_id, args.get("type", "training"), args.get("data", {})
-            )
-            return "打卡已记录。"
+            ctype = args.get("type", "training")
+            data, warnings = coerce_checkin(ctype, args.get("data", {}))
+            notes = list(warnings)
+            if ctype == "training":
+                for ex in data.get("exercises", []):
+                    raw_name = ex.get("name", "")
+                    ex_id, official, _via = exercise_lib.normalize(raw_name)
+                    if ex_id:
+                        ex["exercise_id"] = ex_id
+                        if official != raw_name:
+                            ex["name_raw"] = raw_name
+                        ex["name"] = official
+                    else:
+                        self._log_unmatched_exercise(raw_name)
+                        notes.append(
+                            f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
+            self.db.add_checkin(self.user_id, ctype, data)
+            suffix = ("；" + "；".join(notes)) if notes else ""
+            return "打卡已记录" + suffix + "。"
 
         if name == "get_plan":
             plan = self.db.get_active_plan(self.user_id)

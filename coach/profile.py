@@ -74,10 +74,33 @@ _ALIASES = {
     "experience": {"years": "training_years"},
 }
 
+# G1：LLM 可写字段白名单；白名单外（含系统字段）一律拒绝并报告
+_WRITABLE = {
+    "basic": {"name", "age", "gender", "height_cm", "weight_kg"},
+    "experience": {"training_years", "big3", "recent_layoff_weeks"},
+    "goal": {"primary", "phase", "target"},
+    "conditions": {"injuries", "injuries_evidence",
+                   "health_screen", "health_screen_evidence"},
+    "resources": {"location", "days_per_week", "session_minutes"},
+    "nutrition": {"meals_per_day", "sleep_hours"},
+}
 
-def merge_patch(profile: dict, patch: dict) -> dict:
-    """把 LLM 提交的 patch 深合并进档案（含字段别名归一化）"""
+
+def merge_patch(profile: dict, patch: dict) -> tuple[dict, dict]:
+    """把 LLM 提交的 patch 合并进档案。
+
+    防线（设计书 17.2）：
+    - D2：数字字段先强转（"130kg"→130，转不了丢弃）
+    - 别名归一化（sex→gender 等）
+    - G1：白名单外的 key 一律拒绝（onboarding_done / experience.level /
+      pain_flags / *_collected 等系统字段只允许代码写）
+
+    返回 (合并后档案, {"dropped": [...], "warnings": [...]})
+    """
+    from .validate import coerce_profile_patch
+
     merged = copy.deepcopy(profile)
+    patch, warnings = coerce_profile_patch(patch)
     patch = copy.deepcopy(patch)
 
     for section, alias_map in _ALIASES.items():
@@ -86,6 +109,23 @@ def merge_patch(profile: dict, patch: dict) -> dict:
                 if old in patch[section]:
                     patch[section][new] = patch[section].pop(old)
 
+    dropped: list[str] = []
+    clean: dict[str, dict] = {}
+    for section, value in patch.items():
+        if section not in _WRITABLE:
+            dropped.append(section)
+            continue
+        if not isinstance(value, dict):
+            dropped.append(section)
+            continue
+        allowed = _WRITABLE[section]
+        kept = {k: v for k, v in value.items() if k in allowed}
+        for k in value:
+            if k not in allowed:
+                dropped.append(f"{section}.{k}")
+        if kept:
+            clean[section] = kept
+
     def _merge(dst: dict, src: dict) -> None:
         for k, v in src.items():
             if isinstance(v, dict) and isinstance(dst.get(k), dict):
@@ -93,9 +133,12 @@ def merge_patch(profile: dict, patch: dict) -> dict:
             else:
                 dst[k] = v
 
-    _merge(merged, patch)
-    if "injuries" in patch.get("conditions", {}):
-        merged["conditions"]["injuries_collected"] = True
-    if "health_screen" in patch.get("conditions", {}):
-        merged["conditions"]["health_screen_collected"] = True
-    return merged
+    for section, value in clean.items():
+        _merge(merged.setdefault(section, {}), value)
+
+    conditions = merged.setdefault("conditions", {})
+    if "injuries" in clean.get("conditions", {}):
+        conditions["injuries_collected"] = True
+    if "health_screen" in clean.get("conditions", {}):
+        conditions["health_screen_collected"] = True
+    return merged, {"dropped": dropped, "warnings": warnings}

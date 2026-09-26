@@ -75,6 +75,7 @@
         db: {profile.resources.days_per_week: 2}
     - say: "没有伤病，断断续续练过几个月"
     - say: "身体健康，没吃药，医生没说过限制运动"
+    - say: "三大项没测过不清楚，最近也没停训，先帮我出计划吧"
       expect:
         db: {profile.onboarding_done: true}
     - say: "我的计划呢"
@@ -158,6 +159,7 @@
     - say: "目标塑形先减脂，每周练3次，每次一小时，去健身房练"
     - say: "没有伤病，新手"
     - say: "身体健康，没怀孕没吃药，医生没限制"
+    - say: "三大项不清楚，先帮我出计划吧"
       expect:
         db: {profile.onboarding_done: true}
     - say: "今天按计划完成了第一次训练，深蹲、卧推、划船都做了"
@@ -167,3 +169,28 @@
       expect:
         tools: [get_adjustment_suggestions]
         tool_results_contain: ["reduce_frequency"]
+
+- id: colloquial_progress
+  desc: 口语动作名打卡 → 归一后趋势闭环（17.2 L1 回归：说"深蹲"也要能追踪加重）
+  turns:
+    - say: "帮我建档，男，26岁，176cm，78kg，想增肌，每周练4天"
+    - say: "练了1年多，没有伤病"
+    - say: "身体健康没吃药，医生没限制，每次能练90分钟"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "今天深蹲60kg，5组5次"
+      backdate_days: 9
+      expect:
+        tools: [save_checkin]
+        db:
+          - ["checkins[0].data.exercises[0].exercise_id", barbell_back_squat]
+          - ["checkins[0].data.exercises[0].name", 杠铃深蹲]
+    - say: "深蹲62.5kg，5x5完成"
+      backdate_days: 5
+      expect: {tools: [save_checkin]}
+    - say: "深蹲65kg，5组5次，余量还有"
+      backdate_days: 2
+      expect: {tools: [save_checkin]}
+    - say: "我这几次深蹲有进步吗？计划要调吗"
+      expect:
+        reply_contains_any: ["加重", "+5", "增加重量"]

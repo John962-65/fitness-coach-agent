@@ -1,0 +1,20 @@
+id: standing_calf_raise
+name: 站姿提踵
+aliases: [提踵, 站姿提踵, 小腿提踵, 站提踵]
+pattern: isolation
+primary: [calves]
+secondary: []
+equipment: [machine]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: []
+knowledge_refs: []
+status: approved

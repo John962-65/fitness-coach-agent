@@ -267,4 +267,34 @@ cat knowledge/knowledge_gaps.log # 缺口日志
 
 **方法论记录**：同一人设多轮运行结果有抖动（LLM 采样），单轮全绿不构成"已修复"结论；确认以冻结集 + 多轮一致为准。
 
+---
+
+## 九、2026-09-26 追加：R2 数据契约完成（按设计书 22 章）
+
+### 9.1 交付清单（17.2 状态已同步 ✅：L1/L3/D1/D2/G1/G2/G3/A4）
+
+| 模块 | 内容 |
+|------|------|
+| 动作库 | `exercises/` 21 个 YAML（20.2 schema 代码字段），覆盖现有模板全部 18 个动作 + 常用替代；`tools/validate.py` 校验字段/别名唯一/替代 id 闭合，进 pytest |
+| 归一（L1） | `coach/exercises.py`：精确别名→子串→前缀→difflib；`save_checkin` 落库前归一为官方名 + 存 `exercise_id` + 留 `name_raw`；未识别动作进 `unmatched_exercises.jsonl` 队列并告知（20.4 不静默丢弃）；review/adjust 按 id 匹配，读侧归一兼容旧数据 |
+| 全动作追踪（L3） | 复盘/调整追踪计划内全部 track_e1rm 动作（上限 4），不再只追第一个 |
+| 校验（D1/D2） | `coach/validate.py`：`coerce_checkin`（"84.5kg"→84.5、"5x5"→5、坏行剔除并报告）+ `coerce_profile_patch`（"130kg"→130）；`save_checkin` 工具补完整 JSON Schema；复盘读侧逐行容错 |
+| 白名单（G1） | `merge_patch` 字段白名单 + 类型校验；`onboarding_done`/`experience.level`/`pain_flags` 等系统字段只许代码写，LLM 提交会被拒绝并告知 |
+| 原话依据（G2） | 伤病史与健康筛查必须附 `injuries_evidence`/`health_screen_evidence`（用户原话）才能 finish_onboarding，杜绝默认值补全蒙混 |
+| 定级回写（G3） | finish_onboarding 时定级写入 `experience.level`（系统字段），档案与计划一致 |
+| 未命中报错（A4） | `apply_adjustment` 目标动作找不到时抛错，不再静默生成"什么都没改"的新版本 |
+
+### 9.2 验证
+
+- pytest **97 项全绿**（新增 test_contract.py 17 项 + test_exercises.py 3 项）
+- 真实 LLM dev 评测：**colloquial_progress 全绿**——口语"深蹲"打卡 → 归一 `barbell_back_squat` → e1RM 趋势 → 加重建议，L1 修复在真实链路闭环；plateau_intermediate 首次全绿
+- 计划模板动作全部入库有测试守护（test_exercises.py）
+
+### 9.3 残留缺口（不变，仍指 R3）
+
+- `apply_adjustment` 落库纪律（LLM  narration 与工具执行不一致）——R3 两步确认状态机
+- deload 能进不能出、reduce_frequency 删腿日、add_volume 只改第一处（A1–A3）、计划无处方重量（A5）——R3 调整引擎状态机
+- save_checkin 纪律在 R2 后仍需多轮观察（JSON Schema 只管参数形状，管不了"不调用"）
+
+
 

@@ -1,0 +1,20 @@
+id: lateral_raise
+name: 侧平举
+aliases: [侧平举, 哑铃侧平举, 飞鸟侧平举]
+pattern: isolation
+primary: [side_delt]
+secondary: []
+equipment: [dumbbell]
+location: [gym]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 2, wrist: 1}
+fatigue: low
+progression: {type: load, increment_kg: 1.25}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: []
+knowledge_refs: []
+status: approved

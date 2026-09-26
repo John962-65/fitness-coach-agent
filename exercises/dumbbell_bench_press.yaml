@@ -1,0 +1,20 @@
+id: dumbbell_bench_press
+name: 哑铃卧推
+aliases: [哑铃卧推, 哑铃平板卧推, 哑铃推胸]
+pattern: h_push
+primary: [chest]
+secondary: [triceps, front_delt]
+equipment: [dumbbell, bench]
+location: [gym, home]
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 2, wrist: 1}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: [barbell_bench_press]
+substitutes: [barbell_bench_press, incline_bench_press]
+knowledge_refs: []
+status: approved

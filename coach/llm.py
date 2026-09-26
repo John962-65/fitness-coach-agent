@@ -105,8 +105,10 @@ class LLMClient:
                         "arguments": json.dumps(
                             {"patch": {"conditions": {
                                 "injuries": [],
+                                "injuries_evidence": last_user[:80],
                                 "health_screen": {"heart": "无", "pregnancy": "无",
                                                   "medication": "无", "clearance": "无"},
+                                "health_screen_evidence": last_user[:80],
                             }}}
                         ),
                     }]

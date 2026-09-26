@@ -1,0 +1,20 @@
+id: bulgarian_split_squat
+name: 保加利亚分腿蹲
+aliases: [保加利亚分腿蹲, 保加利亚蹲, 分腿蹲, 保蹲]
+pattern: lunge
+primary: [quads, glutes]
+secondary: [adductors]
+equipment: [dumbbell, bench]
+location: [gym]
+level_min: intermediate
+skill: medium
+laterality: unilateral
+joint_stress: {knee: 2, lumbar: 1, shoulder: 0, wrist: 0}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: [goblet_squat]
+progressions: []
+substitutes: [goblet_squat, leg_press]
+knowledge_refs: []
+status: approved

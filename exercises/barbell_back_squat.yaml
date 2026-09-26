@@ -1,0 +1,20 @@
+id: barbell_back_squat
+name: 杠铃深蹲
+aliases: [深蹲, 杠铃深蹲, 后蹲, 背蹲, 高杠深蹲, squat]
+pattern: squat
+primary: [quads, glutes]
+secondary: [adductors, erectors]
+equipment: [barbell, rack]
+location: [gym]
+level_min: beginner
+skill: high
+laterality: bilateral
+joint_stress: {knee: 3, lumbar: 3, shoulder: 1, wrist: 0}
+fatigue: high
+progression: {type: load, increment_kg: 5}
+track_e1rm: true
+regressions: [goblet_squat]
+progressions: []
+substitutes: [goblet_squat, leg_press, bulgarian_split_squat]
+knowledge_refs: [20_exercises/leg/squat_technique.md]
+status: approved

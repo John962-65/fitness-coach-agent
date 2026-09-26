@@ -1,0 +1,20 @@
+id: pull_up
+name: 引体向上
+aliases: [引体向上, 引体, 正手引体向上]
+pattern: v_pull
+primary: [lats]
+secondary: [biceps, mid_back]
+equipment: [pullup_bar]
+location: [gym]
+level_min: intermediate
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 2, wrist: 1}
+fatigue: medium
+progression: {type: reps}
+track_e1rm: false
+regressions: [lat_pulldown]
+progressions: [weighted_pull_up]
+substitutes: [lat_pulldown]
+knowledge_refs: []
+status: approved
