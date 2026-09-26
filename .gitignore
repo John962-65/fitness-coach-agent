@@ -1,0 +1,16 @@
+# 密钥与本地数据（设计书 E1 / 19.2）
+.env
+data/
+sources/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 评测运行产物（定义进 git，运行结果不进）
+eval/runs/
+
+# 历史备份（已被 git 取代）
+*.bak.*
+inbox/chenshi-nutrition-skill/

@@ -1,0 +1,169 @@
+# R1 开发集（诊断用）——设计书 18.5 虚拟用户评测
+#
+# 纪律（数据集身份与冻结）：
+# - 本文件是 dev 集：用于日常诊断与迭代，"见过"的用例只能证明修好了什么
+# - 确认结论要用 personas_holdout.yaml（冻结集），不得据本集结果宣称闭环正常
+#
+# 断言对象：工具调用与数据库状态（不是回复文本）；回复文本断言只在安全行为上用
+# backdate_days: 该轮新产生的打卡向前回拨 N 天（模拟若干周的训练历史）
+
+- id: home_beginner_female
+  desc: 居家新手女性，大体重减脂
+  turns:
+    - say: "你好，我想减肥，今天开始正式练，帮我建个档吧"
+    - say: "女，26岁，身高160cm，体重75kg，平时只能在家练"
+      expect:
+        db: {profile.basic.gender: "女", profile.basic.weight_kg: 75,
+             profile.basic.height_cm: 160}
+    - say: "目标就是减脂，每周能练3次，每次40分钟左右"
+      expect:
+        db: {profile.goal.primary: fat_loss, profile.resources.days_per_week: 3}
+    - say: "我没有伤病，之前也没系统练过"
+    - say: "心脏血压都正常，没怀孕，没吃药，医生也没说过不能运动"
+      expect:
+        db: {profile.onboarding_done: true}
+        tools: [update_profile]
+    - say: "那我的计划是什么样的"
+      expect:
+        db: {plan.template: "contains:新手全身"}
+    - say: "今天跟着视频做了30分钟居家训练，完成了第一次训练，打卡"
+      expect:
+        tools: [save_checkin]
+        db: {checkins_count: 1, "checkins[0].type": training}
+    - say: "今天早上称重74.2kg"
+      expect:
+        tools: [save_checkin]
+        db: {"checkins[0].type": body}
+    - say: "减脂期间主食能吃米饭吗"
+      expect:
+        tools: [load_knowledge]
+
+- id: veteran_knee
+  desc: 膝伤复训老炮（17.2 用户实测场景的回归）：定级、复训 ramp、伤病剔除
+  turns:
+    - say: "我要恢复训练，帮我建档"
+    - say: "男，34岁，182cm，88kg"
+      expect:
+        db: {profile.basic.age: 34}
+    - say: "目标是保持力量和肌肉，每周能练4次"
+    - say: "我系统练了8年，三大项深蹲150、卧推110、硬拉180，最近停训了3周"
+      expect:
+        db: {profile.experience.training_years: 8}
+    - say: "左膝有旧伤，深蹲蹲深了会不舒服"
+      expect:
+        db: {profile.conditions.injuries_collected: true}
+    - say: "心脏血压没问题，没吃药，医生没限制运动"
+      expect:
+        db: {profile.onboarding_done: true, plan.level: advanced}
+        tools: [update_profile]
+    - say: "看看我的计划"
+      expect:
+        tools: [get_plan]
+        tool_results_contain: ["复训"]
+        db:
+          - [plan.template, "contains:复训"]
+          - [plan.template, "contains:老炮"]
+          - [plan.exercise_names, "not_contains:杠铃深蹲"]
+
+- id: busy_office
+  desc: 每周只能练 2 次的上班族 → 忙碌高效计划
+  turns:
+    - say: "帮我建档开始训练"
+    - say: "男，30岁，175cm，70kg，上班族"
+    - say: "想增肌，但工作太忙每周最多练2次，每次一小时"
+      expect:
+        db: {profile.resources.days_per_week: 2}
+    - say: "没有伤病，断断续续练过几个月"
+    - say: "身体健康，没吃药，医生没说过限制运动"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "我的计划呢"
+      expect:
+        db: {plan.template: "contains:忙碌", plan.days: 2}
+
+- id: skinny_muscle
+  desc: 瘦体重增肌新手 + 连续 4 周进步 → 应建议加重并在确认后生成新版本
+  turns:
+    - say: "我想增肌，帮我建档"
+    - say: "男，24岁，178cm，60kg，偏瘦"
+    - say: "目标增肌，每周能练4次"
+    - say: "没有伤病，系统练了半年左右"
+    - say: "身体健康没吃药，医生没有限制"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "杠铃深蹲40kg，5组5次完成"
+      backdate_days: 22
+      expect: {tools: [save_checkin]}
+    - say: "杠铃深蹲42.5kg，5组5次完成"
+      backdate_days: 15
+      expect: {tools: [save_checkin]}
+    - say: "杠铃深蹲45kg，5组5次完成"
+      backdate_days: 6
+      expect: {tools: [save_checkin]}
+    - say: "杠铃深蹲47.5kg，5组5次，感觉还能加"
+      backdate_days: 1
+      expect: {tools: [save_checkin]}
+    - say: "最近练得怎么样？计划要调整吗"
+      expect:
+        tools: [get_adjustment_suggestions]
+        tool_results_contain: ["increase_weight"]
+    - say: "好，那就按建议加重"
+      expect:
+        tools: [apply_adjustment]
+        db: {plan.adjust_action: increase_weight}
+
+- id: middle_aged_health
+  desc: 中年男性高血压服药 → 健康筛查阳性进计划注意项（S5）
+  turns:
+    - say: "帮我建档，医生让我开始运动"
+    - say: "男，47岁，170cm，80kg"
+    - say: "目标是健康为主顺便减脂，每周练3次"
+    - say: "没有运动伤病，以前没怎么练过"
+    - say: "我有高血压，每天在吃降压药；没有心脏病，医生允许中等强度运动"
+      expect:
+        db: {profile.conditions.health_screen_collected: true,
+             profile.onboarding_done: true}
+    - say: "计划有什么要注意的吗"
+      expect:
+        db: {plan.notes_text: "contains:健康筛查"}
+
+- id: plateau_intermediate
+  desc: 进阶用户主力动作停滞 3 次 → 应建议加容量
+  turns:
+    - say: "帮我建档"
+    - say: "男，28岁，175cm，75kg"
+    - say: "目标增肌，每周练4次"
+    - say: "系统练了2年，没有伤病"
+    - say: "身体健康没吃药，医生没限制；三大项不太清楚，每次能练60分钟"
+      expect:
+        db: {profile.onboarding_done: true, plan.level: intermediate}
+    - say: "杠铃平板卧推60kg，4组8次"
+      backdate_days: 6
+      expect: {tools: [save_checkin]}
+    - say: "杠铃平板卧推60kg，4组8次"
+      backdate_days: 3
+      expect: {tools: [save_checkin]}
+    - say: "杠铃平板卧推60kg，4组8次，感觉卡住了"
+      backdate_days: 1
+      expect: {tools: [save_checkin]}
+    - say: "卧推一直没进步，计划要不要调整"
+      expect:
+        reply_contains_any: ["容量", "add_volume", "换刺激"]
+
+- id: low_adherence
+  desc: 计划 3 天只练 1 天 → 应建议降频率（计划匹配真实生活）
+  turns:
+    - say: "帮我建档"
+    - say: "女，32岁，165cm，58kg"
+    - say: "目标塑形先减脂，每周练3次，每次一小时，去健身房练"
+    - say: "没有伤病，新手"
+    - say: "身体健康，没怀孕没吃药，医生没限制"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "今天按计划完成了第一次训练，深蹲、卧推、划船都做了"
+      backdate_days: 2
+      expect: {tools: [save_checkin]}
+    - say: "这周加班太多就练了那一次，计划是不是该调整下"
+      expect:
+        tools: [get_adjustment_suggestions]
+        tool_results_contain: ["reduce_frequency"]
