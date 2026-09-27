@@ -1,0 +1,25 @@
+id: machine_shoulder_press
+name: 器械推肩
+aliases: [推肩器, 器械坐姿推肩]
+pattern: v_push
+primary: ['front_delt', 'side_delt']
+secondary: ['triceps']
+equipment: ['machine']
+location: ['gym']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['dumbbell_shoulder_press', 'overhead_press']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

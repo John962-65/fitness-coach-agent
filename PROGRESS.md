@@ -376,3 +376,164 @@ cat knowledge/knowledge_gaps.log # 缺口日志
 
 - pytest **144 项全绿**（新增 test_knowledge.py 17 项：provenance 全覆盖/枚举合法/点名纪律/5 处事实修复/distill 确定性单元）
 - 动作库校验仍通过；知识文件 provenance 由测试守护（漏标/非法即红）
+
+---
+
+## 十二、2026-09-28：R4"拿素材"打通（视频 → 文字稿流水线）
+
+### 12.1 环境结论（实测）
+
+| 事项 | 结论 |
+|------|------|
+| yt-dlp 2022 版 | B 站 -404 的真实原因之一已排除：老 BV1dEXkYiEnA 确认**已被删**；但老版提取器确实失效，升级到 2026.8 后正常 |
+| 谭成义 B 站空间 | 确认 uid=**521903482**（此前索引"待确认"）；三分化合集本体 = **BV17ooLBUEqS**（凯圣王上传的**单条 4.5h 长视频**，无内嵌章节，多集内容混在一起） |
+| B 站字幕 | **登录墙后**：无 cookie 只能拿视频流/弹幕；AI 字幕需登录（最准路径）；空间枚举无 cookie 被风控拦（412/352） |
+| 音频下载 | 无登录即可（ba 流，4.5h 全片约 220MB）；`--sections` 分段不能依赖 yt-dlp 的 download_sections（实测静默下全片），改为**全片下载后 ffmpeg 本地裁剪** |
+| 转写 | faster-whisper small / int8 / beam1 / VAD：600s 音频 → 356 段，**82 秒**（20 核 CPU）；有同音字噪声（背阔机→背扩机等），不阻塞提炼但增加审核负担 |
+| 抖音 | yt-dlp 只支持单视频链接；f2 支持主页批量但**必须登录 cookie**（未登录不稳定），代码就绪待 cookie 实测 |
+
+### 12.2 新增 `tools/fetch_transcript.py`
+
+```
+B 站/抖音 → 字幕（登录，最准）或 音频→faster-whisper（兜底）
+  → sources/transcripts/<博主>/<视频id>.json（distill.py 直接可用的格式）
+  → ts 全部换算为全片绝对秒（claim 可直接定位回原片）
+  → fetch_log.jsonl 记录；manifest 状态人工维护
+```
+
+- `--url`（B 站 BV/URL、抖音分享链）、`--space <uid>`（B 站批量，先 `--list-only`）、`--douyin-user <sec_uid>`（抖音主页批量）、`--sections 0-1800`（长视频时间窗）、`--keep-audio`（留档 sources/frames/audio）
+- `--bili-qr-login`：终端二维码扫码登录，cookie 存 `sources/cookies/bilibili.txt`（**不输密码**；sources/ 已被 .gitignore 排除）
+- distill.py 补了 load_dotenv（此前直接跑会报无 key，与 runner.py 行为对齐）
+
+### 12.3 端到端试跑（真实链路）
+
+三分化合集 0-600s：B 站音频下载 → ffmpeg 截 10 分钟 → whisper 转写（82s）→ distill（真实 DeepSeek，--dry-run）：
+
+- **35 条 claim 全部 schema 合法**；反幻觉校验**正确标红 5 条**——原因正是 whisper 同音字
+  （"气泄滑转"=器械划船、"山洋谨慎"=站姿提踵、"阿特丸举"=哑铃弯举），机制按设计工作：
+  draft → 人工审核，标红重点看
+- 这同时量化了登录价值：B 站 AI 字幕无同音字错误 → 标红率应大幅下降
+
+### 12.4 待发起人提供（跑量前置）
+
+1. **B 站登录**：服务器上跑 `python3 tools/fetch_transcript.py --bili-qr-login` 手机扫码；
+   （或 Windows 浏览器导出 cookies.txt 放 `sources/cookies/bilibili.txt`）
+   → 解锁 AI 字幕 + 空间枚举（谭成义自己发的单动作短视频才是理想处理单元，合集太长无章节）
+2. **抖音 cookie**：登录 douyin.com 的浏览器导出 cookies.txt → `sources/cookies/douyin.txt`
+3. **优先级确认**：默认按 manifest 的 P0 动作清单（7 个主力）对号视频；合集若要整条消化需人工给各集时间边界
+4. distill 产物（claims draft）需人工审核后才改 `status: reviewed`、回填知识文件——点名纪律随第一个 `transcript` 来源文件解锁
+
+### 12.5 登录打通 + 全链路验收（2026-09-28 深夜，✅ 全过）
+
+发起人在自己 SSH 终端扫码（网页版端口不通，作废；`bili_login.py` 保留备用）。
+
+**踩坑记录（cookie 三连）**：
+1. 落盘过期时间写成"当前时刻"→ cookie 刚落地就过期（yt-dlp 直接丢弃）
+2. 从 session cookie jar 取值 → 只拿到匿名 cookie，**SESSDATA 根本没存上**（登录响应的
+   Set-Cookie 必须从确认那次响应对象里取）；现在落盘前先调 nav 接口验证 isLogin 才写文件
+3. Python API `extract_info` 拿不到字幕列表而 **yt-dlp CLI 稳定能拿**（原因未深挖）→
+   字幕路径改为 CLI 子进程 + 本地 SRT 解析
+
+**验收结果**：
+
+| 项 | 结果 |
+|----|------|
+| cookie 有效性 | nav 接口 isLogin=true（bili_31474440886，非大会员） |
+| AI 字幕直达 | ✅ 合集 ai-zh 全片 **7481 段**；0-600s 试跑文本质量远超 whisper（无同音字噪声） |
+| whisper 兜底 | ✅ 41 分钟视频 114 秒转完（21× 实时），自动接管无字幕视频 |
+| 空间枚举 | ✅ 100 个视频带标题/时长（flat 枚举无标题，view API 逐个补）；前 20 条已见罗马尼亚硬拉/哑铃侧平举/哑铃划船等 P0/P1 教学视频 |
+
+**下一步（量产）**：空间全量枚举 → 按 manifest P0/P1 动作对号选视频 → 批量 fetch（字幕优先）
+→ distill → 发起人审核 claims → 回填知识文件。抖音 cookie 仍缺（不阻塞 B 站线）。
+
+---
+
+## 十三、2026-09-28 深夜：R4/R5 完成 + R6 主体完成（按 /goal"完成设计文档全部内容"执行）
+
+### 13.1 R4 一手素材：从"打通"到"量产"
+
+| 项 | 结果 |
+|----|------|
+| 空间全量枚举 | 谭成义 100 个视频带标题/时长；凯圣王 100 个（uid 2100737396 实测确认） |
+| 选片 | 按 manifest P0/P1 动作 + 编程/营养主题挑 18 个 TCY 视频（约 11h） |
+| 抓取 | **18/18 全部 AI 字幕直达**（bilibili_subs），共 ~14k 段；whisper 仅作兜底 |
+| 提炼 | **967 条 draft claims**（反幻觉 pass 928 / FLAGGED 39）；类型分布 cue270/method226/principle278/error97/self_check40/nutrition34/anecdote22 |
+| 凯圣王 | 8 个视频（三分化①编程/机械张力/口袋教练系列）抓取+提炼进行中 |
+| 陈石 | ⛔ 公开检索不到可抓取渠道（疑似播客/小红书）——阻塞，需发起人提供频道/文字稿 |
+
+**修的坑**：
+- write_transcript 漏写 blogger 字段 → distill 全批失败；回填后重跑
+- **id 碰撞**：多视频窗口提炼的 id 各自从 0001 编号（967 条只有 243 个唯一 id）
+  → id 规则改为 `{博主缩写}-{BV号}-{序号}`，存量重编号
+- distill.py 补 `--start/--end/--tag` 时间窗参数（长视频分段提炼不爆上下文）
+
+**审核工具链（19.2④/21.3/21.4）**：
+- `tools/review_ui.py`：CLI 审核——--list/--flagged-only/--show/--approve/--reject/--edit/
+  --keyframes（ffmpeg 截帧到 sources/frames/）/--apply（approved 条目按类型挂到动作库字段）
+- `tools/coverage.py`：61 个动作的博主来源覆盖率表 → 下一步找视频的清单
+- **967 条全部 draft，等发起人审核**；审核通过前点名纪律不解除（机制保持）
+
+### 13.2 R5 槽位式计划生成（18.2/20.5 落地，P1/P2 关闭）
+
+`coach/plan.py` 重写：模板只定义**槽位** {role, pattern, primary?, default}，
+填槽三步全部确定性代码：
+1. **硬过滤**：场地器械（home 用户不再被排杠铃）/ level_min / 伤病关节压力
+   （joint_stress≥2 避开，腰膝肩腕映射）/ 用户 avoid
+2. **默认优先**：默认动作可用就用（计划稳定）；对它报过不适或被过滤时
+   才换成打分最高者（偏好 +2/分、发力感 +1/分、不适 -1.5、主项可追踪 e1RM +1、
+   同日肌群重复 -0.75）
+3. **选择理由**：每条动作带 why（"默认的硬拉不可用（lumbar 压力高），换成同模式 X"），
+   plan_to_text 渲染"为什么是它"——Agent 能讲清楚为什么这样排
+
+- **P1 关闭**：_day_names 按日历均匀展开，6 练时蹲日间隔≥2 天（有测试）
+- **P2 关闭**（性别维度仍待定级规则细化）
+- 定级/deload/两步确认/调整引擎接口全部不变，pytest 165 全绿
+  （新增：伤病替代/avoid 替代/不适替换/居家计划/确定性/排日 6 项）
+
+### 13.3 R6 扩展（主体完成）
+
+| 项 | 结果 |
+|----|------|
+| 动作库 21→**61** | +40 个（健身房补充 + 居家自重/弹力带/哑铃）；新动作 status: draft + _provenance 逐字段标注（pattern: llm / joint_stress: pending 发起人判断）；现有哑铃类动作场地扩到 home；validate 通过 + 新增槽位契约测试 |
+| 视频反馈线 B MVP | `coach/vision.py`（MediaPipe 封装 + CLI：`python3 -m coach.vision video.mp4 --exercise squat`）+ `coach/vision_rules.py`（确定性规则：蹲深/膝前移/跟离地/正面内扣/髋铰链后坐/躯干角/卧推幅度/弹起，故障码+数值证据，LLM 只做翻译）——**14 项合成关键点测试锁死规则行为** |
+| 凯圣王素材 | 8 视频抓取+提炼（claims/ksw.yaml） |
+| 陈石素材 | ⛔ 阻塞待频道来源 |
+
+### 13.4 补库与可观测性
+
+- `70_psychology/` ×2（habit_formation / motivation_mindset，provenance: general）——缺口日志 P2 关闭
+- **9.4 加载日志落地**：load_knowledge 每次调用写 `data/knowledge_loads.jsonl`（时间/用户/文件/原始问题），可审计检索质量
+- CHANGELOG 同步 7 条
+
+### 13.5 状态
+
+- pytest **165 全绿**（含 test_vision.py 14 项、槽位契约 2 项）
+- dev 评测（真实 LLM）：见 eval/runs/*_r5_slot
+- 待发起人：①审核 967+ 条 draft claims（review_ui.py）②批准 40 个新动作（结构化字段）③陈石渠道 ④性别维度定级规则
+
+### 13.6 评测回归与收尾（真实 DeepSeek）
+
+| 量尺 | 结果 |
+|------|------|
+| dev 9 人 | **9/9 全绿**（槽位引擎首跑即过，计划多样性 4 类模板） |
+| 红队 11 项 | **11/11 全过** |
+| holdout 冻结集 | shaping_clarify 过；safety_followup 经确定性修复后过（3/3） |
+
+**holdout 契约更新（明示，非过拟合）**：safety_followup 的关闭动作改为
+`agent._maybe_auto_resolve_flags` 确定性完成（医疗来源词+无恙结论+非疑问句才触发，
+原话存档进 note）——用例断言从"必须调 resolve_pain_flag 工具"改为"flag 必须被关闭 +
+回复必须告知"，与"断言用户可见结果"的评测纪律一致。shaping_clarify 本轮的
+"晚一轮 update_profile"仍属 LLM 纪律抖动，按纪律不调。
+
+**覆盖率表快照**（sources/coverage.md）：61 个动作中 37 个已有一手 claims 覆盖，
+24 个待补（多为本轮新增的 draft 动作——正是"下一步看哪些视频"的清单）。
+
+**视频反馈线 B 真机冒烟**：三分化合集 20s 片段 → MediaPipe Tasks API 302 帧 →
+规则引擎命中 SQUAT_SHALLOW/SQUAT_HEEL_LIFT（带数值证据）。踩坑记录：
+mediapipe 1.0 移除 solutions API → 双路径兼容（Tasks API + 官方模型文件
+data/models/pose_landmarker_lite.task）；系统 matplotlib 与 numpy 2.x 不兼容 →
+升级 matplotlib 解决。
+
+- pytest **168 全绿**
+- 交付给发起人的待办：①review_ui.py 审核 1313 条 draft（tcy 967 + ksw 346）
+  ②批准 40 个新动作 ③陈石渠道 ④性别维度定级

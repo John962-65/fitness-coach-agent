@@ -2,6 +2,7 @@
 .env
 data/
 sources/
+logs/
 
 # Python
 __pycache__/

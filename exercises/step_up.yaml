@@ -1,0 +1,25 @@
+id: step_up
+name: 箱上登阶
+aliases: [登台阶, 箱式登阶]
+pattern: lunge
+primary: ['quads', 'glutes']
+secondary: []
+equipment: ['dumbbell', 'bench']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['split_squat', 'walking_lunge']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

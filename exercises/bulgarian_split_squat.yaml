@@ -5,7 +5,7 @@ pattern: lunge
 primary: [quads, glutes]
 secondary: [adductors]
 equipment: [dumbbell, bench]
-location: [gym]
+location: [gym, home]
 level_min: intermediate
 skill: medium
 laterality: unilateral

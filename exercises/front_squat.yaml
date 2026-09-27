@@ -1,0 +1,25 @@
+id: front_squat
+name: 颈前深蹲
+aliases: [前蹲]
+pattern: squat
+primary: ['quads']
+secondary: ['glutes', 'core']
+equipment: ['barbell', 'rack']
+location: ['gym']
+level_min: intermediate
+skill: high
+laterality: bilateral
+joint_stress: {knee: 3, lumbar: 1, shoulder: 1, wrist: 1}
+fatigue: high
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: []
+progressions: []
+substitutes: ['barbell_back_squat', 'hack_squat']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

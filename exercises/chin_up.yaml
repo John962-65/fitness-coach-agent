@@ -1,0 +1,25 @@
+id: chin_up
+name: 反手引体向上
+aliases: [反握引体]
+pattern: v_pull
+primary: ['lats', 'biceps']
+secondary: ['mid_back']
+equipment: ['bodyweight']
+location: ['gym', 'home']
+level_min: intermediate
+skill: high
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: medium
+progression: {type: reps}
+track_e1rm: true
+regressions: []
+progressions: []
+substitutes: ['pull_up', 'lat_pulldown']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

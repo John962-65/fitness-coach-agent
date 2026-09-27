@@ -1,0 +1,25 @@
+id: band_pull_apart
+name: 弹力带扩胸
+aliases: [弹力带后束展开, 带式面拉]
+pattern: isolation
+primary: ['rear_delt']
+secondary: ['mid_back']
+equipment: ['band']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['face_pull', 'rear_delt_fly']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

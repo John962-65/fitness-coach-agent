@@ -129,3 +129,76 @@ def test_plan_to_text():
     text = plan_to_text(adv)
     assert "定级：老炮" in text
     assert "杠铃平板卧推" in text
+
+
+# ---- R5：槽位式填充（用户数据驱动 + 伤病同模式替代 + P1 排日） ----
+
+def _states(rows):
+    from datetime import datetime
+    out = []
+    for ex_id, kw in rows:
+        r = {"exercise_id": ex_id, "updated_at": datetime.now().isoformat()}
+        r.update(kw)
+        out.append(r)
+    return out
+
+
+def test_injury_substitutes_same_pattern():
+    """膝伤：深蹲被剔除后，蹲槽位应落同模式替代（而非删掉或静默练空）"""
+    adv = mk(experience={"big3": {"squat": 130}},
+             conditions={"injuries": ["膝"], "injuries_collected": True})
+    plan = generate_plan(adv)
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert "杠铃深蹲" not in names
+    whys = [e.get("why", "") for d in plan["schedule"] for e in d["exercises"]]
+    assert any("不可用" in w or "换" in w for w in whys)
+
+
+def test_avoid_status_excludes_and_substitutes():
+    """用户明确 avoid 的动作不出现在计划里，且槽位有替代"""
+    states = _states([("barbell_bench_press", {"status": "avoid", "evidence": "先不练这个"})])
+    plan = generate_plan(mk(), exercise_states=states)
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert "杠铃平板卧推" not in names
+    whys = " ".join(e.get("why", "") for d in plan["schedule"] for e in d["exercises"])
+    assert "先不练" in whys or "换" in whys
+
+
+def test_discomfort_drives_substitution():
+    """对默认动作报过不适 → 换成替代动作并解释"""
+    states = _states([("barbell_bench_press", {"discomfort": "肩前侧不适", "evidence": "卧推肩膀疼"})])
+    plan = generate_plan(mk(), exercise_states=states)
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert "杠铃平板卧推" not in names
+    assert any("不适" in e.get("why", "")
+               for d in plan["schedule"] for e in d["exercises"])
+
+
+def test_six_day_no_consecutive_leg_days():
+    """P1：每周 6 练的推拉蹲，蹲日不连续"""
+    plan = generate_plan(mk(experience={"big3": {"squat": 130}},
+                            resources={"days_per_week": 6}))
+    days = [d["day"] for d in plan["schedule"] if d["focus"] == "蹲"]
+    week = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    idx = sorted(week.index(d) for d in days)
+    assert all(b - a >= 2 for a, b in zip(idx, idx[1:]))
+
+
+def test_choices_deterministic():
+    """同输入两次生成，计划完全一致（确定性）"""
+    import json
+    a = json.dumps(generate_plan(mk()), ensure_ascii=False, sort_keys=True)
+    b = json.dumps(generate_plan(mk()), ensure_ascii=False, sort_keys=True)
+    assert a == b
+
+
+def test_home_user_gets_plan_with_reasons():
+    """居家用户：杠铃动作被场地过滤，应有可用的自重/哑铃替代与解释"""
+    plan = generate_plan(mk(experience={"big3": {"squat": 130}},
+                            resources={"location": "home",
+                                       "days_per_week": 4}))
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert names, "居家计划不应为空"
+    assert "杠铃深蹲" not in names and "杠铃平板卧推" not in names
+    whys = " ".join(e.get("why", "") for d in plan["schedule"] for e in d["exercises"])
+    assert "不可用" in whys or "换" in whys

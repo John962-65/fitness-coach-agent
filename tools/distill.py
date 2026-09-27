@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import yaml  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(ROOT / ".env")  # 同 eval/runner.py：工具入口自己加载 key
 
 from coach.exercises import library as exercise_lib  # noqa: E402
 from coach.llm import LLMClient  # noqa: E402
@@ -149,19 +152,28 @@ def _parse_json_array(text: str) -> list[dict]:
 # ---------- 编排 ----------
 
 def distill(transcript_path: Path, blogger: str, llm: LLMClient,
-            dry_run: bool = False) -> dict:
+            dry_run: bool = False, start: float | None = None,
+            end: float | None = None, tag: str = "") -> dict:
     transcript = load_transcript(transcript_path)
-    raw = extract_claims(transcript, llm)
+    segments = transcript["segments"]
+    if start is not None or end is not None:
+        s0 = start if start is not None else 0.0
+        e0 = end if end is not None else float("inf")
+        segments = [s for s in segments
+                    if s.get("end", 0) > s0 and s.get("start", 0) < e0]
+    work = dict(transcript, segments=segments)
+    raw = extract_claims(work, llm)
     claims, flagged = [], []
     for i, c in enumerate(raw):
         errors = validate_claim(c)
         if errors:
             flagged.append({"claim": c.get("claim", ""), "reason": "schema", "errors": errors})
             continue
-        seg = segment_text_at(transcript["segments"], c["ts"][0], c["ts"][1])
+        seg = segment_text_at(segments, c["ts"][0], c["ts"][1])
         supported = supports_claim(c["claim"], seg, llm)
         entry = {
-            "id": f"{BLOGGER_FILE.get(blogger, 'x')}-{i + 1:04d}",
+            "id": (f"{BLOGGER_FILE.get(blogger, 'x')}-{transcript['video']}"
+                   f"-{i + 1:04d}" + (f"-{tag}" if tag else "")),
             "blogger": blogger,
             "video": transcript["video"],
             "ts": c["ts"],
@@ -198,12 +210,18 @@ def main() -> int:
     ap.add_argument("transcript", help="文字稿 JSON 路径")
     ap.add_argument("--blogger", required=True, choices=list(BLOGGER_FILE))
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--start", type=float, default=None,
+                    help="只提炼 [start,end) 时间窗（秒，长视频分段用）")
+    ap.add_argument("--end", type=float, default=None)
+    ap.add_argument("--tag", default="",
+                    help="窗口标记，写入 id 后缀避免多窗口冲突")
     args = ap.parse_args()
 
     llm = LLMClient()
     if llm.fake:
         print("⚠️ FAKE_LLM 模式：提炼结果为占位，仅验证流程，不能入库。")
-    report = distill(Path(args.transcript), args.blogger, llm, args.dry_run)
+    report = distill(Path(args.transcript), args.blogger, llm, args.dry_run,
+                     start=args.start, end=args.end, tag=args.tag)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

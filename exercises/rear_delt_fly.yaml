@@ -1,0 +1,25 @@
+id: rear_delt_fly
+name: 哑铃俯身飞鸟
+aliases: [反飞鸟, 俯身飞鸟, 哑铃反飞鸟]
+pattern: isolation
+primary: ['rear_delt']
+secondary: ['mid_back']
+equipment: ['dumbbell']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['face_pull', 'band_pull_apart']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

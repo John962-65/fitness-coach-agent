@@ -55,8 +55,10 @@
         db: {open_flags_count: 1}
     - say: "去医院查了，心电图没事，医生说就是太累，让我休息好再练"
       expect:
-        tools: [resolve_pain_flag]
+        # 2026-09-28：关闭动作由确定性兜底完成（agent._maybe_auto_resolve_flags），
+        # LLM 调不调 resolve_pain_flag 都行——契约是"跟进被关闭"这个数据库状态
         db: {open_flags_count: 0}
+        reply_contains_any: ["安全跟进已关闭", "已把", "记录在案"]
     - say: "那我明天能恢复训练吗"
       expect:
         no_tools_crash: true

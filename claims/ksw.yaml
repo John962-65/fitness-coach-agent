@@ -1,10 +1,7566 @@
-# 凯圣王 观点条目（claims）——设计书 19.2 ③ / 19.4
-#
-# 一条观点 = 一个可引用单元。只有 status: approved 且 provenance 链到一手 transcript
-# 的条目，Agent 才能在回答里点"凯圣王讲过"。
-#
-# 条目 schema 见 claims/tcy.yaml 头部。
-#
-# 当前：空。凯圣王负责"计划编排"，首批优先整理：新手入门系列、三分化合作系列、
-# 循证原则类（训练量/频率/力竭）。须先拿到一手文字稿再提炼审核。
-[]
+- id: ksw-0001
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 41.43
+  - 51.92
+  claim: 三分化把身体分成三个部位，三次练完结束；胸、三角肌中束、三头安排在同一次训练。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0002
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 51.92
+  - 72.06
+  claim: 第一个动作选择杠铃卧推和哑铃上斜卧推，因为对大部分爱好者和新手来说，应多用自由重量训练来提高上肢推的能力，帮助建立更高的训练水平。
+  type: principle
+  exercises:
+  - barbell_bench_press
+  - incline_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0003
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 78.53
+  - 93.09
+  claim: 自由重量是评估身体能力的动作；没有自由重量训练来筛查上肢能力，是一种不完善的表现。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0004
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 99.42
+  - 104.27
+  claim: 双杠臂屈伸是辅助性训练，练下胸、三头和肩膀前束。
+  type: method
+  exercises:
+  - dips
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0005
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 104.27
+  - 108.69
+  claim: 仰卧杠铃臂屈伸是第一个训练日的第四个动作。
+  type: method
+  exercises:
+  - skull_crusher
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0006
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 108.69
+  - 112.92
+  claim: Y字侧平举练三角肌中束，是第一个训练日的第五个动作。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0007
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 114.14
+  - 127.74
+  claim: 第二次训练练背、三角肌后束和肱二头肌；背部训练需要精细化、技术层面和控制特别好。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0008
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 127.74
+  - 158.22
+  claim: 第一个背部动作安排单手钢线下拉模式，更多偏向背阔肌；因为对大部分基因形态来讲，背阔肌一定是最主攻的点，无论从肌纤维角度还是面积来讲都是重中之重。
+  type: principle
+  exercises:
+  - cable_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0009
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 158.22
+  - 162.26
+  claim: 第二个动作是对握下拉，练圆肌，也包括背阔肌。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0010
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 162.26
+  - 168.06
+  claim: 第三个动作是单手器械划船，水平位更多一点，第一个动作更多趋向于矢状面。
+  type: method
+  exercises:
+  - chest_supported_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0011
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 168.06
+  - 186.0
+  claim: 第四个动作是坐姿划船，开肘练的更多是上斜方；因为大部分人肩胛后缩能力特别差，尤其肩膀或关节不太舒服的人，开发好肩胛骨后缩能力后肩痛问题会改善很多。
+  type: principle
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0012
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 186.0
+  - 190.2
+  claim: 第五个动作是钢线弯举，即坐姿的二头弯举。
+  type: method
+  exercises:
+  - barbell_curl
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0013
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 191.72
+  - 211.27
+  claim: 第三次训练是下肢，以整个下肢后侧为主，更重视腘绳肌；因为大部分人后侧能力薄弱、肌力有问题，髋的能力也需要开发。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0014
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 214.75
+  - 222.96
+  claim: 第一个下肢动作是单腿硬拉，是开发髋关节能力很重要的训练；保加利亚蹲对骨盆稳定帮助特别大。
+  type: method
+  exercises:
+  - dumbbell_rdl
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0015
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 222.96
+  - 232.33
+  claim: 第三个动作是颈前深蹲，比较推荐，因为它开发全身功能更多。
+  type: method
+  exercises:
+  - front_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0016
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 232.33
+  - 236.85
+  claim: 第四个动作是罗马尼亚硬拉，对开发髋铰链帮助很大。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0017
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 236.85
+  - 240.21
+  claim: 第五个动作是山羊挺身，改善下背的一些问题。
+  type: method
+  exercises:
+  - back_extension
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0018
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 257.32
+  - 268.63
+  claim: 身体在进化过程中就是一个开发的过程，像升级打怪一样获得更好的装备和更多技能。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0019
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 268.63
+  - 298.26
+  claim: 杠铃卧推要保留，因为它会开发协调性和稳定性，协调性能让你上更大的机械张力，同时也能筛查身体问题，如触不到胸、肩悬前、胸椎活动度不好、肩胛后缩能力差、外展代偿太多、肱骨被顶出等。
+  type: principle
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0020
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 304.96
+  - 322.66
+  claim: 线性计划不是一直往下加重量；很多人加着加着最后爆掉，是因为神经疲劳，没有做好疲劳管理。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0021
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 323.62
+  - 345.86
+  claim: 杠铃卧推是推类里的主项，是重量增长和神经开发的主项；刚开始很多兄弟没有动作熟练度，所以第一组是热身组15次，用非常轻的重量（比如能做20次的重量）去刷动作熟练度。
+  type: method
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0022
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 345.86
+  - 360.33
+  claim: 卧推不是纯孤立动作，三角肌前束、肱三头肌都会发力，而且对菱形肌和前锯肌的配合、整个胸椎活动度、上胸进气能力都很重要。
+  type: principle
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0023
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 363.11
+  - 393.91
+  claim: 卧推四组从15次开始，第一组是热身组，后边三个正式组分别是12次、10次、8次，但都不到力竭，要保留差不多两个的余量（RPE8左右）。
+  type: method
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0024
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 400.11
+  - 454.88
+  claim: 递进方式：下一次训练把10次换成8次，再下一次把12次也换成8次，强度不断变大而容量减少；过渡到四个8次后，主项要把容量降到非常低，开始六次组训练，总容量从四组变成两组六次，仍不到力竭（RPE8）。
+  type: method
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0025
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 465.23
+  - 476.27
+  claim: 神经是适应性不断变强的，肌肉增长是超量恢复，这是两个东西。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0026
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 476.27
+  - 502.33
+  claim: 有人认为不要做渐进（从15次、12次到10次、8次），应热身完直接上最大重量以保证最大机械张力、更高效；这个说法没有错，但在一个周期里体现偏后期，因为神经适应性需要一个开发过程。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0027
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 502.33
+  - 543.61
+  claim: 类比早上握力弱、晚上经过一天后握力变强，说明新手神经没有被开发出来；优秀运动员简单热身调动、喝咖啡因、听音乐后交感神经被激活，上来就能干最大强度，但很多新手不行，所以需要逐渐开发的过程。
+  type: anecdote
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0028
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 543.61
+  - 555.47
+  claim: 六次组递进：从两组六次、三组六次到四组六次，之后再降到两组五次、三组五次、四组五次，始终RPE都是8。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0029
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 558.27
+  - 580.68
+  claim: 第二个动作哑铃上斜卧推也要有两个余量；选择上斜哑铃是因为很多人用上斜杠铃时活动度不好，上斜哑铃能增加从肩到上胸的胸锁延长线堆肉，同时磨练技术，也是自由动作。
+  type: method
+  exercises:
+  - incline_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0030
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 580.68
+  - 600.9
+  claim: 哑铃上斜卧推第一天要求四组12次，全都有两次到三次富余量；后边训练可逐渐把最后一组做到RPE更高（9、9.5，接近力竭），再熟练后可做两组力竭，但最多只能有两组力竭。
+  type: method
+  exercises:
+  - incline_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0031
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 600.9
+  - 612.27
+  claim: 如果后边两组力竭能做到很标准、动作不变形，可以考虑控制组间歇、适当放长组间歇、适当加一些重量。
+  type: method
+  exercises:
+  - incline_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0032
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 612.27
+  - 623.81
+  claim: 双杠臂屈伸写退阶，因为很多人做不了；可退阶为跪在垫子上撑着凳子做下胸的退阶支撑训练。
+  type: method
+  exercises:
+  - dips
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0033
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 623.81
+  - 631.96
+  claim: 双杠臂屈伸如果能做，四组12次或到力竭都可以；这个动作做到力竭没有问题。
+  type: method
+  exercises:
+  - dips
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0034
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 631.96
+  - 640.55
+  claim: 双杠臂屈伸这种远固定训练，或者说俯卧撑这种训练一定要加进去，对整个肩胛开发都有帮助。
+  type: principle
+  exercises:
+  - dips
+  - push_up
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0035
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 640.55
+  - 670.34
+  claim: 仰卧臂屈伸在肩屈位，上来也不做到力竭，15次有两个左右富余量；递进逻辑：第二次训练把四组15次里加入一组12次，再慢慢加两组、三组、四组12次，在12次、RPE8不做到力竭的基础上加最后两组到力竭，再加一点点重量。
+  type: method
+  exercises:
+  - skull_crusher
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0036
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 670.34
+  - 702.88
+  claim: 最后一个动作Y字侧平举，第一天前四个动作其实是用肘的；因为推也要用到肩跟肘，肘容易积累疲劳不好管理，所以刚开始开发推类时加一个中束的外侧侧平举。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0037
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 702.88
+  - 726.08
+  claim: 外侧侧平举非常孤立、不太好借力，三头二头使不上劲，基本做到肩胛面就停住，背也不容易参与；做三组10+10，找一个重量先做十次，歇五秒再做十次，基本到力竭。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0038
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 726.08
+  - 739.42
+  claim: 主项刚开始不要做到力竭；刚开始尤其是新手在没有很好动作技巧时做到力竭，不见得是好事。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0039
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 747.78
+  - 771.38
+  claim: 单手钢线下拉现在是比较喜欢的练背阔动作，对广大兄弟姐妹比较友好，能调整到跟背阔肌肌纤维走向完全吻合的角度，同时新手更好发力、更好找感觉。
+  type: method
+  exercises:
+  - cable_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0040
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 771.38
+  - 797.58
+  claim: 单手钢线下拉做法：刚开始做四组，其中三组12次不到力竭，最后一组加一点点重量做十次到力竭，歇五秒再做一个五次到力竭；第二次做时两组做到十次到力竭加五次，再下一回可考虑适当加一点，但仍以感觉和动作质量为主。
+  type: method
+  exercises:
+  - cable_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0041
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 799.82
+  - 823.86
+  claim: 对握下拉是要上一定重量的动作，主张上来从四组开始，12次到8次的区间都可以；动作感觉不好、募集感觉不好、肌肉张力感觉不到，四组都做12次；动作熟练度非常高，多做八次也没问题。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0042
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 823.86
+  - 835.15
+  claim: 对握下拉重量相对比较重要，是练背里希望大家能让重量一点一点提高的动作。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0043
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 835.15
+  - 860.32
+  claim: 单手器械划船从全肩伸、肩距比较大到一个间距比较小，对关节灵活性或稳定性要求小，所以能用重量更大；现在有很多器械，主要让大家做器械，因为有更多支点（坐的支点、手撑的支点）。
+  type: method
+  exercises:
+  - chest_supported_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0044
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 860.32
+  - 880.38
+  claim: 单手器械划船前三组做十次不到力竭，最后一组做十次到力竭之后再加五次；第二周再加一个十次到力竭组加五次，第三周可再加一个十次到力竭组加五次；再做时减到两组、加重量、做十次不到力竭，如此循环。
+  type: method
+  exercises:
+  - chest_supported_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0045
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 880.38
+  - 895.29
+  claim: 坐姿开肘划船：如果健身房有海豹划船，海豹划船是非常好的动作，可以替换掉；如果没有海豹划船，可以做滑轮的。
+  type: method
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0046
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 895.29
+  - 912.96
+  claim: 练背时希望发展哪儿，动作轨迹跟肌肉纤维走向要完全对得上；这个动作要练中下斜方肌，海豹划船完全没法借力，很多人刚性划船还会借力，而且它也能练肌间协调性。
+  type: principle
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0047
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 912.96
+  - 932.5
+  claim: 坐姿开肘划船对第一天训练来说是拮抗性、有恢复作用；很多人推比较多拉比较少，身体胸椎会呈屈曲状态，前侧紧张，肩关节产生不适感，如果肱骨内收受限，推也可能出现肩不适感，所以坐姿开肘划船很重要。
+  type: principle
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0048
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 932.5
+  - 945.0
+  claim: 坐姿开肘划船一定要有感觉，不能抡、甩，要用中下斜方肌去感觉，让肩胛有一个很好的内收角度。
+  type: cue
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0049
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 945.0
+  - 971.33
+  claim: 钢线弯举是在肩屈位，做肩屈位的弯举对应练的是主动不足、被动不足；仰卧臂屈伸也是肩屈位，一个月后积累到一定疲劳时会把它换成下压。
+  type: method
+  exercises:
+  - barbell_curl
+  - skull_crusher
+  - cable_pushdown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0050
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 971.33
+  - 977.57
+  claim: 最后一天以开发为主，容量不算太大、强度也不大，基本上没有力竭度。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0051
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 977.57
+  - 994.14
+  claim: 单腿硬拉、保加利亚蹲这些单腿不稳定模式可以更好开发髋关节，臀中臀小肌参与更多，练髋关节屈伸能力、旋转刚性，练臀大肌和整个后侧。
+  type: principle
+  exercises:
+  - dumbbell_rdl
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0052
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 994.14
+  - 1000.26
+  claim: 颈前深蹲是以股四头肌训练为主的动作；很多兄弟刚开始做深蹲可能有足背屈问题，所以把它换了。
+  type: method
+  exercises:
+  - front_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0053
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1000.26
+  - 1006.99
+  claim: 罗马尼亚硬拉是髋铰链的开发，也是后侧链训练，从臀到腘绳肌。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0054
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1006.99
+  - 1012.82
+  claim: 很多兄弟上来会做硬拉，但新手做硬拉很危险，必须建立好髋铰链、核心刚性、上背刚性、动作技巧才能做硬拉。
+  type: error
+  exercises:
+  - deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0055
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1012.82
+  - 1015.6
+  claim: 山羊挺身是练竖脊肌加后侧的。
+  type: method
+  exercises:
+  - back_extension
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0056
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1015.6
+  - 1026.57
+  claim: 整体计划既能让你力量提高，又能让身体功能发展得非常好，同时增肌效果也不会次。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0057
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1026.57
+  - 1055.67
+  claim: 第一个月按这个思路，一个月后会做动作微调：加到一定重量觉得别扭就换成肩伸位；二头内侧练多了会去练二头外侧；神经积累到一定强度时会加入更多肩部训练，拉高肩的容量来释放推带来的神经强度。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0058
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1065.7
+  - 1074.26
+  claim: 这个计划不只是力量提升，对形体提升也特别大，是比较综合性的计划。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0059
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1080.24
+  - 1096.78
+  claim: 做复合动作、比较重的情况下不建议做到力竭，因为需要留有余量，让神经适应力有更高空间；每次做到力竭代表恢复时间要更长，频率也会下降。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0060
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1096.78
+  - 1119.11
+  claim: 单关节、重量不重、又没办法代偿借力的动作做到力竭，对神经疲劳其实没有太多影响，不容易积累疲劳，所以可以做到力竭。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0061
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1119.11
+  - 1136.44
+  claim: 目标不只是练力量，还要让形体更好看，希望有好的形体、好的力量、好的运动能力、好的关节能力，整个身体比较轻松舒服，这才是重中之重。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0062
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1146.27
+  - 1175.22
+  claim: 对于增肌、机械张力来说，30%到85%其实都是有效的；区别在于侧平举这类重量小的动作更接近35%的范围，要做到力竭才能募集更多白肌纤维、动员白肌纤维，才有很好的肌肥大（肌原纤维肥大）效果。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0063
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1175.22
+  - 1201.38
+  claim: 对于强度很大（如六次组，强度接近75%、80%）的动作，不做到力竭，只要能保证动作是渐进的、身体不断适应你加的重量，一样会变强；因为强度大，第一下就会募集到足够多的白肌纤维，这时要考虑的是神经不要疲劳。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0064
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1214.88
+  - 1236.53
+  claim: 五分化不太适合新手练，因为频率太慢，练一次胸要歇六七天再练到胸，要求单次强度很大、要能歇那么多天的强度，一般人达不到；三分化更合适，频率高、强度适中、也能渐进。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0065
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1236.53
+  - 1274.56
+  claim: 三分化不一定练三天歇一天；生活状态、睡眠、年龄、恢复能力不同，休息安排也不同，可通过晨脉、握力等监测手段判断，一旦发现疲劳，哪怕只练了两天也选择休息；练四天歇一天不推荐。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0066
+  blogger: 凯圣王
+  video: BV1FcdZBNEm3
+  ts:
+  - 1277.4
+  - 1289.38
+  claim: 计划之所以叫计划，就是一定要符合你自己，不是硬跟、靠毅力；这东西不考验毅力，是循证科学。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0067
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 15.1
+  - 23.51
+  claim: 增肌最重要的基础原理是机械张力，此外还有代谢压力和肌肉损伤。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0068
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 59.69
+  - 71.96
+  claim: 机械张力可简单理解为作用于该区域的力，例如哑铃卧推利用哑铃重力直接作用于胸大肌。
+  type: principle
+  exercises:
+  - dumbbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0069
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 71.96
+  - 94.34
+  claim: 力施加到肌肉上时，机械信号会转为化学信号，激活PI3K-AKT通路，进而激活mTOR，提高翻译起始效率，产生更多肌肉。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0070
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 104.09
+  - 110.12
+  claim: 常见误区是认为重量越大机械张力就越大、增肌效果就越好。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0071
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 138.62
+  - 161.38
+  claim: 80kg推一次与60kg推八次相比，60kg增肌效果更好，因为张力下时间更多。
+  type: principle
+  exercises:
+  - incline_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0072
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 146.8
+  - 153.42
+  claim: 机械张力不仅取决于重量，还取决于张力下的作用时间（TUT）。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0073
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 175.94
+  - 187.26
+  claim: 1RM对神经刺激大，但张力下时间太短，对肌肉刺激不如多次数组。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0074
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 208.69
+  - 217.23
+  claim: 在动作顶端伸直手臂停留很长时间会导致张力消失、强度下降。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0075
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 231.18
+  - 237.61
+  claim: 有效机械张力的应用范围大约是1RM的30%到85%。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0076
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 239.57
+  - 243.5
+  claim: 肌肉募集遵循大小原则：由小到大，从小的运动单位到大的运动单位。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0077
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 250.57
+  - 264.74
+  claim: 用很轻重量做侧平举时，需要做到接近力竭，才能募集到白肌纤维和更多运动单元。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0078
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 264.74
+  - 273.6
+  claim: 健美运动员常用递减组、超级组、强迫次数、预先疲劳，但重量不大，范围都在1RM的30%到85%。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0079
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 294.81
+  - 311.24
+  claim: 30%1RM时先由小运动单位参与，随时间推移小运动单位力竭后大运动单位开始参与；85%1RM则快速调用大运动单位。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0080
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 322.84
+  - 327.16
+  claim: 机械张力指作用到目标肌肉的张力，与单纯把重物搬动的做工是两个概念。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0081
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 333.36
+  - 343.1
+  claim: 训练时应让张力尽可能集中在目标肌肉群上，例如练胸时希望张力更多在胸大肌。
+  type: cue
+  exercises:
+  - barbell_bench_press
+  - dumbbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0082
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 356.12
+  - 369.88
+  claim: 常见错误：弯举时先屈髋、伸髋、蹬膝再耸肩，把重量甩上去且不控制离心，二头没有真正发力，不会增长。
+  type: error
+  exercises:
+  - barbell_curl
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0083
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 397.62
+  - 414.82
+  claim: 1RM训练时力无法全在目标肌肉上，全身都会参与，神经压力大，且张力下时间非常少。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0084
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 423.27
+  - 432.47
+  claim: 做6-8次组时张力下时间会变长，增肌效率才会高。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0085
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 440.44
+  - 458.52
+  claim: 高手训练时可能只在初段启动借力，之后肌肉张力很足；但很多人甩得完全没有张力，纯在甩，曲解了他们的训练。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0086
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 463.38
+  - 471.21
+  claim: 如果所用重量不能让目标肌肉在张力下保持良好时长，训练效率会很低。
+  type: self_check
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0087
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 494.44
+  - 504.38
+  claim: 传统健美选手的优势是念动一致，竭尽全力将张力与重量施加在目标肌肉上。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0088
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 504.38
+  - 513.13
+  claim: 很多人学习健美选手动作时只想着把重量甩起来，而不是把重量更好地施加在肌肉上。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0089
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 551.08
+  - 563.6
+  claim: 力量举选手倾向于利用技巧把杠铃举起来，健美选手则利用技巧把重量施加在肌肉上，这是两者最大区别。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0090
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 565.94
+  - 592.52
+  claim: 卧推动作对错取决于服务目的：力量举为在规则下推起结构重量，健美为让力量集中在胸上。
+  type: principle
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0091
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 592.52
+  - 606.54
+  claim: 健美运动员用的重量比力量举运动员小很多，但胸的面积更大，因为胸大肌受到的机械张力更多。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0092
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 613.64
+  - 624.58
+  claim: 练形体时希望目标肌肉参与最多、更孤立，甚至不希望三头或肩有酸的感觉，会用技巧让胸更孤立。
+  type: cue
+  exercises:
+  - barbell_bench_press
+  - dumbbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0093
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 626.26
+  - 654.68
+  claim: 力量举深蹲多用低杠，健美深蹲多用高杠；低杠加大髋关节力臂、减小膝关节力臂，高杠加大膝关节力臂，对股四头肌挑战更高。
+  type: principle
+  exercises:
+  - barbell_back_squat
+  - front_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0094
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 683.31
+  - 700.56
+  claim: 用很轻重量做推举即使有酸胀充血感，若强度太低也没有增肌效果。
+  type: error
+  exercises:
+  - dumbbell_shoulder_press
+  - machine_shoulder_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0095
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 702.28
+  - 715.76
+  claim: 用2.5kg做侧平举做到很酸很胀，但若没到真正力竭，也没有增肌效果。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0096
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 719.02
+  - 729.82
+  claim: 接近30%强度训练时必须奔着力竭去做，才能募集白肌纤维和更多运动单元。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0097
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 757.88
+  - 765.45
+  claim: 力竭的定义是动作完全没有速度、不能让重物移动，而不是单纯酸胀到不想做。
+  type: self_check
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0098
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 765.45
+  - 804.9
+  claim: 接近30%强度能做很多次，过程中产生氢离子、乳酸阈值变高，大脑接收疼痛信号让人想停，但此时可能并未真正力竭。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0099
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 804.9
+  - 814.21
+  claim: 很多人学大神做超级组、递减组，做得特酸做了很多次，但没到真正力竭，最后没有增肌效果。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0100
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 814.21
+  - 819.29
+  claim: 判断是否有效不要看多酸多胀，要看有没有完全损失速度。
+  type: self_check
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0101
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 839.11
+  - 851.98
+  claim: 力竭在学术上称为主观努力强度，健美训练常用RIR表示，力量举常用RPE表示，两者本质一致。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0102
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 851.98
+  - 858.95
+  claim: 健美训练需要达到接近力竭（RIR接近0）才能生长。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0103
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 858.95
+  - 881.18
+  claim: 很多人用小重量训练感觉酸就放弃，并非真正力竭，所以不涨，问题在于没搞清力竭和非力竭的区别。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0104
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 881.18
+  - 892.72
+  claim: 新手爱好者推荐RIR在4-5之间，因为新手很容易达到这个点，不需要太高的努力强度。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0105
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 892.72
+  - 913.0
+  claim: 中级或高级选手需要很强的努力程度，如罗尼·库尔曼和尼克·沃克训练时表情痛苦，主观努力程度很高。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0106
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 913.0
+  - 928.54
+  claim: 罗尼用800磅深蹲、尼克·沃克用小重量深蹲，但都满足主观努力程度、RIR为零、力竭，运动单位全被募集刺激，所以肌肉生长。
+  type: principle
+  exercises:
+  - barbell_back_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0107
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 944.34
+  - 977.4
+  claim: 新手做6-8次组强度偏高，动作技术容易变形、出现风险；做15-20次且最后1-2组到力竭，增肌效率并不会减少。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0108
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 981.96
+  - 997.78
+  claim: 刚开始训练一年的人不容易达到85%1RM强度，但用50%-60%强度做12-20次并有效到力竭，效果也不会差。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0109
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1011.73
+  - 1035.9
+  claim: 周期概念：如果几周内同等次数下侧平举重量从2.5kg提高到4kg，代表机械张力提高，肌肉量和力量维度会有正向表现。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0110
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1038.06
+  - 1057.42
+  claim: 多年不涨的人往往训练次数、重量、容量长期不变，容量、强度、张力下时长、机械张力都没变，肌肉没有理由变化。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0111
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1067.94
+  - 1084.86
+  claim: 增肌的关键是不断提高有效做组范围内的机械张力，例如从14kg逐步提高到28kg、45kg、60kg。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0112
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1089.74
+  - 1122.34
+  claim: 阈值概念：肌肉生长需要达到一个阈值点，只有不断达到并挑战阈值极限，肌肉才会逐渐生长。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0113
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1105.48
+  - 1116.86
+  claim: 健身房很多大爷大妈10年如一日没有变化，说明每次训练没有达到阈值，肌肉一直处在舒适区。
+  type: anecdote
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0114
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1126.08
+  - 1141.65
+  claim: 8-12次并非特别好的区间，只能算效率区间；想最大化肌肉生长不能只用8-12次。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0115
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1141.65
+  - 1150.89
+  claim: 30%到85%1RM范围内肌肉都会生长，应周期性变化次数来不断挑战阈值。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0116
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1160.58
+  - 1178.51
+  claim: 长时间使用一个次数区间后阈值会越来越高，突破越来越难；此时可选取20次或10次以下进行非常规次数训练。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0117
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1184.55
+  - 1196.22
+  claim: 高次数训练泵感很强，泵感强时很少有人停止训练，一般会想再来几组，会上瘾。
+  type: anecdote
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0118
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1220.65
+  - 1241.0
+  claim: 力量举运动员卧推212.5kg但胳膊不粗，健美爱好者卧推150kg但胳膊看着特别粗，体现机械张力作用到肌肉的感觉不同。
+  type: anecdote
+  exercises:
+  - barbell_bench_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0119
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1266.06
+  - 1278.99
+  claim: 胸大肌分上中下，需要不同角度下机械张力的刺激才能变得更好。
+  type: principle
+  exercises:
+  - incline_bench_press
+  - dumbbell_fly
+  - cable_fly
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0120
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1282.67
+  - 1289.94
+  claim: 喜欢练形体的运动员训练动作特别多，因为要针对同一肌肉不同区域分别刺激。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0121
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1289.94
+  - 1307.69
+  claim: 垃圾容量要区别对待：同一肌肉做组太多说明刺激不够，因为刺激够的话做不了那么多组。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0122
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1308.97
+  - 1322.33
+  claim: 练三头要分别刺激外侧头和长头，练肩分前中后，练胸分上下，这是按解剖区间安排动作。
+  type: method
+  exercises:
+  - cable_pushdown
+  - skull_crusher
+  - lateral_raise
+  - rear_delt_fly
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0123
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1323.57
+  - 1349.81
+  claim: 力量举计划不会做很大容量，因为强度太高、神经疲劳太多；形体训练则按上胸1-2个动作、下胸2个动作、夹胸收尾来安排。
+  type: method
+  exercises:
+  - incline_bench_press
+  - cable_fly
+  - pec_deck
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0124
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1354.7
+  - 1363.78
+  claim: 练上胸时下胸肌纤维受到的机械张力相对较小，所以要专门练下胸。
+  type: principle
+  exercises:
+  - incline_bench_press
+  - dips
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0125
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1376.04
+  - 1402.73
+  claim: 力量举选手和健美选手以相同方式达到不同目的：力量举针对弱项练，健美把上中下全练。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0126
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1402.73
+  - 1416.74
+  claim: 力量举选手和健美爱好者力量差别巨大，但肉量极其相似，因为训练目的和方式不同。
+  type: anecdote
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0127
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1423.7
+  - 1455.75
+  claim: 总结：机械张力包括强度、张力下时间；30%-85%1RM有效；肌肉募集遵循大小原则；小强度不做到力竭很难增肌；超过85%没有张力下时长效率也低。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0128
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1455.75
+  - 1466.74
+  claim: 周期内6次、8次或12次组，整个张力下的强度要有提高，才能有好的增肌效果。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0129
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1466.74
+  - 1473.1
+  claim: 很多练形体的兄弟没有周期概念，只是重复重复再重复。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0130
+  blogger: 凯圣王
+  video: BV1zTf2B3Ead
+  ts:
+  - 1473.1
+  - 1486.23
+  claim: 为形态好看可针对不同肌肉纤维如前中后束安排动作；若只为推肩更重，只需照顾推举相关主项辅项。
+  type: method
+  exercises:
+  - dumbbell_shoulder_press
+  - lateral_raise
+  - rear_delt_fly
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0131
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 55.0
+  - 63.86
+  claim: 最宽握距的高位下拉对肩胛功能和脊柱功能要求最高，最不适合新手。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0132
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 63.86
+  - 76.16
+  claim: 做最宽握距下拉时应选择带曲度的杆，避免用大直杆握到最宽位置导致手腕不适。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0133
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 85.24
+  - 115.38
+  claim: 高位下拉时后脚跟抬起、降肋收腹固定骨盆，再把气吸满后侧，形成稳定的前侧核心。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0134
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 128.95
+  - 141.56
+  claim: 宽握下拉主要用大臂内收功能（冠状面），窄握更多用大臂伸功能（矢状面），这是握距的核心区别。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0135
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 141.56
+  - 182.74
+  claim: 握得越宽，大臂内收幅度越小，很难触胸，也更难刺激到背阔肌下侧和外侧。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0136
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 182.74
+  - 190.48
+  claim: 最宽握高位下拉主要练大圆肌、上背阔和中下斜方肌。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0137
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 205.73
+  - 230.78
+  claim: 宽握下拉时大臂要有外旋扭矩，让前锯肌收紧、肩胛下角贴合下背，背的训练收益才高。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0138
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 230.78
+  - 261.2
+  claim: 常见错误：追求重量导致身体后倾太多、手臂前旋，动作变成练三角肌后束。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0139
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 261.2
+  - 294.29
+  claim: 常见错误：重量太大、前锯肌未参与，下拉过程中肩胛上提前旋，肩部不适且训练收益大打折扣。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0140
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 294.29
+  - 331.02
+  claim: 宽握下拉不要太多后仰，否则从冠状面动作变成矢状面拉；不要追求杆碰胸，拉到鼻子到嘴之间即可。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0141
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 333.64
+  - 362.93
+  claim: 做任何动作都应先把脊柱回到中立位、下背收紧、骨盆微抬，避免顶腰。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0142
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 377.14
+  - 393.25
+  claim: 通过胸腔进气把气吸到后侧，让胸腔像气球被顶开，肩胛才能更好贴合胸廓。
+  type: cue
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0143
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 409.24
+  - 424.26
+  claim: 宽握下拉应忽略手肘，用肩胛功能带动动作，多强调肩胛上提上旋与下沉下旋。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0144
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 447.32
+  - 463.84
+  claim: 离心时手肘不要完全伸直，否则曲肘主导意识增强、手臂发力过多。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0145
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 471.36
+  - 488.37
+  claim: 离心时肩胛向外推、向上提上旋，配合肩肱节律；向心时通过肩胛下沉下旋收缩。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0146
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 488.37
+  - 507.39
+  claim: 在大臂外旋基础上，主观意识让前锯肌带动肩胛下角前伸，提高肩胛与胸廓贴合度。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0147
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 510.58
+  - 550.55
+  claim: 比肩宽一拳左右的经典握距，对肩胛上下回旋要求较低，中下背参与更多，但背外侧和下侧参与仍不高。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0148
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 552.53
+  - 565.02
+  claim: 常见错误：新手在经典握距下拉时玩命加重量、改变轨迹或借力。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0149
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 565.02
+  - 590.66
+  claim: 要顺着背阔肌纤维走向，肘关节不能向上扬，不能挺胸做成开肘状态，否则背被放松掉。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0150
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 597.99
+  - 608.65
+  claim: 经典握距下拉时忘掉小臂，用肘去找髋关节，力量直接向下压。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0151
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 610.19
+  - 632.1
+  claim: 不要玩命挺胸，挺胸会影响后侧进气量、使肩胛被动内收，影响背阔肌参与；也不要玩命含胸，保持中立位。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0152
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 642.81
+  - 665.64
+  claim: 向心过程中肩胛要配合完成一个很好的后倾，可拍视频从后方记录自检。
+  type: self_check
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0153
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 675.58
+  - 682.75
+  claim: 肘关节一旦飞起来，肩胛容易被上提，背阔参与度会很少。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0154
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 682.75
+  - 691.0
+  claim: 下拉时配合肩胛后倾下压，能最大化让背阔肌和前锯肌参与。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0155
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 691.0
+  - 705.13
+  claim: 挺胸或过分后仰仰肘，力量会跑到中下斜方肌、三角肌后束、腹肌和肱二头肌，背阔参与变小。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0156
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 705.13
+  - 736.28
+  claim: 离心时不要想耸肩或沉肩，给身体上回旋指令，肘不要完全伸直，在背保持张力下把背拉长到可控最远位置。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0157
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 747.92
+  - 768.44
+  claim: 常见错误：耸肩状态下先屈肘、后仰再下拉，虽然杆行程够但背参与度非常低。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0158
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 768.44
+  - 783.94
+  claim: 推荐的最大重量是向心过程中肩胛还能完成下降和后倾的重量。
+  type: self_check
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0159
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 813.75
+  - 882.59
+  claim: 反手高位下拉从冠状面变到矢状面，做的是肩伸（大臂伸），抗阻行程长，背阔肌参与程度高。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0160
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 882.59
+  - 897.89
+  claim: 反手高位下拉在肩胛外展状态下做肩伸抗阻，对外侧背阔和中背部效果较好。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0161
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 899.25
+  - 934.84
+  claim: 反手做时不要特别宽或特别窄握，找适中位置；有万向把手更推荐，手腕舒适度更高且不影响训练效果。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0162
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 934.84
+  - 947.89
+  claim: 反手高位下拉不要玩命后仰，身体尽量直一点，肩胛在外展位置，吸气后肘关节直接向下。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0163
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 947.89
+  - 958.6
+  claim: 反手高位下拉对背阔外侧及外侧下部的参与程度明显高于宽握。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0164
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 958.6
+  - 977.95
+  claim: 背阔形态因人而异，与起始点有关，有人外侧起始点靠身体前侧，有人靠里。
+  type: anecdote
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0165
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1007.17
+  - 1035.08
+  claim: 反手高位下拉不建议上大重量，直杆大重量会使手腕剪切力非常大。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0166
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1035.08
+  - 1057.23
+  claim: 有八字把手时更推荐做对握，比反手安全性高很多，手腕更舒服。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0167
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1063.58
+  - 1093.02
+  claim: 常见错误：为了收紧背阔肌而把手往后拉，此时肩胛被翘起、肩膀旋前，下背部反而放松。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0168
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1093.02
+  - 1105.01
+  claim: 对握下拉对前锯肌要求更高，需前锯肌拉住肩胛下角前倾，形成肩胛环抱身体的感觉。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0169
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1105.01
+  - 1127.34
+  claim: 对握下拉时小臂应垂直向下受力，身体可再往后坐一点使躯干更直。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0170
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1136.96
+  - 1163.66
+  claim: 下拉时不要玩命把肘关节向后移动，否则下背部松掉、肩胛前倾；应找肘关节向前顶住、肩胛往前推的感觉。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0171
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1163.66
+  - 1181.5
+  claim: 拉到小臂垂直的角度即可，背阔已收紧，再往下对功能要求更高且背阔发力感受会减少。
+  type: self_check
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0172
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1181.5
+  - 1214.52
+  claim: 离心时不要直接把手往上放，而是找肘关节向上、背阔拉住张力的感觉，通过肩胛活动把手臂带上去。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0173
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1272.95
+  - 1281.78
+  claim: 应根据自身功能确定行程，而不是为了行程导致代偿。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0174
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1284.68
+  - 1339.04
+  claim: 最窄握把是最能上重量的握位，肩胛处于更外展位置，属于全肩伸动作。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0175
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1339.04
+  - 1353.2
+  claim: 最窄握下拉中肱二头肌、肱肌参与较多，背阔外侧参与度高，中下斜方肌和菱形肌参与度非常低。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0176
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1374.87
+  - 1393.92
+  claim: 窄握下拉常见错误：肘向后滑、开肘往上仰，会导致手臂、三角肌后束、中下斜方肌参与过多。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0177
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1393.92
+  - 1409.13
+  claim: 窄握下拉应外旋固定好，力量竖直向下压，最大化发挥背阔肌大臂伸（肩伸）功能。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0178
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1411.92
+  - 1432.16
+  claim: 窄握下拉不要追求大臂无限向后走，肘向下压到收缩行程满、肩胛顶住即可。
+  type: self_check
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0179
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1440.18
+  - 1455.76
+  claim: 离心不要完全伸直，否则对肩关节压力较高，到有张力的位置即可。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0180
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1455.76
+  - 1473.05
+  claim: 窄握下拉两种代偿：胸椎屈曲加手配合下压，或使劲后仰向斜后方拉，都说明重量太大。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0181
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1473.05
+  - 1505.19
+  claim: 对握下拉时杆可离身体一段距离，肘关节发力方向竖直向下压，小臂完全放松，背获得最大张力。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0182
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1509.17
+  - 1530.88
+  claim: 高位下拉这类动作内部杠杆多为上升阻力，练背难找感觉、不好收缩。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0183
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1530.88
+  - 1555.54
+  claim: 向心阶段做得非常慢反而更找不到感觉，小臂、二头、三头、肩带代偿更多。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0184
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1555.54
+  - 1576.48
+  claim: 下拉类动作向心阶段要有一定速度（不是爆发力），速度能帮助顶峰收缩时更好地完成肌肉募集和张力。
+  type: method
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0185
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1636.32
+  - 1647.09
+  claim: 很多兄弟下背找不到收紧感觉，很多都是速度问题。
+  type: principle
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0186
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1650.16
+  - 1680.32
+  claim: 握把手时用外三指（中指以外三指）抓住把手，手指扣上别放松，手腕内扣一点点即可。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0187
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1680.32
+  - 1697.52
+  claim: 拉的时间越长手腕角度越容易变化，指屈力增加，小臂截获更多力量，背部受力减弱。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0188
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1700.76
+  - 1722.26
+  claim: 下拉时手掌外侧向前推、想把把手向远推，曲肘主导意识减少，肩伸主导意识增加，背阔发力更好。
+  type: cue
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0189
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1722.26
+  - 1740.1
+  claim: 不推荐用虎口段发力，否则下拉时屈肘主导意识过多，手臂肱桡发力更多。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0190
+  blogger: 凯圣王
+  video: BV1SD4C63EUV
+  ts:
+  - 1740.1
+  - 1748.22
+  claim: 这个外三指握法技巧可以沿用到其他背部训练当中。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0191
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 47.22
+  - 57.79
+  claim: 臀大肌最主要的功能是髋关节伸展，即大腿向后摆时臀大肌上下部都在用力收缩。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0192
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 59.19
+  - 79.46
+  claim: 在髋伸位（大腿垂直地面）时，臀大肌具有帮助髋关节外旋的功能。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0193
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 80.14
+  - 92.42
+  claim: 臀大肌还有帮助骨盆后倾的功能，骨盆后倾时臀大肌用力收缩缩短。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0194
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 105.4
+  - 116.1
+  claim: 练臀不必纠结上臀还是下臀，臀大肌最主要功能是伸髋，罗马尼亚硬拉能完整表达伸髋功能。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0195
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 129.92
+  - 139.52
+  claim: 能上重量、代谢压力和机械张力都高的练臀动作主要是罗马尼亚硬拉和臀冲。
+  type: method
+  exercises:
+  - romanian_deadlift
+  - hip_thrust
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0196
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 148.26
+  - 159.86
+  claim: 罗马尼亚硬拉站距不要太窄也不要过宽，与肩同宽中立位即可，脚尖朝前微微外旋一点点。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0197
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 159.86
+  - 176.88
+  claim: 臀发力感不好或习惯膝盖内扣、脚外侧翻起的人，可以在膝盖上套弹力带做主动外展。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0198
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 180.9
+  - 196.05
+  claim: 罗马尼亚硬拉建议从20次左右到15次左右的次数范围开始，因为肌肉募集原则是由小到大。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0199
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 196.05
+  - 213.56
+  claim: 上来拿太重更感觉不到臀大肌发力，热身时甚至可以用拉带，先建立髋铰链、核心刚性和呼吸。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0200
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 215.32
+  - 222.7
+  claim: 握杠时两手在两肩外侧一点点，杠铃一定要贴着小腿。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0201
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 249.6
+  - 278.1
+  claim: 罗马尼亚硬拉在顶峰收缩时阻力臂已缩短、阻力下降，此时玩命向前顶髋产生横移对训练意义不大。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0202
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 279.26
+  - 301.97
+  claim: 顶端可以收紧臀部，但不要让髋关节产生横移，应想象髋上有一个轴在转动完成屈髋伸髋。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0203
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 303.61
+  - 334.55
+  claim: 在前倾位做动作会导致核心被拉开、不利于构建腹内压，且臀大肌下侧行程和收缩受影响，既不安全也不高效。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0204
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 334.55
+  - 354.03
+  claim: 刚开始做罗马尼亚硬拉时杠铃可停到膝盖上方，行程不用太长；熟练后可放到膝盖下方一拳距离，只要不改变重心和核心刚性。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0205
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 356.16
+  - 371.44
+  claim: 向心过程要让杠铃贴着腿往上，这样杠铃对下腰部的力臂较短，腰椎剪切力较小。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0206
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 371.44
+  - 385.06
+  claim: 杠铃前移没贴住小腿会加长对下腰段的力臂，增加下腰段剪切力，容易导致损伤。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0207
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 385.06
+  - 395.27
+  claim: 上背弯曲或核心垮掉都不利于臀发力，会让腰的压力瞬间增加。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0208
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 395.27
+  - 417.6
+  claim: 抗阻的劲儿不是胳膊的力量，更多来自背阔肌，肩胛应处于下降且后倾的状态，让背阔肌与杠铃对抗产生上背刚性。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0209
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 417.6
+  - 429.09
+  claim: 不要故意挺胸，故意挺胸会让肩胛内收、胸椎曲度前顶，腰容易做到骨盆前倾位置，腰压力变大。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0210
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 436.04
+  - 451.62
+  claim: 更推荐尽量完成全程，从收得最紧到拉得最长是一个比较完整的行程。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0211
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 451.62
+  - 471.19
+  claim: 顶峰收缩时推荐加一定骨盆后倾，前倾收不紧臀下部，后倾可以收紧核心和臀部。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0212
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 471.19
+  - 496.04
+  claim: 骨盆后倾与髋关节水平向前顶有明显差距，向心时做骨盆后倾髋仍在中立位、腰无压力；做髋关节向前移动则腰会直接获得剪切力。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0213
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 496.64
+  - 550.23
+  claim: 用骨盆前移方式伸髋虽能让臀大肌顶峰收缩，但腰椎后方关节突压力较大，腰椎压力确实比较大。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0214
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 552.08
+  - 577.61
+  claim: 重心放在前脚掌会直接出去、腰发力更多；重心放在后脚跟会增大蹬膝角度、股四头肌受力变多；要求重心在脚正中间足中位置。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0215
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 577.61
+  - 598.4
+  claim: 久坐导致腘绳肌太紧张或屈髋受限的人下得太低只能靠腰代偿往下放，就失去了意义，建议侧面拍自己的动作自检。
+  type: self_check
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0216
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 600.02
+  - 623.14
+  claim: 弹力带不用套到太往下的位置，下的时候一定要把背收紧、收紧核心。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0217
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 633.28
+  - 644.02
+  claim: 不能过分挺胸，肩胛要下降，腰不能往前顶，调整好核心状态。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0218
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 644.02
+  - 653.55
+  claim: 想象髋关节在转动把重量往下放，重心踩在足中，节奏不用太慢，太慢不好控制。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0219
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 662.4
+  - 695.84
+  claim: 向心过程不要把膝盖向前引，否则会变成蹲举动作、负重来到大腿前侧股四头肌，后侧张力变小。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0220
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 709.19
+  - 737.66
+  claim: 要保证整个过程臀大肌都处于被拉长状态，向上向心收缩时微微带动后倾，同时守好足背屈角度，不能一边后倾一边把膝盖往前拉。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0221
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 779.35
+  - 795.63
+  claim: 动作越慢越不容易找感觉，稳定肌群会参与更多，应匀速控制而不是故意放特别慢。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0222
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 795.63
+  - 807.45
+  claim: 腹部要想象是收紧缩短状态而不是往里吸，腹直肌和臀大肌同时参与让骨盆后倾。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0223
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 807.45
+  - 815.48
+  claim: 下放时想象把臀拉长，上起时想象臀缩到最短，只想这一个要点即可。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0224
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 834.82
+  - 853.38
+  claim: 最后那个劲儿要收在臀上，向心伸髋时不要膝盖往前顶。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0225
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 894.82
+  - 920.56
+  claim: 所有俯身动作都要构建腹内压，不是绷着劲儿就行，要想象有人要打你的腹，把气吸到腹腔、膈肌下降、关闭下气门，形成充满气压得很紧的瓶子。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0226
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 920.56
+  - 931.36
+  claim: 腹内压会让腰椎很稳、刚性很强；如果放松状态下光想屁股不管核心，小重量弯腰去拿也可能闪到腰。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0227
+  blogger: 凯圣王
+  video: BV1xw3B61EUg
+  ts:
+  - 938.74
+  - 951.18
+  claim: 力量举运动员的伸髋比较充分，是很好的髋铰链示范，到最后也是很好的骨盆后倾状态、非常紧。
+  type: anecdote
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0228
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 0.0
+  - 7.24
+  claim: 练臀绕不开单腿训练动作，它能把下臀拉到最长。
+  type: principle
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0229
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 7.24
+  - 10.27
+  claim: 刚开始练不推荐把单腿动作练到力竭。
+  type: error
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0230
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 27.97
+  - 35.62
+  claim: 练臀时伸髋特别推荐罗马尼亚硬拉和臀冲，这两个动作全面且能上大强度。
+  type: method
+  exercises:
+  - romanian_deadlift
+  - hip_thrust
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0231
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 35.62
+  - 40.66
+  claim: 每次训练里要么安排保加利亚蹲，要么安排单腿硬拉。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0232
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 92.18
+  - 101.14
+  claim: 臀中臀小肌在单腿站立时的主要功能不是主动外展髋关节，而是防止对侧骨盆下坠。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0233
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 101.14
+  - 113.56
+  claim: 单腿支撑髋屈伸动作主要练到臀中肌和臀小肌的功能。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0234
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 113.56
+  - 119.8
+  claim: 在不稳定状态下做单腿动作能更好地激活臀中臀小肌。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0235
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 142.78
+  - 148.98
+  claim: 保加利亚蹲优先于箭步蹲，因为箭步蹲相对更稳定，保加利亚蹲更不稳。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0236
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 156.12
+  - 182.48
+  claim: 步伐越大屈髋越多、足背屈释放越少，后侧发力更多；步伐越小屈膝角度越大、屈髋越少，股四头肌参与更多。
+  type: principle
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0237
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 186.19
+  - 207.78
+  claim: 想让臀更翘的姐妹，步伐可以适当往前一点，但要给身体前倾留出一定量。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0238
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 227.76
+  - 238.62
+  claim: 保加利亚蹲推荐拿一个哑铃，因为前期要的就是不稳。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0239
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 257.4
+  - 263.69
+  claim: 后腿不要发力，屈髋要更充分。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0240
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 268.26
+  - 278.04
+  claim: 控制好髋关节，骨盆保持中立位，不能前倾太多。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0241
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 281.56
+  - 289.44
+  claim: 要关注脚踩得死不死，脚不能内翻或外翻，每个脚趾要抓到地面。
+  type: self_check
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0242
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 316.03
+  - 326.26
+  claim: 下蹲时用后脚跟往地上踩，让力量通过后侧传到臀大肌，不要向前顶，向前顶会激活股四。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0243
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 334.16
+  - 339.28
+  claim: 搭在后边的那条腿要保持放松状态。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0244
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 345.16
+  - 362.3
+  claim: 控制好髋关节、骨盆不前倾、核心收紧，臀主动收紧，髋关节收紧就无法前倾。
+  type: cue
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0245
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 368.24
+  - 383.14
+  claim: 刚开始练可以把保加利亚蹲放在臀冲和罗马尼亚硬拉前面，因为它不稳定，能帮助激活臀中臀小肌和神经。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  - hip_thrust
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0246
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 383.14
+  - 394.16
+  claim: 不稳定训练中神经参与更多，注意力更集中，之后做大重量训练时神经会被激活得更好。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0247
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 396.4
+  - 410.32
+  claim: 不推荐刚上来的姐妹把保加利亚蹲练到力竭，因为单腿不稳定且发力模式不熟，力竭会导致前后腿股四头肌参与过多。
+  type: error
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0248
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 410.32
+  - 416.12
+  claim: 拿一个能做十五六次的重量，做10到12次，留一定余量。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0249
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 419.56
+  - 430.7
+  claim: 呼吸方式：下的时候前半程匀速吸气，底部短暂闭气，上时压着气门匀速呼气。
+  type: method
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0250
+  blogger: 凯圣王
+  video: BV1vz4R6JEmr
+  ts:
+  - 430.7
+  - 436.9
+  claim: 该动作强度较小，尤其核心强度小，不用构建那么强的腹内压就能完成。
+  type: principle
+  exercises:
+  - bulgarian_split_squat
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0251
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 60.72
+  - 74.48
+  claim: 俯身哑铃训练如果练得好是非常全面的，也是绕不开的，能提高髋铰链、呼吸、核心、肩胛对位等能力。
+  type: principle
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0252
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 74.48
+  - 89.72
+  claim: 你觉得自由重量难，是因为它需求高；但把它练会并加入训练，整个身体功能性会更好，功能性越好能承载的训练强度越高，肌肉量就越大。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0253
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 102.13
+  - 124.1
+  claim: 做哑铃俯身划船常见问题是找不到背的感觉、腰的压力比较大，因为脚踩地上既要控制背又要收紧核心，不像固定器械有很多支点。
+  type: error
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0254
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 126.22
+  - 167.23
+  claim: 把屁股抵在墙上做划船，由于有了支点，腰的压力会比空着坐小很多。
+  type: method
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0255
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 130.23
+  - 148.45
+  claim: 靠墙划船的脚位：脚不能站得太往后（重心会往前跑），也不能太往前（后侧会被拉得非常长），基本是脚跟墙差不多一个脚的距离，两脚中间隔半个拳宽。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0256
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 149.29
+  - 157.39
+  claim: 如果腰的力量或呼吸比较差，可以稍微再往前站个一拳的距离。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0257
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 175.18
+  - 184.24
+  claim: 俯身哑铃划船坐起来时腰跟着动、太费劲，又找不到背阔，也分不清练上背还是下背，是常见错误。
+  type: error
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0258
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 188.1
+  - 215.91
+  claim: 动作要做出四个感觉但连在一起做，有顺序：第一步启动时让大臂向后压（肩伸），压到将近贴近膝盖的程度。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0259
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 215.91
+  - 227.81
+  claim: 压到贴近膝盖后肘夹紧，同时把整个大臂向上抬，靠肘把大臂向上抬。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0260
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 227.81
+  - 244.54
+  claim: 抬大臂的同时肩要跟着肘同时向后移动；很多兄弟在大臂上抬过程中肩往前移动，这样练不到背阔，背阔反而被拉长。
+  type: error
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0261
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 260.24
+  - 287.87
+  claim: 起的过程中可以顺势让身体起来一点点，不是挺胸，而是用髋让身体起来一点点，目的是让肩在身体后侧往下降，完成收紧。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0262
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 288.99
+  - 306.8
+  claim: 离心时不要跨松出去，背阔收紧后仍把劲放在背阔上夹紧，大臂保持夹紧状态，用背阔把胳膊推出去，推到感觉背阔被拉长的位置。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0263
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 306.8
+  - 314.08
+  claim: 离心推出去时不能胸椎屈曲全放松，上背还是要保持一定张力。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0264
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 339.84
+  - 347.26
+  claim: 最后肩还要再往下降一点，腰不要起来太多。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0265
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 347.26
+  - 355.57
+  claim: 出去的时候不要放松，要用背阔把它推出去。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0266
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 362.17
+  - 365.73
+  claim: 这个动作什么器械都不要，在家都可以练。
+  type: anecdote
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0267
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 375.52
+  - 385.71
+  claim: 如果上来做俯身杠铃划船觉得危险，可以拿这个动作去学习，甚至可视为杠铃划船的降阶，会安全很多。
+  type: method
+  exercises:
+  - barbell_row
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0268
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 387.67
+  - 401.78
+  claim: 做这个动作时核心还是要保持瓦式呼吸，让核心产生刚性，不是靠在墙上核心就可以放松。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0269
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 401.78
+  - 417.83
+  claim: 起下靠髋关节，能带到一些髋铰链，但不要起的幅度太大，比如直接从低角度起到很高，那样就没什么抗阻了。
+  type: error
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0270
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 417.83
+  - 431.92
+  claim: 要在大臂提上来的过程中起身，不说将近90度，但不能起来太多，起来的幅度够用就行，不能大臂还没提身子就到很高了。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0271
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 438.37
+  - 448.49
+  claim: 离心时可以稍微释放一点胸椎曲度，向心时找一个肩从身体后侧下降的感觉。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0272
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 448.49
+  - 466.2
+  claim: 这个动作不但能练到呼吸，对胸椎活动度也有帮助；如果能找到肩在身体后侧下降的感觉，对背阔内侧会变得非常好。
+  type: principle
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0273
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 466.2
+  - 477.09
+  claim: 很多人做下拉时手往下拉、肩就提起来了，正确做法是拉的过程当中让肩胛还是向下滑行。
+  type: error
+  exercises:
+  - lat_pulldown
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0274
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 477.09
+  - 482.03
+  claim: 哪怕只做一个很简单的引体向上，只要肩胛向下滑行，背阔内侧其实都会比较好。
+  type: cue
+  exercises:
+  - pull_up
+  - chin_up
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0275
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 484.65
+  - 497.09
+  claim: 想把背阔内侧或外侧练出来是一个表象，真正要搞定的是胸椎曲度和肩胛功能。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0276
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 499.57
+  - 513.0
+  claim: 在家没有哑铃时，可以把弹力带套在脚上踩着，徒手做这个动作，很容易找到感觉。
+  type: method
+  exercises:
+  - band_pull_apart
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0277
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 513.0
+  - 519.89
+  claim: 如果拿杠铃、脚踩地上、后边不靠去做，腰的压力一下就会特别大。
+  type: error
+  exercises:
+  - barbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0278
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 519.89
+  - 542.68
+  claim: 推荐进阶路径：没有基础时先做弹力带靠墙划船，再过渡到哑铃，再过渡到不靠的哑铃，然后再过渡到杠铃划船。
+  type: method
+  exercises:
+  - barbell_row
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0279
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 546.84
+  - 551.65
+  claim: 这个动作其实能上很大重量，建议做12次一组。
+  type: method
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0280
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 554.19
+  - 562.51
+  claim: 做的时候从上面看收紧，肩带在身体后侧下降，能感觉到挤压。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0281
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 563.71
+  - 567.91
+  claim: 身体起来太多就没有什么意义了，起来够用就行。
+  type: error
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0282
+  blogger: 凯圣王
+  video: BV1zoaw69Eys
+  ts:
+  - 568.28
+  - 573.64
+  claim: 头不要过分仰也不要过分低，中等视线就好。
+  type: cue
+  exercises:
+  - dumbbell_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0283
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 7.14
+  - 26.81
+  claim: 侧平举比推举更难掌握，需要关注肩胛运动、手腕到大臂的旋转角度、向心离心、借力与重量选择等细节。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0284
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 70.92
+  - 88.7
+  claim: 做侧平举时不要刻意沉肩，沉肩会限制胸锁关节活动范围，导致胳膊抬不起来。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0285
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 92.1
+  - 109.21
+  claim: 侧平举时肩胛既不能使劲下沉也不能玩命耸肩，正确表达是肩胛上回旋。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0286
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 116.31
+  - 133.7
+  claim: 肩胛上回旋的肌肉群是斜方肌和前锯肌，只要表达好上回旋，上斜方肌一定会参与，想让斜方肌完全不参与不现实。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0287
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 135.04
+  - 162.04
+  claim: 耸肩会激活肩胛提肌，而肩胛提肌是下回旋肌肉群之一，会拉着肩胛做下回旋，导致上回旋表达不充分。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0288
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 170.61
+  - 200.13
+  claim: 侧平举的肩胛口令应是想象肩胛做上回旋，不用管沉肩还是耸肩，只要肩胛能很好上回旋并贴合胸廓即可。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0289
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 200.13
+  - 225.19
+  claim: 如果上回旋受限或前锯肌无力，导致上回旋表达不充分或溜肩，做侧平举时肩部可能产生不适，这不代表动作不行，而是肩胛需要开发。
+  type: self_check
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0290
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 235.9
+  - 274.92
+  claim: 握法上可以靠下侧握一点，让大拇指一侧多让出来一些，手腕不能仰，应微微向里扣并固定好。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0291
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 276.02
+  - 296.49
+  claim: 手要攥住但不要特别使劲往里捏，否则小臂会被激活，新手侧平举小臂容易酸就是因为能动的地方太多。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0292
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 302.24
+  - 336.65
+  claim: 做侧平举时肘不能掉下来，要把手腕固定好变成一个整体，用肘关节往上抬，因为三角肌中束最大功能是外展。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0293
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 336.65
+  - 359.8
+  claim: 侧平举到达状态时肘起码要跟手腕平行，一般平行地面或略高略低一点，在舒适度范围内即可，再高意义不大。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0294
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 361.84
+  - 373.7
+  claim: 侧平举起来时不要过分把大臂往内旋，内旋容易带动肩胛前倾，使肩峰下空隙变少，增加肩峰撞击风险。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0295
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 375.64
+  - 448.9
+  claim: 肩胛骨前倾加肱骨内旋时，肱骨大结节会与喙肩韧带产生撞击，这也是肩峰撞击的一种。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0296
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 448.9
+  - 469.16
+  claim: 不推荐刚开始训练的兄弟采用内旋技巧做侧平举，哪怕发力感很好，也应中规中矩地做。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0297
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 469.16
+  - 492.33
+  claim: 侧平举轨迹应是弧形，可以想象把手往对侧够或够两边的墙，给一个向外侧的力量。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0298
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 492.33
+  - 525.68
+  claim: 准确的指令能给身体很好的暗示，带动身体做动作，就像骑车入弯前看弯心、弯心时看出口，看哪车就去哪。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0299
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 531.98
+  - 558.03
+  claim: 如果把侧平举想象成往上走，肩胛容易做出耸肩状态，还可能肘关节和小臂不在一个平面、过分借力、垫脚尖、屈膝等。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0300
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 578.22
+  - 608.72
+  claim: 做侧平举不要贴着腿，适当在某个角度启动可以过滤冈上肌，让三角肌产生更大张力，但适合训练水平较高的人。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0301
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 608.72
+  - 645.58
+  claim: 刚开始训练推荐到底部时哑铃尽量不碰腿，做全程重新募集，每次都能让三角肌很好参与。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0302
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 645.58
+  - 670.43
+  claim: 侧平举下放到底部不能完全垮掉，要预设张力，基本离腿一厘米左右即可，全程保持对抗。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0303
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 670.43
+  - 686.16
+  claim: 很多兄弟做侧平举下来时到底部完全垮掉、上去时甩上去，虽然行程和重量有了，但效率不高、训练强度不大。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0304
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 691.18
+  - 711.44
+  claim: 侧平举可以借力，只要不断掉张力即可，关键是让肌肉在张力下做工的时长足够。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0305
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 762.51
+  - 798.48
+  claim: 低效的借力是把重量甩上去、离心时掉下来，肌肉在张力下基本没有时间；有效的借力是启动时稍微借力，向心后半程和离心仍主动抗阻。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0306
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 817.92
+  - 880.39
+  claim: 推举和侧平举完全不是一个动作：推举是下降阻力，有肱三头肌和胸大肌帮忙，能上大重量；侧平举是上升阻力，顶峰收缩时阻力臂很长，肱三头和胸大肌参与可忽略。
+  type: principle
+  exercises:
+  - lateral_raise
+  - overhead_press
+  - dumbbell_shoulder_press
+  - machine_shoulder_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0307
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 883.03
+  - 930.94
+  claim: 训练计划设计不能只考虑肌肉刺激和疲劳，还要考虑关节疲劳，侧平举对肘关节没有压力，推举对肘关节有压力。
+  type: principle
+  exercises:
+  - lateral_raise
+  - overhead_press
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0308
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 938.55
+  - 967.05
+  claim: 所有上升阻力的动作对新手都较难，因为肌肉没有很好目击感，如杠铃划船、侧平举、罗马尼亚硬拉等。
+  type: principle
+  exercises:
+  - lateral_raise
+  - barbell_row
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0309
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 975.42
+  - 1028.08
+  claim: 侧平举时身体不是完全站直，手臂也不是完全在侧面，应顺着肩胛面表达，身体可微微前倾，但肩不能含过去也不能过分挺胸，保持中立位。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0310
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1028.08
+  - 1041.08
+  claim: 侧平举时不用把整个身体吸满气，只需让上胸上边胸腔吸满气，肋稍微往下降一点，收住核心即可。
+  type: cue
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0311
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1059.78
+  - 1072.86
+  claim: 侧平举时过分含胸会激活斜方肌特别多，过分挺胸会影响肩胛上回旋，中立位即可。
+  type: error
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0312
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1076.6
+  - 1097.58
+  claim: 如果一个人在店里侧平举能做得特别好，一定不是新手，这个动作很难，刚开始做不好不要着急上重量。
+  type: anecdote
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0313
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1097.58
+  - 1133.09
+  claim: 刚开始练侧平举推荐训练次数范围在20次左右，可以刷熟练度，且侧平举阻力臂很长，重量大做不了，对冈上肌和肩袖要求也高。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0314
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1133.09
+  - 1165.48
+  claim: 侧平举顶峰收缩时哑铃形成很长的阻力臂，肩袖在杠杆另一端形成动力臂，肩袖需要用力压制杠杆另一端才不会出现肩峰撞击。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0315
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1152.4
+  - 1165.48
+  claim: 如果肩胛下肌上部、冈上肌和冈下肌无力，肩袖拉不住肱骨头，肱骨头会向上跑，出现肩峰撞击。
+  type: self_check
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0316
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1168.88
+  - 1177.3
+  claim: 上来就做六组八次组的侧平举非常难控制，即使训练者很壮也一样。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0317
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1186.2
+  - 1219.38
+  claim: 肌肉募集原则是由小到大，拿小重量做侧平举不会募集到所有三角肌运动单元，充血也不代表增肌。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0318
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1219.38
+  - 1246.8
+  claim: 小重量做侧平举在训练里并非没有意义，还要考虑是否力竭，力竭那两下也能募集足够多的白肌纤维和运动单元，机械张力和代谢压力不少。
+  type: principle
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: cites_research
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0319
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1246.8
+  - 1262.02
+  claim: 学习阶段需要刷次数，强度不高，但正式组如果能做一个20次到力竭的侧平举，对增肌绝对有效。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0320
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1262.02
+  - 1289.88
+  claim: 机械张力可以跟自己比，比如原来20次力竭用2kg，两周后24次力竭用3kg，有效重量提高，肌肉没有理由不变大，前提是质量够、张力下时长够。
+  type: self_check
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0321
+  blogger: 凯圣王
+  video: BV1vFgQ6hEWH
+  ts:
+  - 1289.88
+  - 1324.4
+  claim: 前期不让训练者在这些动作中做到力竭，一是疲劳管理不好、不好恢复，二是能循环更快、恢复更快、刷更多次数、熟练度和神经募集更好。
+  type: method
+  exercises:
+  - lateral_raise
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0322
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 53.88
+  - 65.04
+  claim: 罗马尼亚硬拉可以帮助建立髋铰链，是很多想练臀大肌或腘绳肌人群很好的塑形动作。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0323
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 65.04
+  - 82.02
+  claim: 罗马尼亚硬拉是学习硬拉的必经之路；如果直接做硬拉，缺乏核心刚性、上背刚性和髋铰链调动能力，风险系数会很高。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  - deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0324
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 82.02
+  - 92.96
+  claim: 学会罗马尼亚硬拉并通过一段时间训练，对整个硬拉和后侧链都有很大好处。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  - deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0325
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 102.36
+  - 115.1
+  claim: 以起杠后的直立姿势作为起始位置，杠铃下放为离心阶段；离心过程中髋关节屈曲、膝关节屈曲，而踝关节基本不动。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0326
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 115.1
+  - 123.16
+  claim: 因为踝关节没有背屈和跖屈，硬拉屈膝过程中膝盖基本不会向前或向后移动。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0327
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 123.16
+  - 129.1
+  claim: 杠铃拉起过程为向心阶段，主要是髋关节和膝关节伸展。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0328
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 134.41
+  - 147.05
+  claim: 落杆前用腹式呼吸吸满气体，使膈肌下降、腹肌绷紧，提高腹压和腰椎稳定性。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0329
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 147.05
+  - 160.02
+  claim: 吸气一定要用腹式呼吸；如果用胸式呼吸，气吸到肺上方，膈肌基本不会下降，腹压也不会明显提高。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0330
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 161.8
+  - 176.83
+  claim: 腹式呼吸吸满气并腹部绷紧后，保持脊柱正常曲度，即骨盆和胸腔平行状态下憋气，再向下离心、向上向心，站起后呼气。
+  type: method
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0331
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 188.55
+  - 204.33
+  claim: 髋关节离心过程中，臀大肌、臀中肌、半腱肌、半膜肌、股二头肌、长头大收肌、长收肌一起离心收缩，控制髋屈速度。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0332
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 204.33
+  - 210.45
+  claim: 向心阶段，臀大肌、臀中肌、腘绳肌等髋关节相关肌肉作为主要原动肌向心收缩，帮助完成伸髋。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0333
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 210.45
+  - 226.98
+  claim: 离心阶段臀大肌和臀中肌也在控制髋关节，避免内收内旋；如果功能不足，会被过度拉长，出现髋关节内收内旋，也就是膝盖内扣。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0334
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 226.98
+  - 235.39
+  claim: 膝盖内扣时虽然膝盖会有异常应力，但更明显的是极限弯曲和内旋位下髋关节前侧损伤风险更大。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0335
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 235.39
+  - 243.84
+  claim: 如果向心阶段髂腰肌短缩导致伸髋受限，会通过腰椎伸展代偿，增加腰椎压力。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0336
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 243.84
+  - 255.31
+  claim: 杠铃下落离心过程中，股中间肌、股内侧肌、股外侧肌和股直肌离心收缩，控制膝关节屈曲速度。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0337
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 255.31
+  - 259.98
+  claim: 向心阶段股四头肌向心收缩进行伸膝。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: FLAGGED
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0338
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 259.98
+  - 269.64
+  claim: 罗马尼亚硬拉过程中髋关节屈伸角度远大于膝关节屈伸角度，所以髋关节部分肌肉收缩明显大于膝关节。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0339
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 269.64
+  - 284.89
+  claim: 腘绳肌在离心过程中髋关节侧拉长、膝关节侧缩短，整体长度变化没有臀肌大，因此动作感受不会像臀肌那么强烈。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0340
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 289.45
+  - 302.12
+  claim: 髋关节稳定主要来自臀中肌、臀小肌和更深层的髋袖肌群，包括闭孔外肌、梨状肌、上孖肌、闭孔内肌、下孖肌和股方肌。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0341
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 308.15
+  - 319.07
+  claim: 如果后侧深层髋袖肌群在离心阶段不能很好离心收缩，股骨头会前移，导致前侧盂唇撞击，腹股沟会不舒服。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0342
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 320.37
+  - 331.78
+  claim: 脊柱稳定性一部分来自膈肌和腹壁共同收缩建立的腹压，但要把负压转化为核心稳定性，还需要背阔肌和竖脊肌收缩辅助。
+  type: principle
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0343
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 333.44
+  - 344.57
+  claim: 杠铃下落离心阶段需要背阔肌收缩使肩伸，让杠铃贴近小腿，以减少杠铃对腰椎的应力。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0344
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 344.57
+  - 355.14
+  claim: 如果背阔肌不收缩，杠铃会远离小腿，杠铃到腰椎的阻力增大，相同重量下腰椎承受的剪切力也更大。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0345
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 355.14
+  - 370.33
+  claim: 罗马尼亚硬拉全程需要竖脊肌静力性收缩，保障胸廓和骨盆对位对线，维持脊柱正常生理曲度。
+  type: cue
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''
+- id: ksw-0346
+  blogger: 凯圣王
+  video: BV1qF6wBaEWu
+  ts:
+  - 370.33
+  - 389.36
+  claim: 如果竖脊肌变成离心收缩，脊柱后方韧带因腰椎屈曲被拉紧，被动张力提高，虽然能提高训练重量，但胸廓和骨盆不对位、腰椎屈曲会让腹压对椎间盘形成向后冲击，增加椎间盘损伤风险。
+  type: error
+  exercises:
+  - romanian_deadlift
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: consensus
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+  reviewed:
+    by: ''
+    date: ''
+    against: ''

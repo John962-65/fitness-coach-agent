@@ -1,0 +1,25 @@
+id: cable_lateral_raise
+name: 绳索侧平举
+aliases: [龙门架侧平举]
+pattern: isolation
+primary: ['side_delt']
+secondary: []
+equipment: ['cable']
+location: ['gym']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['lateral_raise']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

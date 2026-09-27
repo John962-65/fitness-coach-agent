@@ -224,6 +224,12 @@ class Database:
             (user_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def all_exercise_states(self, user_id: str) -> list[dict]:
+        """全部动作状态行（含仅自动追踪的），供槽位式计划生成用"""
+        rows = self.conn.execute(
+            "SELECT * FROM user_exercise WHERE user_id=?", (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_user_exercise(self, user_id: str, exercise_id: str) -> dict | None:
         row = self.conn.execute(
             "SELECT * FROM user_exercise WHERE user_id=? AND exercise_id=?",

@@ -1,0 +1,25 @@
+id: incline_push_up
+name: 上斜俯卧撑
+aliases: [高位俯卧撑]
+pattern: h_push
+primary: ['chest']
+secondary: ['triceps']
+equipment: ['bodyweight']
+location: ['home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['push_up', 'knee_push_up']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

@@ -330,6 +330,12 @@ _PROMISE_RE = re.compile(
     r"[^，。！？!?\n]{0,8}(?:瘦|减|掉|增重|增肌|长)\s*\d+(?:\.\d+)?\s*(?:斤|公斤|千克|kg)"
 )
 
+# 安全跟进的确定性自动关闭（S3 残留：LLM 不主动调 resolve_pain_flag）。
+# 只在"医疗来源 + 明确无恙结论"同时出现、且整句不是疑问时才关——方向从紧。
+_MED_SOURCE_RE = re.compile(r"医院|医生|心电图|体检|检查过|拍片|核磁|CT")
+_MED_CLEAR_RE = re.compile(r"没事|无碍|没有问题|没问题|正常|休息[好一]+段|可以.*再练")
+_MED_QUESTION_RE = re.compile(r"[？?]|吗[。！.？]?$|要不要|是不是该")
+
 # A6 输出侧护栏：未落库却声称计划已改
 _PLAN_CLAIM_STRONG = re.compile(r"计划[^。！？\n]{0,6}已(?:经)?(?:更新|调整|生效|改好)")
 _PLAN_CLAIM_SOFT = re.compile(r"(?:已落库|已更新|已调整|已生效|改好了|加好了|调好了|搞定)")
@@ -416,7 +422,8 @@ class CoachAgent:
             if plan:
                 return "建档已完成，当前计划：\n" + plan_to_text(plan)
         self.profile["onboarding_done"] = True
-        plan = generate_plan(self.profile)
+        plan = generate_plan(self.profile,
+                             exercise_states=self.db.all_exercise_states(self.user_id))
         # G3：定级是系统字段，由代码回写，保证档案与计划一致
         self.profile.setdefault("experience", {})["level"] = plan["level"]
         self.db.save_profile(self.user_id, self.profile)
@@ -456,10 +463,35 @@ class CoachAgent:
             reply = "（教练这边出了点小状况，刚才那句没接住——换个说法再说一次？）"
         reply = _sanitize_output(reply)
         reply = self._guard_plan_claim(reply)
+        reply = self._maybe_auto_resolve_flags(user_input, reply)
 
         self.messages.append({"role": "assistant", "content": reply})
         self.db.add_message(self.user_id, "assistant", reply)
         return reply
+
+    def _maybe_auto_resolve_flags(self, user_input: str, reply: str) -> str:
+        """用户带回医疗方"无恙"结论且本轮没调 resolve_pain_flag 时，
+        代码直接关闭安全记录（S3 确定性兜底；话术明确告知用户）。"""
+        flags = self.profile.get("conditions", {}).get("pain_flags", [])
+        open_flags = [f for f in flags
+                      if isinstance(f, dict) and f.get("status") == "open"]
+        if not open_flags or "resolve_pain_flag" in self._turn_tools:
+            return reply
+        if not (_MED_SOURCE_RE.search(user_input)
+                and _MED_CLEAR_RE.search(user_input)
+                and not _MED_QUESTION_RE.search(user_input)):
+            return reply
+        now = datetime.now().isoformat(timespec="seconds")
+        for f in open_flags:
+            f["status"] = "resolved"
+            f["resolved_at"] = now
+            f["note"] = f"自动关闭依据（用户原话）：{user_input[:80]}"
+        self.db.save_profile(self.user_id, self.profile)
+        self._refresh_system_prompt()
+        _log.warning("安全记录已按用户带回的医疗结论自动关闭: %s", user_input[:50])
+        return reply + (
+            "\n\n（我已把你带回的医生结论记录在案，之前的安全跟进已关闭。"
+            "如果症状再有反复，随时告诉我，我们立刻重新记录。）")
 
     def _record_pain_flag(self, text: str, hit: SafetyHit) -> None:
         flags = self.profile.setdefault("conditions", {}).setdefault(
@@ -579,7 +611,23 @@ class CoachAgent:
             return "工具参数解析失败（JSON 格式错误），请重新组织参数再调用一次。"
 
         if name == "load_knowledge":
-            return self.kb.load(args.get("path", ""))
+            result = self.kb.load(args.get("path", ""))
+            # 9.4 检索质量保障：加载日志，事后审计"找得准不准"
+            try:
+                last_user = next(
+                    (m["content"] for m in reversed(self.messages)
+                     if m.get("role") == "user"), "")
+                with (self.db.path.parent / "knowledge_loads.jsonl").open(
+                        "a", encoding="utf-8") as f:
+                    f.write(json.dumps({
+                        "at": datetime.now().isoformat(timespec="seconds"),
+                        "user_id": self.user_id,
+                        "path": args.get("path", ""),
+                        "question": last_user[:60],
+                    }, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+            return result
 
         if name == "update_profile":
             patch = args.get("patch", {})

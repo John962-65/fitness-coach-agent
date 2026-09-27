@@ -1,3 +1,15 @@
 openai>=1.30.0
 python-dotenv>=1.0.0
 pyyaml>=6.0
+
+# ---- R4 一手素材流水线（tools/fetch_transcript.py，可选）----
+yt-dlp>=2026.8          # B 站视频/字幕（2022 版提取器已失效，必须新版）
+faster-whisper>=1.2     # 无字幕时的本地中文转写（CPU int8 即可）
+requests                # B 站字幕接口 / 扫码登录
+qrcode                  # B 站扫码登录二维码
+
+# 抖音拉取走 f2（重依赖，单独装）：
+#   pip3 install f2
+# 视频反馈线 B（coach/vision.py，可选）：
+#   pip3 install mediapipe opencv-python-headless
+#   模型文件下到 data/models/pose_landmarker_lite.task（见 vision.py 报错提示）

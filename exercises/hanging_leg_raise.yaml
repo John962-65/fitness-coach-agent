@@ -1,0 +1,25 @@
+id: hanging_leg_raise
+name: 悬垂举腿
+aliases: [吊环举腿, 引体架举腿]
+pattern: core
+primary: ['core']
+secondary: ['hip_flexors']
+equipment: ['bodyweight']
+location: ['gym', 'home']
+level_min: intermediate
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 1, wrist: 0}
+fatigue: medium
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['cable_crunch', 'plank']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

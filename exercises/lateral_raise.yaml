@@ -5,7 +5,7 @@ pattern: isolation
 primary: [side_delt]
 secondary: []
 equipment: [dumbbell]
-location: [gym]
+location: [gym, home]
 level_min: beginner
 skill: low
 laterality: bilateral

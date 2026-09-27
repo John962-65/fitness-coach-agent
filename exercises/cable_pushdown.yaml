@@ -1,0 +1,25 @@
+id: cable_pushdown
+name: 绳索下压
+aliases: [三头下压, 屈臂下压]
+pattern: isolation
+primary: ['triceps']
+secondary: []
+equipment: ['cable']
+location: ['gym']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 1}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['skull_crusher', 'close_grip_bench_press']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

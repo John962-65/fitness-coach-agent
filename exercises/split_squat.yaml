@@ -1,0 +1,25 @@
+id: split_squat
+name: 剪蹲
+aliases: [静态弓步蹲, 静态分腿蹲]
+pattern: lunge
+primary: ['quads', 'glutes']
+secondary: ['adductors']
+equipment: ['bodyweight']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['walking_lunge', 'bulgarian_split_squat']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

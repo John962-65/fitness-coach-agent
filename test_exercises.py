@@ -17,13 +17,31 @@ def test_library_loaded_nonempty():
 
 
 def test_plan_template_exercises_all_in_library():
-    """现有计划模板用到的动作必须全部入库（R2 路线图：模板约 25 个动作）"""
-    from coach.plan import (BUSY_FULL, FULL_BODY_A, FULL_BODY_B, PPL,
-                            PPL_ADVANCED)
-    names = set()
-    for tpl in (FULL_BODY_A, FULL_BODY_B, BUSY_FULL):
-        names.update(e["name"] for e in tpl)
-    for day in (*PPL.values(), *PPL_ADVANCED.values()):
-        names.update(e["name"] for e in day)
-    missing = [n for n in sorted(names) if not library.normalize(n)[0]]
+    """槽位模板的 default 动作必须全部入库（R5：槽位式生成）"""
+    from coach.plan import (BUSY_SLOTS, FULL_BODY_A, FULL_BODY_B,
+                            PPL_ADVANCED_SLOTS, PPL_SLOTS)
+    slots = [*BUSY_SLOTS, *FULL_BODY_A, *FULL_BODY_B,
+             *[s for day in PPL_SLOTS.values() for s in day],
+             *[s for day in PPL_ADVANCED_SLOTS.values() for s in day]]
+    missing = [s["default"] for s in slots if not library.get(s["default"])]
     assert missing == []
+
+
+def test_slot_defaults_match_pattern_and_primary():
+    """槽位 default 必须匹配槽位的 pattern（和 primary 约束），防止模板与库漂移"""
+    from coach.plan import (BUSY_SLOTS, FULL_BODY_A, FULL_BODY_B,
+                            PPL_ADVANCED_SLOTS, PPL_SLOTS)
+    slots = [*BUSY_SLOTS, *FULL_BODY_A, *FULL_BODY_B,
+             *[s for day in PPL_SLOTS.values() for s in day],
+             *[s for day in PPL_ADVANCED_SLOTS.values() for s in day]]
+    bad = []
+    for s in slots:
+        ex = library.get(s["default"])
+        if ex is None:
+            continue
+        muscles = set(ex.get("primary") or []) | set(ex.get("secondary") or [])
+        if ex.get("pattern") != s["pattern"]:
+            bad.append(f"{s['default']}: pattern {ex.get('pattern')} != {s['pattern']}")
+        if s.get("primary") and not set(s["primary"]) & muscles:
+            bad.append(f"{s['default']}: primary {s['primary']} 不匹配")
+    assert bad == []

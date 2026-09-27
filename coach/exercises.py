@@ -39,6 +39,10 @@ class ExerciseLibrary:
     def __len__(self) -> int:
         return len(self._by_id)
 
+    def all(self) -> list[dict]:
+        """全部动作（按 id 排序，保证确定性）"""
+        return [self._by_id[k] for k in sorted(self._by_id)]
+
     def get(self, ex_id: str) -> dict | None:
         return self._by_id.get(ex_id)
 

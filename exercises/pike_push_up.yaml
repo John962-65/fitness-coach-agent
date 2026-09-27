@@ -1,0 +1,25 @@
+id: pike_push_up
+name: 倒V俯卧撑
+aliases: [派克俯卧撑, 折刀俯卧撑]
+pattern: v_push
+primary: ['front_delt', 'side_delt']
+secondary: ['triceps']
+equipment: ['bodyweight']
+location: ['home']
+level_min: intermediate
+skill: high
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 2, wrist: 0}
+fatigue: medium
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['dumbbell_shoulder_press']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

@@ -1,0 +1,25 @@
+id: t_bar_row
+name: T杠划船
+aliases: [T字划船]
+pattern: h_pull
+primary: ['lats', 'mid_back']
+secondary: ['biceps', 'erectors']
+equipment: ['barbell']
+location: ['gym']
+level_min: intermediate
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 2, shoulder: 0, wrist: 1}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: []
+progressions: []
+substitutes: ['barbell_row', 'chest_supported_row']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending

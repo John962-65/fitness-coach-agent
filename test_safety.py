@@ -152,3 +152,38 @@ def test_soft_note_soft_red():
 def test_response_templates():
     assert "120" in EMERGENCY_RESPONSE and "诊断" in EMERGENCY_RESPONSE
     assert "冰敷" in INJURY_RESPONSE and "诊断" in INJURY_RESPONSE
+
+
+# ---- S3 确定性兜底：用户带回医疗"无恙"结论时自动关闭安全记录 ----
+
+def _agent(uid="safety_auto"):
+    import tempfile
+    from pathlib import Path
+    from coach.agent import CoachAgent
+    return CoachAgent(user_id=uid, db_path=Path(tempfile.mkdtemp()) / "t.db")
+
+
+def test_auto_resolve_closes_flag_on_medical_clearance():
+    a = _agent()
+    a.chat("我练的时候胸口痛")  # block：记录 pain_flag
+    assert a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
+    a.chat("去医院查了，心电图没事，医生说就是太累，休息好再练")
+    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
+    assert all(f["status"] == "resolved" for f in flags)
+    assert "自动关闭" in flags[0]["note"]
+
+
+def test_auto_resolve_not_triggered_by_question():
+    a = _agent()
+    a.chat("我练的时候胸口痛")
+    a.chat("要不要去医院检查？医生说没事吗")
+    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
+    assert any(f["status"] == "open" for f in flags)
+
+
+def test_auto_resolve_not_triggered_without_medical_source():
+    a = _agent()
+    a.chat("我练的时候胸口痛")
+    a.chat("没事了，我感觉好了")
+    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
+    assert any(f["status"] == "open" for f in flags)

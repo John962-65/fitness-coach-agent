@@ -1,0 +1,25 @@
+id: bodyweight_squat
+name: 徒手深蹲
+aliases: [自重深蹲, 空蹲]
+pattern: squat
+primary: ['quads', 'glutes']
+secondary: ['adductors']
+equipment: ['bodyweight']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['goblet_squat', 'barbell_back_squat']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending
