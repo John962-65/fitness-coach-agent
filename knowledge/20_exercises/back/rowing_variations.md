@@ -1,6 +1,7 @@
 ---
 topic: 划船类动作变式
 source: [谭成义-背部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶, 老炮]
 triggers: [划船, 坐姿划船, 杠铃划船, T杆划船, 背部厚度]

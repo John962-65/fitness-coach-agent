@@ -1,6 +1,7 @@
 ---
 topic: 皮质醇管理
 source: [陈石-皮质醇]
+provenance: third_party_distill
 goals: [减脂, 恢复, 代谢修复]
 levels: [新手, 进阶, 老炮]
 triggers: [皮质醇, 压力, 焦虑, 失眠, 熬夜, 肚子胖, 水肿, 又胖又肿, 代谢下降]

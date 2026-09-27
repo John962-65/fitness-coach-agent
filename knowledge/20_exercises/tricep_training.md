@@ -1,6 +1,7 @@
 ---
 topic: 三头训练
 source: [谭成义-手臂教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶]
 triggers: [三头, 肱三头肌, 臂屈伸, 绳索下压, 手臂后侧]

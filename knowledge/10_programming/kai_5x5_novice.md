@@ -1,6 +1,7 @@
 ---
 topic: 凯圣王 5×5 新手计划
 source: [凯圣王-新手福利系列]
+provenance: general
 goals: [力量, 增肌]
 levels: [新手]
 triggers: [5x5, 新手计划, 力量举, 线性进阶, 深蹲, 硬拉, 卧推]

@@ -1,6 +1,7 @@
 ---
 topic: 深蹲技术细节
 source: [谭成义-腿部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 力量, 动作技术]
 levels: [新手, 进阶, 老炮]
 triggers: [深蹲, 杠铃深蹲, 腿部训练, 股四头肌, 臀部发力]

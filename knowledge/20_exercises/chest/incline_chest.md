@@ -1,6 +1,7 @@
 ---
 topic: 上胸训练方法
 source: [谭成义-胸部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶]
 triggers: [上胸, 上斜卧推, 上斜飞鸟, 胸肌上部, 锁骨下]

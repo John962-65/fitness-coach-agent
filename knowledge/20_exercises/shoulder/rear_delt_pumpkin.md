@@ -1,6 +1,7 @@
 ---
 topic: 后束训练（南瓜肩）
 source: [谭成义-肩部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [进阶, 老炮]
 triggers: [后束, 南瓜肩, 三角肌后束, 肩后束, 肩部立体感]

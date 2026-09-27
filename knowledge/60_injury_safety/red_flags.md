@@ -1,6 +1,7 @@
 ---
 topic: 安全红旗清单
 source: [运动医学通用共识, 设计书安全三条铁律]
+provenance: general
 goals: [安全]
 levels: [新手, 进阶, 老炮]
 triggers: [胸闷, 胸痛, 刺痛, 眩晕, 头晕, 呼吸困难, 麻木, 关节疼, 剧痛, 受伤, 心悸, 恶心, 酱油色尿]

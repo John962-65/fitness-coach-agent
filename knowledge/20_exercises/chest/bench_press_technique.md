@@ -1,6 +1,7 @@
 ---
 topic: 卧推技术细节
 source: [谭成义-胸部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 力量, 动作技术]
 levels: [新手, 进阶, 老炮]
 triggers: [卧推, 平板卧推, 上斜卧推, 胸肌训练, 胸部发力]

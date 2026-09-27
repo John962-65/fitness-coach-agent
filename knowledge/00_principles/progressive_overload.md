@@ -1,6 +1,7 @@
 ---
 topic: 渐进超负荷
 source: [凯圣王-周期化, 陈石-训练理念, 谭成义-动作技术]
+provenance: general
 goals: [增肌, 力量, 减脂, 塑形]
 levels: [新手, 进阶, 老炮]
 triggers: [渐进超负荷, 加重, 进步, 平台期, 突破, 训练强度, 容量]

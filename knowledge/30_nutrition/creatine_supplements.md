@@ -1,6 +1,7 @@
 ---
 topic: 补剂循证指南（肌酸/蛋白粉/其他）
 source: [循证文献整理, ISSN 国际运动营养学会立场]
+provenance: general
 goals: [增肌, 力量, 减脂]
 levels: [新手, 进阶, 老炮]
 triggers: [补剂, 肌酸, 蛋白粉, 支链氨基酸, BCAA, 氮泵, 谷氨酰胺, 要不要吃, 有用吗]

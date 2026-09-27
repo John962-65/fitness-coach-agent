@@ -1,0 +1,18 @@
+# 观点冲突登记（设计书 19.2 ⑥）
+#
+# 三位博主的观点一定会冲突（训练频率、力竭、减脂节奏……）。
+# 每条冲突写明：各方观点、各自成立的前提条件、循证裁决。
+# 裁决顺序见设计书 18.4：安全底线 > 循证共识划范围 > 范围内以用户数据为准 > 向用户说明。
+#
+# 条目 schema（示例）：
+# - id: conflict-0001
+#   topic: 减脂平台期首选手段
+#   positions:
+#     - {blogger: 陈石, claim: refeed 高碳日优先, claim_id: cs-00xx}
+#     - {blogger: 循证, claim: 先排查热量误差/重算 TDEE, evidence: consensus}
+#   precondition: 执行率已确认到位、周均体重连续 2-3 周不动
+#   resolution: 循证优先——先重算 TDEE 排掉执行误差，再考虑 refeed（已据此修正 fat_loss_plateau.md）
+#   status: resolved
+#
+# 当前：空（首个已知冲突"平台期手段排序"已在 R4 直接修正知识文件，待 claims 体系建成后回填登记）。
+[]

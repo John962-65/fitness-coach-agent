@@ -1,6 +1,7 @@
 ---
 topic: 三分化系列第 4 集：背部训练
 source: [凯圣王×谭成义-三分化合作系列, B 站视频整理]
+provenance: general
 goals: [增肌, 塑形, 背部训练]
 levels: [新手, 进阶]
 triggers: [背部训练, 划船, 下拉, 背阔肌, 拉日]

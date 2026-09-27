@@ -1,6 +1,7 @@
 ---
 topic: 能量平衡
 source: [陈石-减脂逻辑, 凯圣王-循证健身]
+provenance: general
 goals: [减脂, 增肌, 维持]
 levels: [新手, 进阶, 老炮]
 triggers: [热量, 卡路里, 能量平衡, 热量缺口, 热量盈余, TDEE, 基础代谢]

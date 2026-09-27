@@ -1,6 +1,7 @@
 ---
 topic: 宏量营养素策略
 source: [陈石-宏量营养素]
+provenance: third_party_distill
 goals: [减脂, 增肌, 维持]
 levels: [新手, 进阶, 老炮]
 triggers: [蛋白质, 碳水, 脂肪, 宏量营养素, 饮食计划, 吃什么, 吃多少]

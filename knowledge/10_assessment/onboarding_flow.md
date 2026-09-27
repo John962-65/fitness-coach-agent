@@ -1,6 +1,7 @@
 ---
 topic: Onboarding 评估定级流程
 source: [设计书第 6/10/11 章, 三家共识整合]
+provenance: general
 goals: [评估, 定级, 建档]
 levels: [新手]
 triggers: [新用户, 首次使用, 评估, 定级, 建档, 开始, 初次]

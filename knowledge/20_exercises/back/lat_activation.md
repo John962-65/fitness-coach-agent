@@ -1,6 +1,7 @@
 ---
 topic: 背阔肌发力模式
 source: [谭成义-背部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶]
 triggers: [背阔肌, 背部发力, 高位下拉, 划船, 引体向上, 背部没感觉, 手臂代偿]

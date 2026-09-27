@@ -1,6 +1,7 @@
 ---
 topic: 慢减脂协议
 source: [陈石-减脂逻辑]
+provenance: third_party_distill
 goals: [减脂]
 levels: [新手, 进阶, 老炮]
 triggers: [减脂, 减肥, 掉秤, 体重不掉, 平台期, 代谢适应, 快速减肥]

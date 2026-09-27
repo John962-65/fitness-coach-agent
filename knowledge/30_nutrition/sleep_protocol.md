@@ -1,6 +1,7 @@
 ---
 topic: 睡眠协议
 source: [陈石-睡眠]
+provenance: third_party_distill
 goals: [恢复, 减脂, 增肌, 健康]
 levels: [新手, 进阶, 老炮]
 triggers: [睡眠, 失眠, 熬夜, 睡不好, 恢复, 褪黑素, 睡眠质量]

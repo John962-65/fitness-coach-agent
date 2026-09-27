@@ -1,6 +1,7 @@
 ---
 topic: 三分化系列第 3 集：胸部训练
 source: [凯圣王×谭成义-三分化合作系列, B 站视频整理]
+provenance: general
 goals: [增肌, 塑形, 胸部训练]
 levels: [新手, 进阶]
 triggers: [胸部训练, 卧推, 上胸, 胸肌, 推日]

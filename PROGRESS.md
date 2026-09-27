@@ -346,3 +346,33 @@ cat knowledge/knowledge_gaps.log # 缺口日志
 
 
 
+
+
+---
+
+## 十一、2026-09-26 追加：R4 一手素材（知识库可信度）
+
+### 11.1 交付清单（17.3 已标注处置）
+
+| 项 | 内容 |
+|------|------|
+| provenance 补标 | 全部 40 个知识文件 front-matter 加 `provenance`：陈石营养 9 个 = `third_party_distill`，其余 31 个 = `general`；当前**无** transcript/article 一手来源 |
+| 博主点名纪律 | `knowledge.py` 解析 provenance、L2 索引每条标 `[来源:xxx]`、新增 `nameable_files`（当前为空）；系统提示第 11 条：只有一手来源才能点博主名，general 用教练自己的话——从机制上止住"把可能不准的话安在真人名下"（17.3 核心风险） |
+| 事实错误修正 | ①leptin×GLP-1 错误类比→澄清不同激素/受体通路 ②"20-25%"能量消耗与瘦素下降串号→去掉两处可疑精确数 ③卸载周三处口径统一为"重量约50%/RPE5-6/容量减半"（与 adjust.py 一致）④平台期把"重算 TDEE/排查热量误差"提到 refeed 之前（循证优先）⑤recovery "seek 专业帮助"中英混杂→修正 |
+| 流水线骨架 | `claims/`（ksw/tcy/cs/conflicts.yaml，进 git）+ `sources/`（manifest/transcripts/frames，本地私有）+ `tools/distill.py`（文字稿→提炼 claim→反幻觉校验→写 draft，含 schema/动作库 id 校验） |
+
+### 11.2 视频试点（21.5）——阻塞，如实记录
+
+尝试拿谭成义哑铃推肩字幕失败：
+- 索引里唯一 B 站 `BV1dEXkYiEnA` 已失效（yt-dlp 报 -404）
+- 谭成义肩部等视频在好看视频（haokan.baidu.com），yt-dlp 不支持该站
+- 本机无 faster-whisper，音频转写兜底不可用
+
+→ distill 流水线本身已就绪且单测覆盖（用 stub LLM 跑通提炼/反幻觉/落盘），
+  但"拿字幕"这步需要发起人提供：可用视频 URL / 已下载字幕 / 或直接文字稿。
+  拿到后 `python3 tools/distill.py <transcript.json> --blogger 谭成义` 即可产出 draft claims 待审。
+
+### 11.3 验证
+
+- pytest **144 项全绿**（新增 test_knowledge.py 17 项：provenance 全覆盖/枚举合法/点名纪律/5 处事实修复/distill 确定性单元）
+- 动作库校验仍通过；知识文件 provenance 由测试守护（漏标/非法即红）

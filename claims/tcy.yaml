@@ -1,0 +1,22 @@
+# 谭成义 观点条目（claims）——设计书 19.2 ③ / 19.4
+#
+# 一条观点 = 一个可引用单元。只有 status: approved 且 provenance 链到一手 transcript
+# 的条目，Agent 才能在回答里点"谭成义讲过"。
+#
+# 条目 schema（示例字段，内容为虚构）：
+# - id: tcy-0001
+#   blogger: 谭成义
+#   video: BV1xx              # 或 haokan vid
+#   ts: [192.0, 201.5]        # 必填；没有时间戳的条目直接丢弃
+#   claim: 深蹲起身先想"髋往前顶"，而不是"膝盖伸直"
+#   type: cue                 # principle/method/cue/error/self_check/nutrition/anecdote
+#   exercises: [barbell_back_squat]   # 动作库 id
+#   applies_to: {level: [beginner, intermediate], goal: [], condition: []}
+#   evidence: blogger_experience      # blogger_experience / cites_research / consensus
+#   provenance: transcript            # 必须是一手来源才可点名
+#   status: draft                     # draft → approved / rejected（发起人审核）
+#   reviewed: {by: "", date: "", against: ""}
+#
+# 当前：空。谭成义现有 12 个动作文件 provenance=general（疑似代写挂名，见 17.3），
+# 须先拿到一手视频文字稿、跑 tools/distill.py 提炼、发起人审核后才能填这里。
+[]

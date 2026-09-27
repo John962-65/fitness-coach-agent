@@ -1,6 +1,7 @@
 ---
 topic: 谭成义视频索引（按动作分类）
 source: [谭成义-B站/抖音/小红书, 网络整理]
+provenance: general
 goals: [动作技术, 增肌, 塑形]
 levels: [新手, 进阶, 老炮]
 triggers: [谭成义, 动作教学, 发力, 技术细节, 视频]

@@ -1,6 +1,7 @@
 ---
 topic: 胰岛素抵抗
 source: [陈石-胰岛素]
+provenance: third_party_distill
 goals: [减脂, 代谢修复, 健康]
 levels: [进阶, 老炮]
 triggers: [胰岛素, 血糖, 胰岛素抵抗, 多囊, PCOS, 糖尿病前期, 代谢综合征]

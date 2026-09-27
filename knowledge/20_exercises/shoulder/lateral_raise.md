@@ -1,6 +1,7 @@
 ---
 topic: 侧平举发力模式
 source: [谭成义-肩部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶]
 triggers: [侧平举, 飞鸟, 三角肌中束, 肩部宽度, 溜肩]

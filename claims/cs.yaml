@@ -1,0 +1,10 @@
+# 陈石 观点条目（claims）——设计书 19.2 ③ / 19.4
+#
+# 一条观点 = 一个可引用单元。只有 status: approved 且 provenance 链到一手 transcript
+# 的条目，Agent 才能在回答里点"陈石讲过"。
+#
+# 条目 schema 见 claims/tcy.yaml 头部。
+#
+# 当前：空。陈石现有 9 个营养文件 provenance=third_party_distill（来自第三方
+# chenshi-nutrition-skill，二手内容）。有原视频就按流水线替换为一手来源。
+[]

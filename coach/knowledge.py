@@ -11,6 +11,9 @@ from pathlib import Path
 
 KNOWLEDGE_ROOT = Path(__file__).resolve().parent.parent / "knowledge"
 
+# 只有这些来源（一手素材）才能在回答里点博主的名字（设计书 19.3）
+NAMEABLE_PROVENANCES = {"transcript", "article"}
+
 
 def _parse_front_matter(text: str) -> dict[str, str]:
     """极简 front-matter 解析（避免引入 pyyaml 依赖）"""
@@ -53,13 +56,22 @@ class KnowledgeBase:
 
     @property
     def l2_index(self) -> str:
-        """L2：知识索引清单（标题 + 触发词，常驻）"""
+        """L2：知识索引清单（标题 + 触发词 + 来源，常驻）"""
         lines = []
         for rel, item in self._files.items():
             topic = item["meta"].get("topic", rel)
             triggers = item["meta"].get("triggers", "")
-            lines.append(f"- `{rel}`：{topic}（触发词：{triggers}）")
+            prov = item["meta"].get("provenance", "general")
+            lines.append(f"- `{rel}`：{topic}（触发词：{triggers}）[来源:{prov}]")
         return "\n".join(lines)
+
+    @property
+    def nameable_files(self) -> list[str]:
+        """可点名博主的文件（provenance 为 transcript/article 的一手来源）"""
+        return [
+            rel for rel, item in self._files.items()
+            if item["meta"].get("provenance") in NAMEABLE_PROVENANCES
+        ]
 
     def load(self, rel_path: str) -> str:
         """L3：按需加载全文"""

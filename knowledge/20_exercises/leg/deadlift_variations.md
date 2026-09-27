@@ -1,6 +1,7 @@
 ---
 topic: 硬拉变式
 source: [谭成义-腿部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 力量, 动作技术]
 levels: [进阶, 老炮]
 triggers: [硬拉, 传统硬拉, 罗马尼亚硬拉, 相扑硬拉, 后侧链]

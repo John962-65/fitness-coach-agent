@@ -1,6 +1,7 @@
 ---
 topic: 凯圣王三分化训练计划
 source: [凯圣王-三分化系列, tom89757.github.io 整理]
+provenance: general
 goals: [增肌, 力量, 塑形]
 levels: [新手, 进阶]
 triggers: [三分化, 推拉蹲, 训练计划, 分化训练, 计划模板, PPL]

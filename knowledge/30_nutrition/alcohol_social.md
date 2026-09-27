@@ -1,6 +1,7 @@
 ---
 topic: 应酬与饮酒应对
 source: [陈石-生活化减脂系列, 公开内容整理]
+provenance: third_party_distill
 goals: [减脂, 维持]
 levels: [新手, 进阶, 老炮]
 triggers: [应酬, 喝酒, 酒精, 啤酒, 白酒, 饭局, 聚餐, 外食, 推不掉]

@@ -1,6 +1,7 @@
 ---
 topic: 哑铃推肩技术细节
 source: [谭成义-肩部教学, 公开视频整理]
+provenance: general
 goals: [增肌, 塑形, 动作技术]
 levels: [新手, 进阶]
 triggers: [哑铃推肩, 推肩, 肩部训练, 三角肌前束, 三角肌中束]

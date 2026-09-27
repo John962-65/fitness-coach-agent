@@ -1,6 +1,7 @@
 ---
 topic: 高强度 vs 高容量训练
 source: [陈石-训练理念]
+provenance: third_party_distill
 goals: [减脂, 增肌, 力量]
 levels: [新手, 进阶, 老炮]
 triggers: [高强度, 高容量, 力量训练, 增肌训练, 减脂训练, 训练方式]

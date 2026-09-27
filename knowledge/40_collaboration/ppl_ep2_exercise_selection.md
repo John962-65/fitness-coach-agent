@@ -1,6 +1,7 @@
 ---
 topic: 三分化系列第 2 集：动作选择思路
 source: [凯圣王×谭成义-三分化合作系列, B 站视频整理]
+provenance: general
 goals: [增肌, 力量, 动作选择]
 levels: [新手, 进阶]
 triggers: [动作选择, 训练动作, 复合动作, 孤立动作, 动作变式]

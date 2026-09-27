@@ -1,6 +1,7 @@
 ---
 topic: 三分化系列第 1 集：制定计划的原理
 source: [凯圣王×谭成义-三分化合作系列, B 站视频整理]
+provenance: general
 goals: [增肌, 力量, 计划制定]
 levels: [新手, 进阶]
 triggers: [三分化, 训练计划, 计划原理, 推拉蹲, 分化训练]

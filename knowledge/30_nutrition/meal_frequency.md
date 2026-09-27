@@ -1,6 +1,7 @@
 ---
 topic: 一日三餐非铁律
 source: [陈石-进食频率]
+provenance: third_party_distill
 goals: [减脂, 维持, 生活方式]
 levels: [新手, 进阶]
 triggers: [一日三餐, 进食频率, 间歇性断食, 轻断食, 不吃早餐, 吃几餐]
