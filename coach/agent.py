@@ -31,7 +31,7 @@ from .llm import LLMClient
 from .onboarding import (ONBOARDING_PROMPT, answers_health_question,
                          answers_injury_question, can_finish, missing_fields)
 from .plan import generate_plan, plan_to_text, regenerate_plan_preserve
-from .profile import merge_patch, profile_summary
+from .profile import merge_patch, open_pain_flags, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
 from .review import e1rm, last_weight, review_context_text
 from .safety import SafetyHit, check_red_flags, soft_note
@@ -540,7 +540,8 @@ class CoachAgent:
         pending.append(sug)
         self.db.save_profile(self.user_id, self.profile)
         return (
-            f"检测到计划需要重排（{reason}），已生成重排建议 [{sug['id']}]。"
+            f"[{sug['id']}] regenerate_plan｜整体计划：检测到计划需要重排"
+            f"（{reason}），已生成重排建议。"
             "请用一两句向用户说明为什么要重排，等用户确认后调用 "
             "apply_adjustment(suggestion_id=对应id) 执行；"
             "重排会按最新档案与动作反馈整体重排，已有的处方重量会保留。"
@@ -580,13 +581,24 @@ class CoachAgent:
     # ---- 对话-工具循环 ----
     def _loop(self, mode: str) -> str:
         if mode == "onboarding":
-            tools = [UPDATE_PROFILE_TOOL, FINISH_ONBOARDING_TOOL]
-            self.messages[0] = {
-                "role": "system",
-                "content": ONBOARDING_PROMPT.format(
-                    missing="、".join(missing_fields(self.profile)) or "（已齐）"
-                ),
-            }
+            # 安全跟进不分模式：建档中被拦截的用户带回医生结论时也要能关闭
+            tools = [UPDATE_PROFILE_TOOL, FINISH_ONBOARDING_TOOL,
+                     RESOLVE_PAIN_FLAG_TOOL]
+            prompt = ONBOARDING_PROMPT.format(
+                missing="、".join(missing_fields(self.profile)) or "（已齐）"
+            )
+            flags = open_pain_flags(self.profile)
+            if flags:
+                listing = "；".join(
+                    f"[{i}] {f.get('kw', '?')}·{str(f.get('at', ''))[:10]}"
+                    for i, f in enumerate(flags))
+                prompt += (
+                    f"\n\n# ⚠️ 待跟进安全记录（{len(flags)} 条）\n{listing}\n"
+                    "本轮先自然地问一句近况；用户明确表示已就医无恙或症状消失后，"
+                    "调用 resolve_pain_flag 关闭对应那条（多条时必须传 index），"
+                    "关闭后再继续建档流程。"
+                )
+            self.messages[0] = {"role": "system", "content": prompt}
         else:
             tools = [
                 LOAD_KNOWLEDGE_TOOL,

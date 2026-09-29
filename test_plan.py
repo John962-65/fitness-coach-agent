@@ -166,6 +166,33 @@ def test_clean_health_screen_no_note():
     assert not any("健康筛查" in n for n in plan["notes"])
 
 
+def test_is_positive_negative_phrasings():
+    """阴性回答的各种写法都不能算阳性（评测抓到"没问题"被误判降级）"""
+    from coach.profile import _is_positive
+    for neg in ("无", "没有", "没问题", "正常", "没事", "没怀孕", "都正常",
+                "都没问题", "无异常", "否", "没有心脏病", "心脏血压都正常",
+                "身体健康", "一切正常", "不适用（男性）", "不适用",
+                "未怀孕、未备孕", "无心血管疾病史、无高血压",
+                "身体健康，无心血管疾病史/高血压"):
+        assert not _is_positive(neg), neg
+    for pos in ("高血压", "冠心病史", "在吃降压药", "心电图不正常",
+                "医生嘱咐限制运动", "怀孕 3 个月"):
+        assert _is_positive(pos), pos
+
+
+def test_healthy_user_not_medical_downgraded():
+    """健康筛查全阴（各种阴性写法）→ 不触发医疗降级"""
+    p = mk(experience={"big3": {"squat": 130}},
+           conditions={
+               "injuries": [], "injuries_collected": True,
+               "health_screen_collected": True,
+               "health_screen": {"heart": "没问题", "medication": "没吃药",
+                                 "clearance": "医生没说过不让运动"},
+           })
+    plan = generate_plan(p)
+    assert "医疗降级" not in plan["template"]
+
+
 # ---- 输出渲染 ----
 
 def test_plan_to_text():

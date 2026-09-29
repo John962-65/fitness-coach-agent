@@ -126,6 +126,12 @@ def test_block_history_then_now():
     assert hit and hit.mode == "block"
 
 
+def test_block_dull_chest_pain_synonym():
+    """"胸口一阵闷痛"：闷痛是胸部症状同义词，必须命中（holdout 评测抓到的漏报）"""
+    hit = check_red_flags("刚才练的时候胸口一阵闷痛")
+    assert hit and hit.mode == "block" and hit.tier == "emergency"
+
+
 # ---------- 软化（soft）：否定 / 提问 / 病史（S2） ----------
 
 def test_soft_negated():

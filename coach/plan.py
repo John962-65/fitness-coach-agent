@@ -350,7 +350,10 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
             f"⚠️ 有未确认的安全记录（{kws}）：确认无恙前避免力竭、大重量与独自训练"
         )
     hs = c.get("health_screen") or {}
-    positives = [v for v in hs.values() if _is_positive(v)]
+    # 阳性项只统计病史字段（heart/pregnancy/medication 等）；
+    # clearance 是"医生放行"信息源，它本身有内容不算病史阳性——
+    # 否则"医生没说过不让运动"的健康用户全会被误判降级
+    positives = [v for k, v in hs.items() if k != "clearance" and _is_positive(v)]
     low_intensity_only = False
     if c.get("health_screen_collected") and positives:
         notes.append(

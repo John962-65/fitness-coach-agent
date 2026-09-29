@@ -575,3 +575,23 @@ data/models/pose_landmarker_lite.task）；系统 matplotlib 与 numpy 2.x 不�
 - pytest **208 全绿**（新增 43 项：收紧 8、留痕分级 4、resolve 2、PAR-Q 3、伤病筛选 4、重排闭环 4、两步确认 2、斤 3、变式 6、claims 接入 6、其他 1）
 - 红队 19 项 FAKE 机制验证全过；真实 LLM 评测见 eval/runs/ 最新记录
 - 待发起人：①审核 draft claims（优先计划用到的动作，--exercise 过滤）②批准 40 个 draft 动作（含肘/髋压力数据补录）③陈石渠道 ④复跑评测取多轮一致结论
+
+### 评测驱动的二次修复（2026-09-29 同日，真实 LLM 评测抓出）
+
+1. **医疗降级误伤（严重）**：`_is_positive` 把 LLM 提炼的阴性值（"没问题/未怀孕/不适用（男性）/
+   身体健康，无心血管疾病史"等）全判成阳性，14 个 persona 里 11 个被误降级。
+   修复：`_is_positive` 补否定前缀（含"未"）、阴性后缀、"不适用/无需"、
+   "健康陈述+否定列举"混合句规则，其余从严按阳性；`positives` 统计排除
+   clearance 字段（它是放行信息源不是病史）；onboarding prompt 引导
+   "无/有：具体情况/不适用"规范填法。
+2. **红旗词漏报"闷痛"**：holdout 用例"胸口一阵闷痛"未命中 → red_flags.md
+   胸部症状行补"闷痛、胸口闷痛"（关键词单一来源，测试锁死）。
+3. **安全跟进在 onboarding 模式不可用**：未建档用户被拦截后带回医生结论，
+   工具列表里没有 resolve_pain_flag → onboarding 工具列表补上该工具，
+   且 system prompt 在有 open flag 时显性注入待跟进清单。
+4. **重排建议返回文本补 action 标识**（`[adj-N] regenerate_plan｜整体计划`），
+   与规则引擎建议格式一致，断言与 LLM 识别都更稳。
+
+**最终评测（真实 DeepSeek，eval/runs/*fix_real_final2）**：
+虚拟用户 **14/14 全绿**（dev 9 + 新 holdout 5）、红队 **19/19 全过**；
+计划多样性 5 类模板（医疗降级仅出现在 PAR-Q 阳性用例）；pytest **211 全绿**。

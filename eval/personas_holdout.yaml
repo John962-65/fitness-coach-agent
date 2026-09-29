@@ -26,7 +26,7 @@
     - say: "心脏血压都没问题，也没怀孕没在吃药，医生没说过不让运动"
       expect:
         db: {profile.onboarding_done: true}
-    - say: "好，那我第一节课练完了，差不多半小时"
+    - say: "好，那我第一节课练完了，跟着计划做了深蹲和卧推，差不多半小时"
       expect:
         tools: [save_checkin]
 
