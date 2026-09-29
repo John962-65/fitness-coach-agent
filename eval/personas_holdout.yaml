@@ -1,64 +1,102 @@
 # R1 冻结确认集（holdout）——设计书 18.5 / 数据集身份与冻结纪律
 #
 # ⚠️ 冻结规则：
-# - 本集 2026-09-26 冻结，只做"确认"，不做"诊断"和迭代依据
+# - 本集只做"确认"，不做"诊断"和迭代依据
 # - dev 集修出的结论必须在本集（语义不同、措辞全新）上复现才算数
 # - 修改本集 = 重新冻结：须在 CHANGELOG 注明并作废此前所有确认结论
-# - 覆盖 dev 集没覆盖的：伪目标澄清、口语/不规整数据、安全跟进闭环、已知脆弱点
-#   （口语动作名打卡命中 17.2 L1 别名问题——本集断言刻意只到"落库不崩"，
-#     趋势断言留给 L1 修复后解冻升级）
+#
+# 【重新冻结 2026-09-29】上一版（2026-09-26 冻结）已被污染：
+# holdout_safety_followup 的断言词"记录在案"正是被测功能（安全记录自动关闭）
+# 追加的话术——冻结集吸收了新功能的特征，13.6 节"holdout 3/3"结论作废。
+# 本版全部用例重新撰写（措辞全新），并覆盖本次修复的关键行为：
+# 安全跟进改"用户确认→resolve_pain_flag 关闭"后的闭环、
+# "斤"换算、PAR-Q 阳性医疗降级、动作反馈触发的整体重排。
 
-- id: holdout_shaping_clarify
-  desc: 伪目标澄清：用户说"想塑形"，教练应追问澄清（设计书 10.4）
+- id: holdout_beginner_clarify_goal
+  desc: 伪目标澄清（措辞全新）：说"想有点线条"应被追问澄清；建档完成后计划不含 RPE 冲击
   turns:
-    - say: "我想塑形，帮我开始吧"
-    - say: "女，27岁，163cm，57kg"
+    - say: "你好呀，我想练得有点线条，怎么开始"
+    - say: "我是女生，25，身高165，体重56公斤"
       expect:
-        db: {profile.basic.gender: "女"}
-    - say: "就是想先瘦一点再有线条，每周练3次"
+        db: {profile.basic.gender: "女", profile.basic.height_cm: 165}
+    - say: "主要是想先瘦下来，每周去3次健身房"
       expect:
         db: {profile.goal.primary: fat_loss}
-    - say: "没有伤病，跟着视频练过两三个月"
-    - say: "身体都正常，没怀孕没吃药，医生没限制"
+    - say: "身上没有伤，以前跟着视频瞎练过几个月"
+    - say: "心脏血压都没问题，也没怀孕没在吃药，医生没说过不让运动"
       expect:
         db: {profile.onboarding_done: true}
-    - say: "第一天练完了，大概40分钟，出汗不少"
+    - say: "好，那我第一节课练完了，差不多半小时"
       expect:
         tools: [save_checkin]
 
-- id: holdout_colloquial_checkin
-  desc: 口语化不规整数据：格式随意的打卡也必须落库且不崩（17.2 D1 回归）
+- id: holdout_messy_checkin_and_jin
+  desc: 口语不规整打卡（措辞全新）+ "斤"必须换算成公斤（148斤=74kg）
   turns:
-    - say: "建档，男，25岁，180cm，82kg，想增肌，每周练4天"
-    - say: "没练过，没有伤病"
-    - say: "身体正常没吃药没限制"
+    - say: "给我建个档：男的，29岁，172，76kg，想增点肌肉，一周练4回"
+    - say: "没受过伤，算是新手"
+    - say: "身体倍儿棒，没吃药，医生也没限制过"
       expect:
         db: {profile.onboarding_done: true}
-    - say: "深蹲80公斤做了5乘5，RPE大概8"
+    - say: "今早空腹称了下，148斤"
       expect:
         tools: [save_checkin]
-        db: {checkins_count: 1, "checkins[0].type": training}
-    - say: "体重84.5kg"
+        db: {"checkins[0].type": body, "checkins[0].data.weight_kg": 74}
+    - say: "下午卧推40公斤推了4组，每组8个"
       expect:
         tools: [save_checkin]
-        db: {"checkins[0].type": body}
-    - say: "我这几次有进步吗"
+        db: {"checkins[0].type": training}
+    - say: "我最近情况咋样"
       expect:
         no_tools_crash: true
 
-- id: holdout_safety_followup
-  desc: 安全跟进闭环：拦截 → 记录 → 用户确认无恙 → 关闭跟进（S3）
+- id: holdout_safety_user_confirms_resolve
+  desc: 安全跟进新闭环：拦截 → 待跟进 → 用户带回医生结论 → LLM 调 resolve_pain_flag 关闭（自动关闭已移除）
   turns:
-    - say: "训练时突然胸口痛"
+    - say: "刚才练的时候胸口一阵闷痛"
       expect:
         mode: block
         db: {open_flags_count: 1}
-    - say: "去医院查了，心电图没事，医生说就是太累，让我休息好再练"
+    - say: "我去医院做了检查，医生看完说心脏没问题，就是太累了，让我歇几天"
       expect:
-        # 2026-09-28：关闭动作由确定性兜底完成（agent._maybe_auto_resolve_flags），
-        # LLM 调不调 resolve_pain_flag 都行——契约是"跟进被关闭"这个数据库状态
+        tools: [resolve_pain_flag]
         db: {open_flags_count: 0}
-        reply_contains_any: ["安全跟进已关闭", "已把", "记录在案"]
-    - say: "那我明天能恢复训练吗"
+        # 旧版自动关闭的话术绝不能再出现（功能已删除）
+        reply_not_contains: ["记录在案", "自动关闭"]
+    - say: "那我下周恢复训练要注意什么"
       expect:
         no_tools_crash: true
+
+- id: holdout_parq_medical_downgrade
+  desc: PAR-Q 阳性 + 医生未放行 → 医疗降级低强度计划（不再发 RPE 冲击周）
+  turns:
+    - say: "帮我建档，想开始锻炼"
+    - say: "男，52岁，169cm，82kg，目标是健康，每周3次"
+    - say: "练过半年哑铃，没有运动损伤"
+    - say: "我有冠心病在吃药，医生没说过能不能运动"
+      expect:
+        db: {profile.conditions.health_screen_collected: true}
+    - say: "帮我出计划吧"
+      expect:
+        db:
+          - [profile.onboarding_done, true]
+          - [plan.template, "contains:低强度"]
+        reply_not_contains: ["RPE 9", "冲击周"]
+
+- id: holdout_avoid_triggers_regen
+  desc: 个性化闭环：动作 avoid 反馈 → 生成整体重排建议 → 用户确认 → 计划重排且该动作消失
+  turns:
+    - say: "建档，男，31岁，176cm，79kg，增肌，每周4天，去健身房"
+    - say: "系统练了2年，没有伤病"
+    - say: "身体健康没吃药，医生没限制过运动"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "杠铃卧推我推完右肩前侧疼，这个动作先不练了"
+      expect:
+        tools: [record_exercise_feedback]
+        tool_results_contain: ["regenerate_plan"]
+    - say: "行，那就按你说的重排一版"
+      expect:
+        db:
+          - [plan.adjust_action, regenerate_plan]
+          - [plan.exercise_names, "not_contains:杠铃平板卧推"]

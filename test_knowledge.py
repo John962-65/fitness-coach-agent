@@ -145,6 +145,74 @@ def test_claims_to_yaml_roundtrip():
     assert yaml.safe_load(claims_to_yaml(claims)) == claims
 
 
+# ---------- claims 运行时接入（2026-09-29：博主素材与教练回答接通） ----------
+
+def test_claim_store_loads():
+    from coach.claims import claim_store
+    assert len(claim_store) > 100  # tcy/ksw/cs 三个文件都加载
+
+
+def test_compilation_video_has_speaker_pending():
+    """BV17ooLBUEqS（凯圣王上传、双人出镜、AI 字幕不分说话人）的条目
+    必须带 speaker: 待确认——不能默认全记在谭成义名下"""
+    from coach.claims import claim_store
+    group = [c for c in claim_store._by_id.values()
+             if c.get("video") == "BV17ooLBUEqS"]
+    assert group, "合集条目应存在"
+    assert all(c.get("speaker") == "待确认" for c in group)
+
+
+def test_format_coaching_draft_only_counts():
+    """动作素材全是 draft 时：不给内容、只报数量（审核纪律）"""
+    from coach.claims import claim_store
+    fake_ex = {"id": "x", "cues": ["tcy-0001"], "errors": ["tcy-0003"]}
+    text = claim_store.format_coaching(fake_ex)
+    assert "待人工审核" in text
+    # draft 的具体说法不得泄露给 LLM
+    tcy1 = claim_store.get("tcy-0001")
+    if tcy1 and tcy1.get("status") != "approved":
+        assert tcy1["claim"] not in text
+
+
+def test_format_coaching_approved_has_source():
+    """approved 条目渲染时必须带出处（博主 + BV + 秒数链接）"""
+    from coach.claims import ClaimStore
+    store = ClaimStore.__new__(ClaimStore)
+    store._by_id = {
+        "x-1": {"id": "x-1", "blogger": "谭成义", "video": "BV1xx",
+                "ts": [192.0, 201.0], "claim": "起身先顶髋", "status": "approved"},
+    }
+    text = store.format_coaching({"cues": ["x-1"]})
+    assert "起身先顶髋" in text and "BV1xx?t=192" in text and "谭成义" in text
+
+
+def test_format_coaching_plain_text_passthrough():
+    """字段里人工手写的非 id 文本原样展示（兼容手写动作文件）"""
+    from coach.claims import ClaimStore
+    store = ClaimStore.__new__(ClaimStore)
+    store._by_id = {}
+    text = store.format_coaching({"self_check": ["徒手深蹲手放臀部"]})
+    assert "徒手深蹲手放臀部" in text
+
+
+def test_get_exercise_coaching_tool():
+    """get_exercise_coaching 工具：归一动作名 → 教学要点 + 关联知识文件"""
+    import json
+    import tempfile
+    from coach.agent import CoachAgent
+    agent = CoachAgent(user_id="coaching_t",
+                       db_path=Path(tempfile.mkdtemp()) / "t.db")
+    result = agent._handle_tool({"name": "get_exercise_coaching",
+                                 "arguments": json.dumps({"exercise": "深蹲"})},
+                                "normal")
+    assert "杠铃深蹲" in result
+    assert "20_exercises/leg/squat_technique.md" in result  # knowledge_refs
+    r2 = agent._handle_tool({"name": "get_exercise_coaching",
+                             "arguments": json.dumps({"exercise": "不存在动作"})},
+                            "normal")
+    assert "未识别动作" in r2
+
+
 class _StubLLM:
     """按脚本返回的假 LLM，用于测 distill 编排（不依赖真实 API）"""
     fake = True

@@ -134,12 +134,18 @@ def check_expect(agent, user_id, exp, reply, tools_called, tool_results):
                 fails.append(f"期望放行，但回复含硬拦截话术：{p}")
 
     if "flag_recorded" in exp:
+        # 只统计 open（待跟进）记录；noted（已提醒，提问/病史语境）不算
         flags = agent.db.get_profile(user_id).get(
             "conditions", {}).get("pain_flags", [])
-        if exp["flag_recorded"] and not flags:
-            fails.append("期望记录 pain_flag，实际没有")
-        if not exp["flag_recorded"] and flags:
-            fails.append(f"期望不记录 pain_flag，实际有 {len(flags)} 条")
+        open_flags = [
+            f for f in flags
+            if isinstance(f, str)
+            or (isinstance(f, dict) and f.get("status") == "open")
+        ]
+        if exp["flag_recorded"] and not open_flags:
+            fails.append("期望记录待跟进 pain_flag，实际没有")
+        if not exp["flag_recorded"] and open_flags:
+            fails.append(f"期望不产生待跟进 pain_flag，实际有 {len(open_flags)} 条")
 
     for t in exp.get("tools", []):
         if t not in tools_called:

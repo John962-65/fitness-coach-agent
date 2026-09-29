@@ -24,11 +24,13 @@ from datetime import datetime
 from pathlib import Path
 
 from .db import Database
+from .claims import claim_store
 from .exercises import library as exercise_lib
 from .knowledge import LOAD_KNOWLEDGE_TOOL, KnowledgeBase
 from .llm import LLMClient
-from .onboarding import ONBOARDING_PROMPT, can_finish, missing_fields
-from .plan import generate_plan, plan_to_text
+from .onboarding import (ONBOARDING_PROMPT, answers_health_question,
+                         answers_injury_question, can_finish, missing_fields)
+from .plan import generate_plan, plan_to_text, regenerate_plan_preserve
 from .profile import merge_patch, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
 from .review import e1rm, last_weight, review_context_text
@@ -37,7 +39,12 @@ from .validate import coerce_checkin
 
 MAX_TOOL_ROUNDS = 6
 HISTORY_LIMIT = 20
-MAX_CONTEXT_CHARS = 16000  # 约 8-10k token 的中文对话预算
+# 对话历史的字符预算（约 8-10k token 中文）；system prompt 单独计算、不占此预算，
+# 否则约 1.1 万字的 system 会把对话记忆挤到只剩几千字（与"记得你"的目标相反）
+MAX_CONTEXT_CHARS = 16000
+MAX_SYSTEM_CHARS = 20000  # system prompt 自身的预算上限（超出只告警不截断）
+# 两步确认：建议生成后必须等用户下一轮说话才能 apply；超过 N 轮未确认自动过期
+PENDING_EXPIRE_TURNS = 10
 
 _log = logging.getLogger("coach")
 if not _log.handlers:
@@ -240,6 +247,26 @@ ADD_COACH_NOTE_TOOL = {
     },
 }
 
+GET_EXERCISE_COACHING_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_exercise_coaching",
+        "description": (
+            "获取某个动作的教学要点：准备姿势、发力提示、常见错误、自检方法等"
+            "（来自动作库与已审核的博主观点条目，带视频出处）。"
+            "用户问某个动作怎么练、找不到发力感、动作细节或纠错时调用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "exercise": {"type": "string",
+                             "description": "动作名（用户叫法即可，系统会自动归一）"},
+            },
+            "required": ["exercise"],
+        },
+    },
+}
+
 CLOSE_COACH_NOTE_TOOL = {
     "type": "function",
     "function": {
@@ -260,14 +287,16 @@ RESOLVE_PAIN_FLAG_TOOL = {
     "function": {
         "name": "resolve_pain_flag",
         "description": (
-            "用户确认此前的安全记录已处理（已就医/症状消失/确认无恙）时调用，"
-            "关闭对应的安全跟进。"
+            "用户明确确认此前的安全记录已处理（已就医/症状消失/确认无恙）后调用，"
+            "关闭对应的那一条安全跟进。必须先向用户确认、得到明确答复才允许调用；"
+            "一次只关闭与用户结论对应的一条（传 index），不得批量关闭。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "index": {"type": "integer",
-                          "description": "要关闭的记录序号（不给则关闭全部待跟进）"},
+                          "description": "要关闭的记录序号（pain_flags 列表下标）；"
+                                         "有多条待跟进时必填，只关与结论对应的那条"},
                 "note": {"type": "string", "description": "用户确认的原话摘要"},
             },
         },
@@ -310,16 +339,23 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
    训练方法的具体问题，先 load_knowledge 加载对应文件再作答
 4. 结合档案个性化回答——同一问题，不同档案答案不同
 5. 用户提供新的个人信息（体重变化、伤病等）时调用 update_profile
-6. 档案中有待跟进的安全记录时，自然地询问近况；用户确认无恙后调用 resolve_pain_flag 关闭
+6. 档案中有待跟进的安全记录时，自然地询问近况；**必须等用户明确确认**
+   （已就医无恙/症状消失）后才调用 resolve_pain_flag，且只关闭与用户结论
+   对应的那一条（传 index）——用户没确认就不关，一次也不许多关
 7. 用户问进度/复盘/练得怎么样时调用 get_review；问"计划要不要调整/怎么调"时**必须**
    调用 get_adjustment_suggestions——注入的近期动态只是提示，不能代替规则引擎
 8. 调整计划只能通过 apply_adjustment 落库（传 get_adjustment_suggestions 返回的
-   suggestion_id，且须用户确认）；工具返回成功前，绝不能说"计划已更新"
+   suggestion_id，且须用户确认）；工具返回成功前，绝不能说"计划已更新"。
+   涉及整体重排（伤病/场地/天数/动作 avoid 变化）时，系统会生成重排建议，
+   同样走"先解释、用户下一轮确认、再 apply"的流程
 9. 用户反馈动作感受（发力感/偏好/不适/想避开）时调用 record_exercise_feedback，
    必须附用户原话
 10. 值得记住的定性观察（如"周三常加班""硬拉时下背先酸"）用 add_coach_note 记录，
     必须附依据；观察失效时用 close_coach_note 关闭
-11. **博主点名纪律**：知识索引每条标了 [来源:xxx]。只有 transcript/article（一手）
+11. 用户问某个动作怎么练、找不到发力感或要纠错时，先调用 get_exercise_coaching
+    获取该动作的教学要点；返回里带出处的条目可以照引并说明出处，
+    没有素材的动作用教练自己的话讲
+12. **博主点名纪律**：知识索引每条标了 [来源:xxx]。只有 transcript/article（一手）
     来源才能说"某博主讲过……"；general/third_party_distill 来源的内容，用教练自己
     的话讲，可泛称"整理自公开健身内容"，**不要把具体说法安在凯圣王/谭成义/陈石名下**
 """
@@ -329,12 +365,6 @@ _PROMISE_RE = re.compile(
     r"[0-9一二两三四五六七八九十]+\s*(?:天|周|个?月|星期)\s*(?:内)?"
     r"[^，。！？!?\n]{0,8}(?:瘦|减|掉|增重|增肌|长)\s*\d+(?:\.\d+)?\s*(?:斤|公斤|千克|kg)"
 )
-
-# 安全跟进的确定性自动关闭（S3 残留：LLM 不主动调 resolve_pain_flag）。
-# 只在"医疗来源 + 明确无恙结论"同时出现、且整句不是疑问时才关——方向从紧。
-_MED_SOURCE_RE = re.compile(r"医院|医生|心电图|体检|检查过|拍片|核磁|CT")
-_MED_CLEAR_RE = re.compile(r"没事|无碍|没有问题|没问题|正常|休息[好一]+段|可以.*再练")
-_MED_QUESTION_RE = re.compile(r"[？?]|吗[。！.？]?$|要不要|是不是该")
 
 # A6 输出侧护栏：未落库却声称计划已改
 _PLAN_CLAIM_STRONG = re.compile(r"计划[^。！？\n]{0,6}已(?:经)?(?:更新|调整|生效|改好)")
@@ -358,6 +388,7 @@ class CoachAgent:
         self.profile = self.db.get_profile(user_id)
         self._turn_tools: set[str] = set()
         self._turn_tool_results: list[str] = []
+        self._turn_no: int = 0  # 对话轮次（两步确认/建议过期用）
         self.messages: list[dict] = [
             {"role": "system", "content": self._build_system_prompt()}
         ] + self.db.recent_messages(user_id, HISTORY_LIMIT)
@@ -433,6 +464,7 @@ class CoachAgent:
 
     # ---- 主入口 ----
     def chat(self, user_input: str) -> str:
+        self._turn_no += 1
         self._turn_tools = set()
         self._turn_tool_results = []
         self._plan_before = self._plan_snapshot()
@@ -450,8 +482,12 @@ class CoachAgent:
         self.messages.append({"role": "user", "content": user_input})
         self.db.add_message(self.user_id, "user", user_input)
 
-        if hit is not None:  # soft：记录（黄色档不记录）+ 注入安全提示
-            if hit.tier != "yellow":
+        if hit is not None:  # soft：按语境分级留痕 + 注入安全提示
+            # 否定语境（"我没有胸闷"）不留记录——建档问答里必然出现，
+            # 留了会污染每轮 prompt 和首份计划的注意项；
+            # 提问/病史语境记 status=noted（已提醒，不进入待跟进）；
+            # 黄色档不记录。
+            if hit.tier != "yellow" and hit.reason != "negated":
                 self._record_pain_flag(user_input, hit)
             self.messages.append({"role": "system", "content": soft_note(hit)})
 
@@ -463,52 +499,52 @@ class CoachAgent:
             reply = "（教练这边出了点小状况，刚才那句没接住——换个说法再说一次？）"
         reply = _sanitize_output(reply)
         reply = self._guard_plan_claim(reply)
-        reply = self._maybe_auto_resolve_flags(user_input, reply)
 
         self.messages.append({"role": "assistant", "content": reply})
         self.db.add_message(self.user_id, "assistant", reply)
         return reply
 
-    def _maybe_auto_resolve_flags(self, user_input: str, reply: str) -> str:
-        """用户带回医疗方"无恙"结论且本轮没调 resolve_pain_flag 时，
-        代码直接关闭安全记录（S3 确定性兜底；话术明确告知用户）。"""
-        flags = self.profile.get("conditions", {}).get("pain_flags", [])
-        open_flags = [f for f in flags
-                      if isinstance(f, dict) and f.get("status") == "open"]
-        if not open_flags or "resolve_pain_flag" in self._turn_tools:
-            return reply
-        if not (_MED_SOURCE_RE.search(user_input)
-                and _MED_CLEAR_RE.search(user_input)
-                and not _MED_QUESTION_RE.search(user_input)):
-            return reply
-        now = datetime.now().isoformat(timespec="seconds")
-        for f in open_flags:
-            f["status"] = "resolved"
-            f["resolved_at"] = now
-            f["note"] = f"自动关闭依据（用户原话）：{user_input[:80]}"
-        self.db.save_profile(self.user_id, self.profile)
-        self._refresh_system_prompt()
-        _log.warning("安全记录已按用户带回的医疗结论自动关闭: %s", user_input[:50])
-        return reply + (
-            "\n\n（我已把你带回的医生结论记录在案，之前的安全跟进已关闭。"
-            "如果症状再有反复，随时告诉我，我们立刻重新记录。）")
-
     def _record_pain_flag(self, text: str, hit: SafetyHit) -> None:
         flags = self.profile.setdefault("conditions", {}).setdefault(
             "pain_flags", [])
+        # block → open（待跟进）；soft（提问/病史）→ noted（已提醒，不跟进）
+        status = "open" if hit.mode == "block" else "noted"
         flags.append({
             "at": datetime.now().isoformat(timespec="seconds"),
             "text": text[:50],
             "kw": hit.keyword,
             "tier": hit.tier,
             "mode": hit.mode,
-            "status": "open",
+            "status": status,
         })
         self.db.save_profile(self.user_id, self.profile)
 
     def _plan_snapshot(self) -> str:
         plan = self.db.get_active_plan(self.user_id)
         return json.dumps(plan, ensure_ascii=False, sort_keys=True)
+
+    def _offer_regenerate(self, reason: str) -> str:
+        """个性化闭环（2026-09-29）：反馈/伤病/场地/天数变化后，生成
+        "重排计划"建议并落 pending——与 get_adjustment_suggestions 同一套
+        两步确认（apply_adjustment 执行；重排保留已有处方重量与卸载状态）。"""
+        if not self.profile.get("onboarding_done"):
+            return ""
+        if not self.db.get_active_plan(self.user_id):
+            return ""
+        pending = self.profile.setdefault("pending_adjustments", [])
+        if any(s.get("action") == "regenerate_plan" for s in pending):
+            return "（已有一条待确认的重排计划建议，无需重复生成）"
+        sug = {"id": f"adj-{len(pending) + 1}", "action": "regenerate_plan",
+               "target": "整体计划", "reason": reason,
+               "created_turn": self._turn_no}
+        pending.append(sug)
+        self.db.save_profile(self.user_id, self.profile)
+        return (
+            f"检测到计划需要重排（{reason}），已生成重排建议 [{sug['id']}]。"
+            "请用一两句向用户说明为什么要重排，等用户确认后调用 "
+            "apply_adjustment(suggestion_id=对应id) 执行；"
+            "重排会按最新档案与动作反馈整体重排，已有的处方重量会保留。"
+        )
 
     def _guard_plan_claim(self, reply: str) -> str:
         """叙述-执行一致性护栏（A6 输出侧兜底）：
@@ -564,6 +600,7 @@ class CoachAgent:
                 RECORD_EXERCISE_FEEDBACK_TOOL,
                 ADD_COACH_NOTE_TOOL,
                 CLOSE_COACH_NOTE_TOOL,
+                GET_EXERCISE_COACHING_TOOL,
             ]
             self._refresh_system_prompt()
 
@@ -587,12 +624,18 @@ class CoachAgent:
     def _trim_messages(self) -> None:
         """上下文预算控制：从最旧开始整条丢弃（tool 调用与其结果成对）。
 
-        messages[0] 是 system prompt，永不丢弃。
+        messages[0] 是 system prompt，永不丢弃，也**不占对话预算**——
+        system（原则层+索引+计划+笔记）单独计算上限，16000 字符全部留给
+        对话历史（否则 system 约 1.1 万字，对话记忆只剩几千字，和
+        "记得你"的目标相反）。
         """
         msgs = self.messages
+        if len(msgs[0].get("content") or "") > MAX_SYSTEM_CHARS:
+            _log.warning("system prompt 超预算: %d 字符",
+                         len(msgs[0]["content"]))
 
         def _size() -> int:
-            return sum(len(m.get("content") or "") for m in msgs)
+            return sum(len(m.get("content") or "") for m in msgs[1:])
 
         while _size() > MAX_CONTEXT_CHARS and len(msgs) > 6:
             drop = 1
@@ -631,23 +674,45 @@ class CoachAgent:
 
         if name == "update_profile":
             patch = args.get("patch", {})
-            self.profile, report = merge_patch(self.profile, patch)
-            # G2 兜底：没附原话时，用触发本条的用户消息回填（用户原话本就是最好的依据）
+            # G2 门槛（2026-09-29 收紧）：伤病史/健康筛查必须有真凭实据——
+            # LLM 自附 *_evidence，或本轮用户原话能判定为真的在回答该问题；
+            # 否则从 patch 中剔除该项（拒收），由 LLM 继续追问。
+            # （原实现无条件用本轮用户消息回填，"别问了直接开始"也能过门槛）
+            rejected: list[str] = []
             cond_patch = patch.get("conditions", {}) if isinstance(patch, dict) else {}
             if isinstance(cond_patch, dict) and (
                     "injuries" in cond_patch or "health_screen" in cond_patch):
-                c = self.profile.setdefault("conditions", {})
+                c = self.profile.get("conditions", {})
                 last_user = next(
                     (m["content"] for m in reversed(self.messages)
                      if m.get("role") == "user"), "")
                 if "injuries" in cond_patch \
+                        and not (cond_patch.get("injuries_evidence") or "").strip() \
                         and not (c.get("injuries_evidence") or "").strip():
-                    c["injuries_evidence"] = last_user[:80]
+                    if answers_injury_question(last_user):
+                        cond_patch["injuries_evidence"] = last_user[:80]
+                    else:
+                        cond_patch.pop("injuries", None)
+                        cond_patch.pop("injuries_evidence", None)
+                        rejected.append("伤病史")
                 if "health_screen" in cond_patch \
+                        and not (cond_patch.get("health_screen_evidence") or "").strip() \
                         and not (c.get("health_screen_evidence") or "").strip():
-                    c["health_screen_evidence"] = last_user[:80]
+                    if answers_health_question(last_user):
+                        cond_patch["health_screen_evidence"] = last_user[:80]
+                    else:
+                        cond_patch.pop("health_screen", None)
+                        cond_patch.pop("health_screen_evidence", None)
+                        rejected.append("健康筛查")
+            self.profile, report = merge_patch(self.profile, patch)
             self.db.save_profile(self.user_id, self.profile)
             notes = []
+            if rejected:
+                notes.append(
+                    "【未保存】" + "、".join(rejected)
+                    + "：必须以用户原话为依据（用户亲口回答过才算数），"
+                      "本轮用户发言不构成有效回答。请直接向用户询问该项，"
+                      "得到明确答复后再记录（并在 patch 里附上用户原话作 evidence）")
             if report["dropped"]:
                 notes.append("已拒绝字段（系统字段或不在档案 Schema）："
                              + "、".join(report["dropped"]))
@@ -661,7 +726,23 @@ class CoachAgent:
                 return "已保存" + suffix + "。仍缺：" + (
                     "、".join(still) or "无，可以 finish_onboarding"
                 )
-            return "档案已更新" + suffix + "。"
+            # 闭环：伤病变化 / 场地变化 / 每周天数变化 → 计划需要整体重排
+            plan_affecting = []
+            if isinstance(patch, dict):
+                cond = patch.get("conditions") or {}
+                res = patch.get("resources") or {}
+                if "injuries" in cond and "伤病史" not in rejected:
+                    plan_affecting.append("伤病有更新")
+                if "location" in res:
+                    plan_affecting.append("训练场地变了")
+                if "days_per_week" in res:
+                    plan_affecting.append("每周训练天数变了")
+            result = "档案已更新" + suffix + "。"
+            if plan_affecting:
+                extra = self._offer_regenerate("、".join(plan_affecting))
+                if extra:
+                    result += "\n" + extra
+            return result
 
         if name == "finish_onboarding":
             ok, why = can_finish(self.profile)
@@ -705,8 +786,10 @@ class CoachAgent:
         if name == "get_adjustment_suggestions":
             plan = self.db.get_active_plan(self.user_id)
             sugs = suggest_adjustments(self.db, self.user_id, plan)
-            # A6 两步确认：建议带 id 落 pending，apply 只接受 pending 里的 id
-            pending = [{"id": f"adj-{i + 1}", **s} for i, s in enumerate(sugs)]
+            # A6 两步确认：建议带 id 落 pending，apply 只接受 pending 里的 id；
+            # 记录生成轮次——同轮不允许 apply（必须先向用户解释、等下一轮确认）
+            pending = [{"id": f"adj-{i + 1}", **s, "created_turn": self._turn_no}
+                       for i, s in enumerate(sugs)]
             self.profile["pending_adjustments"] = pending
             self.db.save_profile(self.user_id, self.profile)
             if not sugs:
@@ -714,8 +797,8 @@ class CoachAgent:
             lines = ["规则引擎建议："]
             for s in pending:
                 lines.append(f"- [{s['id']}] {s['action']}｜{s['target']}：{s['reason']}")
-            lines.append("请先向用户解释建议；用户确认后调用 "
-                         "apply_adjustment(suggestion_id=对应id)。")
+            lines.append("请先向用户解释建议；**用户下一轮确认后**再调用 "
+                         "apply_adjustment(suggestion_id=对应id)——同轮直接执行会被系统拒绝。")
             return "\n".join(lines)
 
         if name == "apply_adjustment":
@@ -730,6 +813,34 @@ class CoachAgent:
                     f"没有待执行的建议「{sid}」。请先用 get_adjustment_suggestions "
                     "获取建议并向用户确认，再传入对应的 suggestion_id。"
                 )
+            # 两步确认的硬约束（2026-09-29）：
+            # 1) 同轮生成的建议不能同轮执行——必须先向用户解释、等用户下一轮表态；
+            # 2) 建议有保质期：超过 PENDING_EXPIRE_TURNS 轮未确认自动作废
+            created_turn = sug.get("created_turn")
+            if created_turn is not None:
+                if created_turn >= self._turn_no:
+                    return (
+                        f"建议「{sid}」是本轮刚生成的，现在还不能执行。"
+                        "请先向用户解释这条建议，等用户下一轮明确确认后再调用本工具。"
+                    )
+                if self._turn_no - created_turn > PENDING_EXPIRE_TURNS:
+                    pending.remove(sug)
+                    self.db.save_profile(self.user_id, self.profile)
+                    return (
+                        f"建议「{sid}」生成已超过 {PENDING_EXPIRE_TURNS} 轮，已作废。"
+                        "请重新调用 get_adjustment_suggestions 获取最新建议。"
+                    )
+            if sug["action"] == "regenerate_plan":
+                new_plan = regenerate_plan_preserve(
+                    self.profile,
+                    exercise_states=self.db.all_exercise_states(self.user_id),
+                    old_plan=plan, reason=sug["reason"])
+                self.db.create_plan(self.user_id, new_plan)
+                pending.remove(sug)
+                self.db.save_profile(self.user_id, self.profile)
+                self._refresh_system_prompt()
+                return (f"计划已整体重排（新版本）：{sug['reason']}。"
+                        "已有处方重量已保留。")
             lw = None
             if sug["action"] in ("increase_weight", "decrease_weight"):
                 lw = last_weight(
@@ -766,7 +877,36 @@ class CoachAgent:
                 evidence=evidence,
             )
             self._refresh_system_prompt()
-            return f"已记录「{official}」的动作反馈。"
+            result = f"已记录「{official}」的动作反馈。"
+            # 闭环：avoid / 报不适 → 当前计划可能还排着这个动作，生成重排建议
+            if args.get("status") == "avoid" or (args.get("discomfort") or "").strip():
+                extra = self._offer_regenerate(
+                    f"你对「{official}」的反馈有变化（"
+                    + ("明确避开" if args.get("status") == "avoid" else "报了不适") + "）")
+                if extra:
+                    result += "\n" + extra
+            return result
+
+        if name == "get_exercise_coaching":
+            ex_input = args.get("exercise", "")
+            ex_id, official, _via = exercise_lib.normalize(ex_input)
+            if not ex_id:
+                self._log_unmatched_exercise(ex_input)
+                return (f"未识别动作「{ex_input}」，已进待补队列。"
+                        "可按通用知识回答，并请用户换个说法。")
+            ex = exercise_lib.get(ex_id) or {}
+            coaching = claim_store.format_coaching(ex)
+            refs = ex.get("knowledge_refs") or []
+            parts = [f"【{official}】教学要点（动作库 + 已审核博主素材）"]
+            if coaching:
+                parts.append(coaching)
+            else:
+                parts.append("（该动作暂无已审核的博主教学素材——"
+                             "用教练自己的话按通用知识讲解，不要点名博主）")
+            if refs:
+                parts.append("关联知识文件（可用 load_knowledge 加载）："
+                             + "、".join(refs))
+            return "\n".join(parts)
 
         if name == "add_coach_note":
             note = (args.get("note") or "").strip()
@@ -788,21 +928,31 @@ class CoachAgent:
         if name == "resolve_pain_flag":
             flags = self.profile.get("conditions", {}).get("pain_flags", [])
             idx = args.get("index")
-            closed = 0
-            for i, f in enumerate(flags):
-                if not (isinstance(f, dict) and f.get("status") == "open"):
-                    continue
-                if idx is not None and i != idx:
-                    continue
-                f["status"] = "resolved"
-                f["resolved_at"] = datetime.now().isoformat(timespec="seconds")
-                f["note"] = args.get("note", "")
-                closed += 1
-            if closed:
-                self.db.save_profile(self.user_id, self.profile)
-                self._refresh_system_prompt()
-            return (f"已关闭 {closed} 条安全跟进记录。"
-                    if closed else "没有待跟进的安全记录。")
+            open_list = [(i, f) for i, f in enumerate(flags)
+                         if isinstance(f, dict) and f.get("status") == "open"]
+            if not open_list:
+                return "没有待跟进的安全记录。"
+            if idx is None:
+                if len(open_list) == 1:
+                    idx = open_list[0][0]  # 只有一条时，它就是要关的那条
+                else:
+                    listing = "；".join(
+                        f"[{i}] {f.get('kw', '?')}·{f.get('at', '')[:10]}"
+                        for i, f in open_list)
+                    return (f"有 {len(open_list)} 条待跟进的安全记录：{listing}。"
+                            "请向用户确认是哪一条已有结论，再用 index 指定关闭那一条"
+                            "（不得一次全部关闭）。")
+            target = next((pair for pair in open_list if pair[0] == idx), None)
+            if target is None:
+                return (f"序号 {idx} 不是待跟进的安全记录（当前待跟进："
+                        f"{[i for i, _ in open_list]}），未做任何修改。")
+            f = flags[idx]
+            f["status"] = "resolved"
+            f["resolved_at"] = datetime.now().isoformat(timespec="seconds")
+            f["note"] = args.get("note", "")
+            self.db.save_profile(self.user_id, self.profile)
+            self._refresh_system_prompt()
+            return f"已关闭 1 条安全跟进记录（{f.get('kw', '?')}）。"
 
         return f"未知工具：{name}"
 

@@ -8,6 +8,14 @@
   yellow    黄色预警（不拦截，注入处理原则让 LLM 融入回复）
 - 一/二档命中后先判语境：否定 / 提问 / 病史 → 降级为软提示（soft），
   由 LLM 结合上下文回应，避免"我没有胸闷"被当成急症
+
+语境判断的收紧原则（2026-09-29，防"软化过宽"）：
+- 遍历全部关键词的全部出现位置，任一位置不该软化即硬拦截
+- 否定只认"命中词紧前面、同一分句内、以否定词收尾"（"我没有胸闷"算；
+  "特别胸闷""练完没多久突然胸痛""练得很不舒服，胸闷"都不算）
+- 病史只认同一分句内的历史时间词（"训练之前还好好的，现在胸口疼"不算病史）
+- 第一人称当下陈述不因为带问句软化（"我现在胸口疼，是不是心脏出问题了"
+  仍硬拦截；只有"会不会胸闷"这类假设结构才软化）
 """
 from __future__ import annotations
 
@@ -82,14 +90,14 @@ _KEYWORDS = _parse_keywords(RED_FLAGS_MD.read_text(encoding="utf-8"))
 
 # ---------- 语境判断（否定 / 提问 / 病史 → 软化） ----------
 
-_NEGATORS = ("没有", "没", "无", "未", "别")
-# "不"在"会不会/是不是/能不能/要不要"里是疑问助词，不是否定
-_NEG_BU = re.compile(r"不(?![是会能要])")
+# 否定：必须出现在命中词紧前面、同一分句内，且否定词与命中词之间最多隔一个"过/有"
+# （"没有胸闷/胸口不疼/从未麻木过"算；"特别胸闷""没多久突然胸痛"不算）
+_NEGATED_PREFIX = re.compile(r"(?:没有|没|无|未|从不|从未|不)(?:过|有)?$")
 _HISTORY = ("以前", "之前", "曾经", "去年", "前年", "小时候", "有过", "病史", "那会儿")
-# 假设/条件式提问：从语义上就不可能是"正在发作"，始终软化
-_QUESTION_HYPOTHETICAL = (
-    "会不会", "是不是", "如何预防", "怎么预防", "怎么避免", "是什么意思",
-)
+# 假设/条件式提问：只有"会不会/是不是 + 症状"这种假设结构（词在命中词之前）
+# 才软化；"症状 + 是不是/会不会…"是发病时的追因提问，不软化
+_QUESTION_HYPOTHETICAL_BEFORE = ("会不会", "是不是")
+_QUESTION_HYPOTHETICAL_ANY = ("如何预防", "怎么预防", "怎么避免", "是什么意思")
 # 知识性提问：需排除第一人称亲历（"我胸闷是怎么回事"仍是急症）
 _QUESTION = (
     "是怎么回事", "是什么原因", "为什么", "什么引起",
@@ -101,13 +109,19 @@ _FIRST_PERSON = ("我", "现在", "刚刚", "刚才", "今天", "训练时", "�
 _CLAUSE_SPLIT = re.compile(r"[，。！？；,;!?\n]")
 
 
-def _clause_at(text: str, pos: int) -> str:
+def _clause_start(text: str, pos: int) -> int:
+    """命中词所在分句的起始下标（分句按 ，。！？； 等切分）"""
     start = 0
     for m in _CLAUSE_SPLIT.finditer(text):
         if m.start() < pos:
             start = m.end()
         else:
             break
+    return start
+
+
+def _clause_at(text: str, pos: int) -> str:
+    start = _clause_start(text, pos)
     end = len(text)
     for m in _CLAUSE_SPLIT.finditer(text, pos):
         end = m.start()
@@ -116,15 +130,22 @@ def _clause_at(text: str, pos: int) -> str:
 
 
 def _soft_reason(text: str, kw: str, pos: int) -> str:
-    """判断命中词的语境。返回 negated/question/history 之一，或 ""（不软化）"""
-    before = text[max(0, pos - 12):pos]
-    window = text[max(0, pos - 8):pos]
-    if any(neg in window for neg in _NEGATORS) or _NEG_BU.search(window):
+    """判断命中词某一次出现的语境。返回 negated/question/history 之一，或 ""（不软化）"""
+    prefix = text[_clause_start(text, pos):pos]  # 命中词之前的部分（限同一分句）
+    # 否定：否定词必须贴着命中词（同一分句、前缀以否定词收尾）
+    if _NEGATED_PREFIX.search(prefix):
         return "negated"
-    if any(h in before for h in _HISTORY):
+    # 病史：历史时间词必须与命中词在同一个分句
+    # （"以前胸闷过"软化；"训练之前还好好的，现在胸口疼"中"之前"在上一分句，不软化）
+    if any(h in prefix for h in _HISTORY):
         return "history"
+    before = text[max(0, pos - 12):pos]
     after = text[pos + len(kw):pos + len(kw) + 10]
-    if any(q in before or q in after for q in _QUESTION_HYPOTHETICAL):
+    # 假设结构软化仅限"会不会/是不是 + 症状"（词在命中词之前）：
+    # "我会不会胸闷"软化；"我现在胸口疼，是不是心脏出问题了"不软化
+    if any(q in prefix for q in _QUESTION_HYPOTHETICAL_BEFORE):
+        return "question"
+    if any(q in before or q in after for q in _QUESTION_HYPOTHETICAL_ANY):
         return "question"
     if any(q in before or q in after for q in _QUESTION):
         clause = _clause_at(text, pos)
@@ -133,27 +154,47 @@ def _soft_reason(text: str, kw: str, pos: int) -> str:
     return ""
 
 
+def _find_all(text: str, kw: str):
+    pos = text.find(kw)
+    while pos != -1:
+        yield pos
+        pos = text.find(kw, pos + 1)
+
+
 def check_red_flags(text: str) -> SafetyHit | None:
     """检查用户输入。返回 SafetyHit；未命中返回 None。
 
     mode=block：固定话术直接返回，不调用 LLM
     mode=soft：不拦截，调用方注入 soft_note() 后继续正常流程
+
+    判定规则（2026-09-29 收紧）：
+    - 遍历三档全部关键词的全部出现位置（不是命中第一个就返回）
+    - 任一应硬拦截的位置存在 → block（取档位最高的那个）
+      （"没有胸闷，但刚才眼前发黑了"：胸闷软化、眼前发黑不软化 → block）
+    - 全部命中位置都软化 → soft（取档位最高的 soft 命中）
     """
+    block_hit: SafetyHit | None = None
+    soft_hit: SafetyHit | None = None
     for tier in ("emergency", "injury", "yellow"):
         for kw, _note in _KEYWORDS[tier]:
-            pos = text.find(kw)
-            if pos == -1:
-                continue
-            if tier == "yellow":
-                return SafetyHit(tier, "soft", kw, "yellow", "")
-            reason = _soft_reason(text, kw, pos)
-            if reason:
-                return SafetyHit(tier, "soft", kw, reason, "")
-            return SafetyHit(
-                tier, "block", kw, "",
-                EMERGENCY_RESPONSE if tier == "emergency" else INJURY_RESPONSE,
-            )
-    return None
+            for pos in _find_all(text, kw):
+                if tier == "yellow":
+                    if soft_hit is None:
+                        soft_hit = SafetyHit(tier, "soft", kw, "yellow", "")
+                    continue
+                reason = _soft_reason(text, kw, pos)
+                if reason:
+                    if soft_hit is None:
+                        soft_hit = SafetyHit(tier, "soft", kw, reason, "")
+                else:
+                    if block_hit is None:  # 保留本档第一个硬拦截命中
+                        block_hit = SafetyHit(
+                            tier, "block", kw, "",
+                            EMERGENCY_RESPONSE if tier == "emergency" else INJURY_RESPONSE,
+                        )
+        if block_hit is not None:
+            return block_hit  # 当前档位已有硬拦截，低档位不再覆盖
+    return block_hit or soft_hit
 
 
 _REASON_LABEL = {"negated": "否定", "question": "提问", "history": "病史", "yellow": "黄色预警"}
@@ -167,12 +208,14 @@ def soft_note(hit: SafetyHit) -> str:
         )
         return (
             f"【安全提示·勿直接引用】用户提到「{hit.keyword}」（黄色预警）。"
-            f"处理原则：{guidance}。请把这些建议自然融入回复，这是降阶处理不是急症，"
-            "不要渲染恐慌；若用户说症状持续或加重，建议就医。"
+            f"处理原则：{guidance}。请把这些建议自然融入回复；"
+            "若用户说症状持续或加重，明确建议就医。"
         )
     return (
         f"【安全提示·勿直接引用】用户输入命中安全词「{hit.keyword}」"
-        f"（{TIER_LABEL[hit.tier]}），但语境为{_REASON_LABEL[hit.reason]}，不按急症处理。"
-        "请：1) 正常回应当前话题；2) 简短带上安全意识——若真的出现该症状，"
-        "应停止训练并及时就医；3) 不要渲染恐慌。"
+        f"（{TIER_LABEL[hit.tier]}），命中位置处于{_REASON_LABEL[hit.reason]}语境，"
+        "规则判断该处**可能**不是正在发作，故未硬拦截。"
+        "请：1) 正常回应当前话题；2) 结合上下文自行判断——若有任何迹象表明症状"
+        "正在发生或加重，按急症对待并明确建议停止训练、尽快就医；"
+        "3) 简短带上安全意识即可。"
     )

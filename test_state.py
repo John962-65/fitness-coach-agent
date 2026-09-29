@@ -215,7 +215,7 @@ def test_finalize_is_idempotent():
 
 def test_two_step_flow():
     agent = _agent_with_progress()
-    # 1. 获取建议 → pending 落库
+    # 1. 获取建议 → pending 落库（记录生成轮次）
     result = agent._handle_tool({"name": "get_adjustment_suggestions",
                                  "arguments": "{}"}, "normal")
     assert "adj-" in result and "increase_weight" in result
@@ -225,7 +225,8 @@ def test_two_step_flow():
     bad = agent._handle_tool({"name": "apply_adjustment",
                               "arguments": '{"suggestion_id": "adj-99"}'}, "normal")
     assert "没有待执行的建议" in bad
-    # 3. 正确 id 执行 → 新版本 + pending 消费
+    # 3. 用户下一轮确认（轮次前进），正确 id 执行 → 新版本 + pending 消费
+    agent._turn_no += 1
     ok = agent._handle_tool({"name": "apply_adjustment",
                              "arguments": json.dumps(
                                  {"suggestion_id": inc["id"]})}, "normal")
@@ -235,6 +236,36 @@ def test_two_step_flow():
     assert plan["schedule"][0]["exercises"][0]["weight_kg"] == 70.0  # 65+5
     assert all(s["action"] != "increase_weight"
                for s in agent.profile["pending_adjustments"])
+
+
+def test_same_turn_apply_refused():
+    """2026-09-29：LLM 同轮 suggest 完立刻 apply（中间没有用户确认）→ 拒绝"""
+    agent = _agent_with_progress()
+    result = agent._handle_tool({"name": "get_adjustment_suggestions",
+                                 "arguments": "{}"}, "normal")
+    inc = next(s for s in agent.profile["pending_adjustments"]
+               if s["action"] == "increase_weight")
+    refused = agent._handle_tool({"name": "apply_adjustment",
+                                  "arguments": json.dumps(
+                                      {"suggestion_id": inc["id"]})}, "normal")
+    assert "本轮刚生成" in refused and "下一轮" in refused
+    # 计划没有被改
+    assert agent.db.get_active_plan("s").get("adjust_action") is None
+
+
+def test_pending_suggestion_expires():
+    """建议超过 PENDING_EXPIRE_TURNS 轮未确认 → 作废"""
+    from coach.agent import PENDING_EXPIRE_TURNS
+    agent = _agent_with_progress()
+    agent._handle_tool({"name": "get_adjustment_suggestions",
+                        "arguments": "{}"}, "normal")
+    inc = next(s for s in agent.profile["pending_adjustments"]
+               if s["action"] == "increase_weight")
+    agent._turn_no += PENDING_EXPIRE_TURNS + 1
+    expired = agent._handle_tool({"name": "apply_adjustment",
+                                  "arguments": json.dumps(
+                                      {"suggestion_id": inc["id"]})}, "normal")
+    assert "已作废" in expired
 
 
 def test_apply_without_suggest_refused():
@@ -394,3 +425,87 @@ def test_login_recap_shows_open_pain_flags():
     from coach.review import login_recap
     recap = login_recap(agent.db, "s", None)
     assert "安全记录" in recap and "胸闷" in recap
+
+
+# ---------- 个性化闭环：重排计划建议（2026-09-29） ----------
+
+def _agent_with_plan(uid="s"):
+    agent = _agent(uid)
+    agent.profile["onboarding_done"] = True
+    agent.db.create_plan(uid, dict(PPL_PLAN))
+    return agent
+
+
+def test_avoid_feedback_offers_regenerate():
+    """用户说"先不练它"（avoid）→ 生成重排建议（pending），走两步确认"""
+    agent = _agent_with_plan()
+    agent._turn_no = 1
+    result = agent._handle_tool({"name": "record_exercise_feedback",
+                                 "arguments": json.dumps({
+                                     "exercise": "杠铃卧推", "status": "avoid",
+                                     "evidence": "先不练它"})}, "normal")
+    assert "重排" in result
+    regen = next(s for s in agent.profile["pending_adjustments"]
+                 if s["action"] == "regenerate_plan")
+    # 同轮不能执行；下一轮确认后 apply → 新版本中杠铃平板卧推被替换
+    agent._turn_no += 1
+    ok = agent._handle_tool({"name": "apply_adjustment",
+                             "arguments": json.dumps(
+                                 {"suggestion_id": regen["id"]})}, "normal")
+    assert "整体重排" in ok
+    plan = agent.db.get_active_plan("s")
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert "杠铃平板卧推" not in names
+    assert plan["adjust_action"] == "regenerate_plan"
+
+
+def test_regenerate_preserves_prescription_weights():
+    """重排保留已有处方重量：旧计划深蹲 100kg，重排后同动作仍是 100kg"""
+    agent = _agent_with_plan()
+    plan = agent.db.get_active_plan("s")
+    plan["schedule"][2]["exercises"][0]["weight_kg"] = 100.0  # 周五杠铃深蹲
+    agent.db.create_plan("s", plan)
+    agent._turn_no = 1
+    agent._handle_tool({"name": "record_exercise_feedback",
+                        "arguments": json.dumps({
+                            "exercise": "杠铃卧推", "status": "avoid",
+                            "evidence": "肩膀不舒服，先不练"})}, "normal")
+    regen = next(s for s in agent.profile["pending_adjustments"]
+                 if s["action"] == "regenerate_plan")
+    agent._turn_no += 1
+    agent._handle_tool({"name": "apply_adjustment",
+                        "arguments": json.dumps(
+                            {"suggestion_id": regen["id"]})}, "normal")
+    new_plan = agent.db.get_active_plan("s")
+    weights = {e["name"]: e.get("weight_kg")
+               for d in new_plan["schedule"] for e in d["exercises"]}
+    assert weights.get("杠铃深蹲") == 100.0
+
+
+def test_profile_injury_change_offers_regenerate():
+    """normal 模式新增伤病 → 生成重排建议"""
+    agent = _agent_with_plan()
+    agent._turn_no = 1
+    agent.profile["conditions"]["injuries_collected"] = True
+    agent.profile["conditions"]["injuries_evidence"] = "建档时说过没有"
+    result = agent._handle_tool({"name": "update_profile",
+                                 "arguments": json.dumps({"patch": {
+                                     "conditions": {"injuries": ["腰"]}}})},
+                                "normal")
+    assert "重排" in result
+    assert any(s["action"] == "regenerate_plan"
+               for s in agent.profile["pending_adjustments"])
+
+
+def test_regenerate_not_duplicated():
+    """已有一条待确认的重排建议时不重复生成"""
+    agent = _agent_with_plan()
+    agent._turn_no = 1
+    for _ in range(2):
+        agent._handle_tool({"name": "record_exercise_feedback",
+                            "arguments": json.dumps({
+                                "exercise": "杠铃卧推", "status": "avoid",
+                                "evidence": "先不练它"})}, "normal")
+    regens = [s for s in agent.profile["pending_adjustments"]
+              if s["action"] == "regenerate_plan"]
+    assert len(regens) == 1

@@ -92,6 +92,8 @@ EXTRACT_PROMPT = """你是健身内容整理助手。下面是一段博主视频
 - exercises 用给定的动作库 id（从下方列表里选，没有就留空）
 - type 取值：principle/method/cue/error/self_check/nutrition/anecdote
 - evidence 取值：blogger_experience/cites_research/consensus
+- 多人出镜的视频（对话/合作/合集）：AI 字幕不区分说话人，
+  每条加 "speaker" 字段——能确定说话人就填名字，不能确定填"待确认"
 - 只输出 JSON 数组，不要解释
 
 动作库 id 列表：{exercise_ids}
@@ -101,7 +103,8 @@ EXTRACT_PROMPT = """你是健身内容整理助手。下面是一段博主视频
 
 输出 JSON 数组，每个元素形如：
 {{"claim": "...", "ts": [192.0, 201.5], "type": "cue",
-  "exercises": ["barbell_back_squat"], "evidence": "blogger_experience"}}
+  "exercises": ["barbell_back_squat"], "evidence": "blogger_experience",
+  "speaker": "待确认"}}
 """
 
 SUPPORT_PROMPT = """判断"原文片段"是否支持"待验证观点"。只回答"支持"或"不支持"，不要解释。

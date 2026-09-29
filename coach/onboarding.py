@@ -5,6 +5,32 @@
 """
 from __future__ import annotations
 
+import re
+
+# ---- 伤病/健康筛查"原话依据"判定（G2 门槛） ----
+# LLM 没附 *_evidence 时，只能用"真的在回答该问题"的用户原话回填；
+# "别问了直接开始"这类话不能充当依据（否则伤病门槛形同虚设）。
+_INJURY_TOPIC = re.compile(
+    r"(伤|痛|疼|拉伤|扭伤|劳损|旧伤|骨折|手术|关节|麻木|不适)")
+_HEALTH_TOPIC = re.compile(
+    r"(心脏|心血管|血压|怀孕|备孕|长期用药|吃药|降压药|医生|医嘱|"
+    r"限制运动|身体|体检|健康)")
+_HEALTH_CLEAR = re.compile(r"(正常|没问题|没事|无异常)")
+
+
+def answers_injury_question(text: str) -> bool:
+    """这段话能否判定为真的在回答伤病史问题（含"没有伤病"这类否定回答）"""
+    if not text:
+        return False
+    return bool(_INJURY_TOPIC.search(text))
+
+
+def answers_health_question(text: str) -> bool:
+    """这段话能否判定为真的在回答健康筛查（PAR-Q）问题"""
+    if not text:
+        return False
+    return bool(_HEALTH_TOPIC.search(text) or _HEALTH_CLEAR.search(text))
+
 REQUIRED = [
     (("basic", "age"), "年龄"),
     (("basic", "gender"), "性别"),

@@ -112,6 +112,50 @@ def test_positive_health_screen_adds_note():
     assert any("健康筛查" in n and "高血压" in n for n in plan["notes"])
 
 
+# ---- PAR-Q 阳性 + 医生未放行 → 医疗降级（2026-09-29） ----
+
+def test_parq_positive_without_clearance_gets_low_intensity_only():
+    """有心血管阳性、医生没有放行 → 只给低强度版本，不发 RPE 9 冲击周"""
+    p = mk(experience={"big3": {"squat": 130}},  # 老炮也一样降级
+           conditions={
+               "injuries": [], "injuries_collected": True,
+               "health_screen_collected": True,
+               "health_screen": {"heart": "冠心病史", "medication": "无"},
+           })
+    plan = generate_plan(p)
+    assert "医疗降级" in plan["template"] or "低强度" in plan["template"]
+    assert "老炮周期化" not in plan["template"]
+    text = plan_to_text(plan)
+    assert "RPE 9" not in text and "冲击" not in text
+    assert any("放行" in n for n in plan["notes"])
+
+
+def test_parq_positive_with_clearance_keeps_normal_plan():
+    """阳性但医生明确放行（"医生允许中等强度运动"）→ 正常计划 + 注意项"""
+    p = mk(experience={"big3": {"squat": 130}},
+           conditions={
+               "injuries": [], "injuries_collected": True,
+               "health_screen_collected": True,
+               "health_screen": {"heart": "高血压",
+                                 "clearance": "医生允许中等强度运动"},
+           })
+    plan = generate_plan(p)
+    assert "老炮周期化" in plan["template"]  # 不降级
+    assert any("健康筛查" in n for n in plan["notes"])  # 注意项保留
+
+
+def test_parq_clearance_wu_is_not_clearance():
+    """clearance 填"无"只是没有限制记录，不等于放行 → 仍降级"""
+    p = mk(experience={"big3": {"squat": 130}},
+           conditions={
+               "injuries": [], "injuries_collected": True,
+               "health_screen_collected": True,
+               "health_screen": {"heart": "冠心病史", "clearance": "无"},
+           })
+    plan = generate_plan(p)
+    assert "低强度" in plan["template"] or "医疗降级" in plan["template"]
+
+
 def test_clean_health_screen_no_note():
     p = mk(conditions={
         "injuries": [], "injuries_collected": True,
@@ -144,14 +188,54 @@ def _states(rows):
 
 
 def test_injury_substitutes_same_pattern():
-    """膝伤：深蹲被剔除后，蹲槽位应落同模式替代（而非删掉或静默练空）"""
+    """膝伤：深蹲被剔除后，蹲槽位只在已审核动作里找替代；
+    已审核蹲类全是膝压 ≥2 时槽位诚实留空并说明，不用未审核 draft 凑数"""
     adv = mk(experience={"big3": {"squat": 130}},
              conditions={"injuries": ["膝"], "injuries_collected": True})
     plan = generate_plan(adv)
     names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
     assert "杠铃深蹲" not in names
     whys = [e.get("why", "") for d in plan["schedule"] for e in d["exercises"]]
-    assert any("不可用" in w or "换" in w for w in whys)
+    # 要么换到同模式替代，要么槽位暂缺并在 notes 里说明
+    assert any("不可用" in w or "换" in w for w in whys) \
+        or any("暂缺" in n for n in plan["notes"])
+
+
+def test_injured_user_never_gets_draft_exercises():
+    """2026-09-29：有伤病时 draft 动作一律不入选（其关节压力是 LLM 估的、未审核）"""
+    from coach.exercises import library
+    adv = mk(experience={"big3": {"squat": 130}},
+             conditions={"injuries": ["膝"], "injuries_collected": True})
+    plan = generate_plan(adv)
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    drafts = {ex["name"] for ex in library.all() if ex.get("status") != "approved"}
+    assert not (set(names) & drafts), f"伤病用户计划混入未审核动作: {set(names) & drafts}"
+
+
+def test_unknown_injury_part_disclosed_not_guessed():
+    """"大腿后侧拉伤"不映射任何关节：不静默删深蹲（旧版"腿→knee"误映射），
+    而是明确告知用户这个部位处理不了"""
+    adv = mk(experience={"big3": {"squat": 130}},
+             conditions={"injuries": ["大腿后侧拉伤"], "injuries_collected": True})
+    plan = generate_plan(adv)
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert "杠铃深蹲" in names  # 不映射 knee，深蹲不应被误删
+    assert any("处理不了" in n for n in plan["notes"])
+
+
+def test_elbow_injury_disclosed_no_data():
+    """肘伤：库里没有肘部压力数据 → 明确告知，不过滤动作也不装死"""
+    adv = mk(experience={"big3": {"squat": 130}},
+             conditions={"injuries": ["肘"], "injuries_collected": True})
+    plan = generate_plan(adv)
+    assert any("处理不了" in n or "暂无压力数据" in n for n in plan["notes"])
+
+
+def test_no_injury_draft_still_available():
+    """无伤病时 draft 动作照常可用（居家用户的自重/哑铃动作都在 draft）"""
+    plan = generate_plan(mk(resources={"location": "home", "days_per_week": 4}))
+    names = [e["name"] for d in plan["schedule"] for e in d["exercises"]]
+    assert names, "无伤病居家计划不应为空"
 
 
 def test_avoid_status_excludes_and_substitutes():

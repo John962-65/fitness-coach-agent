@@ -75,6 +75,9 @@ def print_claim(claim: dict, idx: str = "") -> None:
     print(f"[{idx or claim['id']}] {flag} {status}｜{claim['type']}｜"
           f"{claim['video']} @ {claim['ts'][0]:.0f}-{claim['ts'][1]:.0f}s")
     print(f"    观点：{claim['claim']}")
+    if claim.get("speaker"):
+        # 多人出镜/AI 字幕不分说话人的视频：归属待审核时确认
+        print(f"    说话人：{claim['speaker']}")
     if claim.get("exercises"):
         print(f"    动作：{'、'.join(claim['exercises'])}")
     print(f"    原文：{transcript_excerpt(claim)[:160]}")
@@ -141,6 +144,11 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--flagged-only", action="store_true")
     ap.add_argument("--video", default="")
+    ap.add_argument("--exercise", default="",
+                    help="只列出与该动作相关的条目（先审当前计划用到的动作："
+                         "cue/error/self_check 优先，anecdote 可批量跳过）")
+    ap.add_argument("--types", default="",
+                    help="只列出指定类型（逗号分隔，如 cue,error,self_check）")
     ap.add_argument("--show", default="")
     ap.add_argument("--approve", default="")
     ap.add_argument("--reject", default="")
@@ -202,11 +210,16 @@ def main() -> int:
         return 0
 
     # --list（默认）
+    type_filter = {t.strip() for t in args.types.split(",") if t.strip()}
     shown = 0
     for c in claims:
         if args.flagged_only and c.get("anti_hallucination") != "FLAGGED":
             continue
         if args.video and c.get("video") != args.video:
+            continue
+        if args.exercise and args.exercise not in (c.get("exercises") or []):
+            continue
+        if type_filter and c.get("type") not in type_filter:
             continue
         print_claim(c, str(shown))
         shown += 1

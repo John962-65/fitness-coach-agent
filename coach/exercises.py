@@ -2,6 +2,11 @@
 
 归一顺序：别名精确匹配 → 别名是输入子串（取最长）→ 输入是别名前缀 → difflib 模糊。
 同一套逻辑同时服务打卡归一（20.4）与视频动作"对上号"（21.2 ②）。
+
+变式保护（2026-09-29）：子串/模糊命中时，若输入比别名多出了"变式词"
+（跳/史密斯/箱式/相扑/单腿/窄距……），说明用户做的是另一个变式动作——
+不归一、返回 None 进待确认队列，避免"深蹲跳"被静默记成杠铃深蹲、
+污染 e1RM 趋势从而触发虚假的停滞/加重建议。
 """
 from __future__ import annotations
 
@@ -11,6 +16,18 @@ from pathlib import Path
 import yaml
 
 EXERCISES_ROOT = Path(__file__).resolve().parent.parent / "exercises"
+
+# 变式修饰词：输入含有而命中别名不含 → 是另一个动作（或库里没有的新变式）
+_VARIANT_MARKERS = (
+    "跳", "史密斯", "箱", "相扑", "单腿", "单臂", "窄", "宽",
+    "上斜", "下斜", "暂停", "半程", "赤字", "弹力带", "负重",
+    "器械", "绳索", "坐姿", "站姿", "俯身",
+)
+
+
+def _has_extra_variant(t: str, alias: str) -> bool:
+    """输入相对命中别名多出了变式词（如 "相扑硬拉" vs "硬拉"）"""
+    return any(m in t and m not in alias for m in _VARIANT_MARKERS)
 
 
 class ExerciseLibrary:
@@ -47,25 +64,33 @@ class ExerciseLibrary:
         return self._by_id.get(ex_id)
 
     def normalize(self, text: str) -> tuple[str | None, str, str]:
-        """输入用户叫法，返回 (id 或 None, 官方名, 匹配方式 exact/sub/prefix/fuzzy/"")"""
+        """输入用户叫法，返回 (id 或 None, 官方名, 匹配方式 exact/sub/prefix/fuzzy/"")
+
+        sub/fuzzy 命中后做变式检查：输入多出变式词则放弃该命中
+        （变式动作不归一到基础动作，返回 None 由调用方进待确认队列）。
+        """
         t = self._norm(text)
         if not t:
             return None, "", ""
         if t in self._alias:
             ex_id = self._alias[t]
             return ex_id, self._by_id[ex_id]["name"], "exact"
-        subs = [(len(a), aid) for a, aid in self._alias.items() if a in t]
+        subs = [(len(a), a, aid) for a, aid in self._alias.items() if a in t]
         if subs:
-            ex_id = max(subs)[1]
-            return ex_id, self._by_id[ex_id]["name"], "sub"
+            _, alias, ex_id = max(subs, key=lambda x: (x[0], x[2]))
+            if not _has_extra_variant(t, alias):
+                return ex_id, self._by_id[ex_id]["name"], "sub"
+            # 子串命中被变式词否决（"窄距卧推"⊃"卧推"但多了"窄"）：
+            # 不静默合并，继续尝试前缀/模糊（如"窄距卧推"还能对上"窄握卧推"）
         prefixes = [aid for a, aid in self._alias.items()
                     if a.startswith(t) and len(t) >= 2]
         if len(prefixes) == 1:
             return prefixes[0], self._by_id[prefixes[0]]["name"], "prefix"
         close = difflib.get_close_matches(t, list(self._alias), n=1, cutoff=0.6)
         if close:
-            ex_id = self._alias[close[0]]
-            return ex_id, self._by_id[ex_id]["name"], "fuzzy"
+            if not _has_extra_variant(t, close[0]):
+                ex_id = self._alias[close[0]]
+                return ex_id, self._by_id[ex_id]["name"], "fuzzy"
         return None, text, ""
 
     def track_e1rm_names(self, names: list[str]) -> list[str]:

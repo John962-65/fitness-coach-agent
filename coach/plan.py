@@ -16,6 +16,8 @@ default 是模板默认动作。填槽三步（全部确定性代码，LLM 只�
 """
 from __future__ import annotations
 
+import re
+
 from .exercises import library as exercise_lib
 from .profile import _is_positive, open_pain_flags
 
@@ -27,10 +29,28 @@ PATTERN_LABEL = {
     "core": "核心", "carry": "负重行走",
 }
 # 伤病描述 → 关节（joint_stress 的 key）；阈值：压力 ≥2 的动作避开
+# 注意：没有"腿"这种笼统映射（旧版"腿→knee"会让大腿后侧拉伤的用户被删深蹲、
+# 却保留罗马尼亚硬拉）；映射不了的部位会明确告知用户"处理不了"
 JOINT_KEYWORDS = {"腰": "lumbar", "下背": "lumbar", "背": "lumbar",
-                  "膝": "knee", "腿": "knee",
+                  "膝": "knee",
                   "肩": "shoulder", "腕": "wrist", "肘": "elbow", "髋": "hip"}
 INJURY_STRESS_THRESHOLD = 2
+
+# 医生明确放行的措辞（PAR-Q clearance 项）：不含这些措辞一律按"未放行"处理
+_CLEARANCE_OK = re.compile(r"允许|可以|同意|放行|没问题")
+
+
+def _medical_clearance_ok(hs: dict) -> bool:
+    """医生是否明确放行运动。
+
+    health_screen.clearance 是 PAR-Q 的"医生是否嘱咐过限制运动"：
+    只有出现明确放行措辞（"医生允许中等强度运动"）才算放行；
+    "无/没说过"只是没有限制记录，不等于放行——有阳性项时从紧处理。
+    """
+    v = str((hs or {}).get("clearance", ""))
+    if not v.strip():
+        return False
+    return bool(_CLEARANCE_OK.search(v))
 
 
 def assess_level(profile: dict) -> str:
@@ -140,27 +160,55 @@ def _states_by_id(exercise_states) -> dict:
             if isinstance(s, dict) and s.get("exercise_id")}
 
 
-def _injured_joints(injuries: list) -> set:
-    joints = set()
+def _injured_joints(injuries: list) -> tuple[set, list[str]]:
+    """伤病描述 → (可映射的关节集合, 无法处理的原始描述列表)。
+
+    映射不了（如"大腿后侧拉伤"）或有映射但库内无该关节压力数据（肘/髋）
+    的部位不静默乱猜，交给调用方明确告知用户。
+    """
+    joints, unknown = set(), []
     for inj in injuries or []:
-        for kw, joint in JOINT_KEYWORDS.items():
-            if kw in str(inj):
-                joints.add(joint)
-    return joints
+        text = str(inj).strip()
+        if not text:
+            continue
+        matched = [joint for kw, joint in JOINT_KEYWORDS.items() if kw in text]
+        if matched:
+            joints.update(matched)
+        else:
+            unknown.append(text)
+    return joints, unknown
 
 
-def _hard_exclude(ex: dict, profile: dict, states: dict) -> str | None:
-    """返回排除原因；None = 通过。顺序：avoid > 伤病 > 场地器械 > 水平"""
+def _joints_without_data(joints: set) -> set:
+    """approved 动作里没有任何非零压力值的关节（如 elbow/hip）——
+    这些关节的伤我们"处理不了"，必须明确告知用户，而不是假装过滤过"""
+    has_data = set()
+    for ex in exercise_lib.all():
+        if ex.get("status") != "approved":
+            continue
+        for j, v in (ex.get("joint_stress") or {}).items():
+            if v:
+                has_data.add(j)
+    return {j for j in joints if j not in has_data}
+
+
+def _hard_exclude(ex: dict, profile: dict, states: dict,
+                  joints: set, approved_only: bool) -> str | None:
+    """返回排除原因；None = 通过。顺序：avoid > 未审核 > 伤病 > 场地器械 > 水平"""
     st = states.get(ex["id"]) or {}
     if st.get("status") == "avoid":
         return "你说过先不练它"
+    # 2026-09-29：有伤病时只用已审核动作——draft 的 joint_stress 是 LLM 估的、
+    # 未经发起人审核，不能拿它决定伤病用户练什么
+    if approved_only and ex.get("status") != "approved":
+        return "关节压力数据未经审核，有伤病时不选用"
     level = assess_level(profile)
     if LEVEL_ORDER.get(level, 0) < LEVEL_ORDER.get(ex.get("level_min", "beginner"), 0):
         return f"动作门槛高于当前水平（{ex.get('level_min')} 起）"
     loc = (profile.get("resources", {}) or {}).get("location", "gym")
     if loc not in (ex.get("location") or []):
         return f"场地不匹配（需要 {'/'.join(ex.get('location') or [])}）"
-    for joint in _injured_joints((profile.get("conditions", {}) or {}).get("injuries")):
+    for joint in joints:
         if (ex.get("joint_stress") or {}).get(joint, 0) >= INJURY_STRESS_THRESHOLD:
             return f"{joint} 压力高（{joint} 有伤）"
     return None
@@ -189,7 +237,8 @@ def _score(ex: dict, slot: dict, states: dict, day_muscles: set) -> float:
     return score
 
 
-def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set) -> tuple[dict | None, str]:
+def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set,
+               joints: set, approved_only: bool) -> tuple[dict | None, str]:
     """返回 (动作条目 or None, why)。过滤后无人可选返回 (None, 原因)。"""
     level = assess_level(profile)
     candidates = []
@@ -200,7 +249,7 @@ def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set) -> tup
                                     & (set(ex.get("primary") or [])
                                        | set(ex.get("secondary") or []))):
             continue
-        reason = _hard_exclude(ex, profile, states)
+        reason = _hard_exclude(ex, profile, states, joints, approved_only)
         if reason:
             continue
         candidates.append(ex)
@@ -219,7 +268,8 @@ def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set) -> tup
         picked = best
         parts = []
         if slot["default"] != best["id"]:
-            why_default = _hard_exclude(default, profile, states) if default else "不在库中"
+            why_default = (_hard_exclude(default, profile, states, joints, approved_only)
+                           if default else "不在库中")
             if default and default not in candidates:
                 parts.append(f"默认的{default['name']}不可用（{why_default}），"
                              f"换成同模式的{best['name']}")
@@ -264,15 +314,32 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
     states = _states_by_id(exercise_states)
 
     notes: list[str] = ["每次训练先热身 5-10 分钟，主力动作从小重量组开始"]
+    joints, unknown_injuries = _injured_joints(c.get("injuries"))
+    no_data_joints = _joints_without_data(joints)
+    joints -= no_data_joints
+    # 有可用伤病关节时，筛选只信任已审核动作（draft 的关节压力未经发起人审核）
+    approved_only = bool(joints)
     inj_names = []
-    for joint in _injured_joints(c.get("injuries")):
+    for joint in joints:
         for ex in exercise_lib.all():
+            if ex.get("status") != "approved":
+                continue
             if (ex.get("joint_stress") or {}).get(joint, 0) >= INJURY_STRESS_THRESHOLD \
                     and ex["name"] not in inj_names:
                 inj_names.append(ex["name"])
     if inj_names:
         notes.append(f"因伤病（{injuries}）已剔除动作：{'、'.join(inj_names)}"
                      "，计划里已换成同模式替代")
+    # 无法处理的部位（映射不了，或库内无该关节压力数据）：明确告知，不静默乱猜
+    cant_handle = list(unknown_injuries)
+    if no_data_joints:
+        cant_handle.append("、".join(sorted(no_data_joints)) + "（该部位暂无压力数据）")
+    if cant_handle:
+        notes.append(
+            f"⚠️ 伤病部位（{'、'.join(cant_handle)}）我暂时还处理不了："
+            "没有可靠的关节压力数据，就不替你乱猜。请告诉我哪些动作会引发不适，"
+            "我会按你的反馈逐个避开；这些部位的训练请先咨询医生或康复师"
+        )
 
     open_flags = open_pain_flags(profile)
     if open_flags:
@@ -284,16 +351,32 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         )
     hs = c.get("health_screen") or {}
     positives = [v for v in hs.values() if _is_positive(v)]
+    low_intensity_only = False
     if c.get("health_screen_collected") and positives:
         notes.append(
             f"⚠️ 健康筛查有需要关注项（{'、'.join(str(p)[:15] for p in positives)}）："
             "建议先咨询医生确认运动许可，初期保持中低强度"
         )
+        # 2026-09-29：阳性 + 医生未明确放行 → 只给低强度版本
+        # （修复前：照样发含 RPE 9 冲击周的完整计划）
+        low_intensity_only = not _medical_clearance_ok(hs)
     if g.get("primary") == "fat_loss":
         notes.append("减脂期保持训练强度以保肌肉，热量缺口控制在 10-25%")
 
     # ---- 模板与槽位选择 ----
-    if days <= 2:
+    if low_intensity_only:
+        # 医疗降级：骨架用低强度全身 A/B，不走进阶/老炮的 RPE 8-9 周期化模板
+        ab = [FULL_BODY_A, FULL_BODY_B]
+        day_slots = [ab[i % 2] for i in range(min(days, 3))]
+        names = _day_names(min(days, 3))
+        day_focus = ["全身 A", "全身 B"] * 2
+        template = "（医疗降级）低强度全身 A/B（医生放行前：RPE ≤6，不上大重量、不力竭）"
+        notes.insert(
+            0,
+            "⚠️ 健康筛查有阳性项且医生未明确放行：当前只提供低强度版本；"
+            "拿到医生放行后告诉我，我立刻给你换成正常强度的计划",
+        )
+    elif days <= 2:
         cycle_slots, day_focus = BUSY_SLOTS, "全身（高强度复合）"
         template = "忙碌高效全身计划（低频次高刺激）"
         notes += [
@@ -332,10 +415,13 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         picked, muscles = [], set()
         focus = day_focus[i] if isinstance(day_focus, list) else day_focus
         for slot in slots:
-            entry, _why = _fill_slot(slot, profile, states, muscles)
+            entry, _why = _fill_slot(slot, profile, states, muscles,
+                                     joints, approved_only)
             if entry is None:
+                suffix = ("（已审核动作中没有更安全的选项，宁可空着也不用未审核的数据凑数）"
+                          if approved_only else "")
                 notes.append(f"⚠️ {names[i]}的{PATTERN_LABEL.get(slot['pattern'], slot['pattern'])}"
-                             f"类动作暂缺：{_why}")
+                             f"类动作暂缺：{_why}{suffix}")
                 continue
             # 记录当日已覆盖肌群（多样性打分用）
             ex = exercise_lib.get(_id_of(entry["name"])) or {}
@@ -359,6 +445,33 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         "schedule": schedule,
         "notes": notes,
     }
+
+
+def regenerate_plan_preserve(profile: dict, exercise_states,
+                             old_plan: dict | None, reason: str = "") -> dict:
+    """整体重排计划（个性化闭环：反馈/伤病/场地/天数变化后）。
+
+    重排时保留两类个体数据，不能每次重排都推倒重来：
+    - 已有处方重量 weight_kg（按动作 id 匹配拷贝到新计划同名动作上）
+    - 卸载周状态 deload（仍在有效期的卸载不因重排丢失）
+    """
+    new = generate_plan(profile, exercise_states=exercise_states)
+    weights: dict[str, float] = {}
+    for day in (old_plan or {}).get("schedule", []):
+        for ex in day.get("exercises", []):
+            ex_id, _, _ = exercise_lib.normalize(ex.get("name", ""))
+            if ex_id and ex.get("weight_kg") is not None:
+                weights[ex_id] = ex["weight_kg"]
+    for day in new["schedule"]:
+        for ex in day["exercises"]:
+            ex_id, _, _ = exercise_lib.normalize(ex.get("name", ""))
+            if ex_id in weights:
+                ex["weight_kg"] = weights[ex_id]
+    if (old_plan or {}).get("deload"):
+        new["deload"] = old_plan["deload"]
+    new["adjust_action"] = "regenerate_plan"
+    new["adjust_reason"] = reason
+    return new
 
 
 def _id_of(name: str) -> str:

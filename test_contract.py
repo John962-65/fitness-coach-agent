@@ -45,6 +45,42 @@ def test_unknown_exercise_returns_none():
     assert ex_id is None and via == ""
 
 
+# ---------- 变式保护（2026-09-29：变式动作不静默合并进基础动作） ----------
+
+def test_variant_squat_jump_not_merged():
+    """"深蹲跳"不是深蹲：子串命中被变式词否决 → 进待确认队列"""
+    ex_id, _, _ = exercise_lib.normalize("深蹲跳")
+    assert ex_id is None
+
+
+def test_variant_sumo_deadlift_not_merged():
+    ex_id, _, _ = exercise_lib.normalize("相扑硬拉")
+    assert ex_id is None
+
+
+def test_variant_box_squat_not_merged():
+    ex_id, _, _ = exercise_lib.normalize("箱式深蹲")
+    assert ex_id is None
+
+
+def test_variant_single_leg_not_merged():
+    ex_id, _, _ = exercise_lib.normalize("单腿硬拉")
+    assert ex_id is None
+
+
+def test_close_grip_bench_still_normalizes():
+    """"窄距卧推"子串命中"卧推"被变式词否决后，模糊匹配对上"窄握卧推" ——
+    同一动作的不同叫法仍然归一，不进待确认队列"""
+    ex_id, official, via = exercise_lib.normalize("窄距卧推")
+    assert ex_id == "close_grip_bench_press"
+
+
+def test_plain_sentence_substring_still_works():
+    """日常口语打卡不带变式词，子串归一不受影响"""
+    assert exercise_lib.normalize("今天深蹲")[0] == "barbell_back_squat"
+    assert exercise_lib.normalize("深蹲80kg")[0] == "barbell_back_squat"
+
+
 def test_save_checkin_normalizes_name():
     agent = _agent()
     result = agent._handle_tool({"name": "save_checkin", "arguments": json.dumps({
@@ -91,6 +127,29 @@ def test_coerce_dirty_training_data():
 
 def test_coerce_body_weight_string():
     data, _ = coerce_checkin("body", {"weight_kg": "84.5kg"})
+    assert data["weight_kg"] == 84.5
+
+
+# ---------- "斤"按 0.5kg 换算（2026-09-29：中国用户报体重常用斤） ----------
+
+def test_jin_converted_to_kg_body_checkin():
+    """"150斤"是 75kg，不是 150kg"""
+    data, _ = coerce_checkin("body", {"weight_kg": "150斤"})
+    assert data["weight_kg"] == 75.0
+
+
+def test_jin_converted_to_kg_profile():
+    """档案体重/三大项里的"斤"同样换算（否则定级被翻倍）"""
+    from coach.validate import coerce_profile_patch
+    patch, _ = coerce_profile_patch({"basic": {"weight_kg": "130斤"}})
+    assert patch["basic"]["weight_kg"] == 65.0
+    patch, _ = coerce_profile_patch({"experience": {"big3": {"squat": "300斤"}}})
+    assert patch["experience"]["big3"]["squat"] == 150.0
+
+
+def test_kg_not_double_converted():
+    """"公斤/kg"不触发斤换算"""
+    data, _ = coerce_checkin("body", {"weight_kg": "84.5公斤"})
     assert data["weight_kg"] == 84.5
 
 

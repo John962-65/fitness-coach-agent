@@ -76,6 +76,56 @@ def test_block_urgent_help():
     assert hit and hit.mode == "block"
 
 
+# ---------- 软化收紧（2026-09-29：真急症不得被降级） ----------
+
+def test_block_intensifier_not_negation():
+    """"特别胸闷"："别"是构词成分不是否定词，不得软化"""
+    hit = check_red_flags("今天训练时特别胸闷")
+    assert hit and hit.mode == "block" and hit.tier == "emergency"
+
+
+def test_block_time_adverb_not_negation():
+    """"没多久"是时间副词，不构成否定"""
+    hit = check_red_flags("练完没多久突然胸痛")
+    assert hit and hit.mode == "block"
+
+
+def test_block_negation_in_other_clause():
+    """否定词在另一个分句，不能否定命中词"""
+    hit = check_red_flags("练得很不舒服，胸闷")
+    assert hit and hit.mode == "block"
+
+
+def test_block_history_word_in_other_clause():
+    """"之前"在上一分句，当下症状不算病史"""
+    hit = check_red_flags("训练之前还好好的，现在胸口疼")
+    assert hit and hit.mode == "block"
+
+
+def test_block_first_person_causal_question():
+    """正在发生 + 追因提问（是不是）→ 硬拦截；真发病的人往往就这样问"""
+    hit = check_red_flags("我现在胸口疼，是不是心脏出问题了？")
+    assert hit and hit.mode == "block"
+
+
+def test_block_rhabdo_causal_question():
+    hit = check_red_flags("尿是酱油色的，是不是横纹肌溶解")
+    assert hit and hit.mode == "block"
+
+
+def test_block_second_occurrence_not_softened():
+    """遍历所有关键词的所有位置：第一处软化、第二处不软化 → 拦截"""
+    hit = check_red_flags("没有胸闷，但刚才眼前发黑了")
+    assert hit and hit.mode == "block"
+    assert hit.keyword == "眼前发黑"
+
+
+def test_block_history_then_now():
+    """"以前胸闷过"软化，"今天训练时又胸闷了"不软化 → 拦截"""
+    hit = check_red_flags("以前胸闷过，今天训练时又胸闷了")
+    assert hit and hit.mode == "block"
+
+
 # ---------- 软化（soft）：否定 / 提问 / 病史（S2） ----------
 
 def test_soft_negated():
@@ -146,7 +196,14 @@ def test_soft_note_yellow_has_guidance():
 def test_soft_note_soft_red():
     hit = check_red_flags("我没有胸闷")
     note = soft_note(hit)
-    assert "胸闷" in note and "不按急症" in note
+    assert "胸闷" in note and "未硬拦截" in note
+
+
+def test_soft_note_not_trivializing():
+    """软化提示不得指令 LLM"往轻里说"（"不按急症处理""不要渲染恐慌"类措辞）"""
+    hit = check_red_flags("我没有胸闷")
+    note = soft_note(hit)
+    assert "不按急症" not in note and "不要渲染恐慌" not in note
 
 
 def test_response_templates():
@@ -154,7 +211,7 @@ def test_response_templates():
     assert "冰敷" in INJURY_RESPONSE and "诊断" in INJURY_RESPONSE
 
 
-# ---- S3 确定性兜底：用户带回医疗"无恙"结论时自动关闭安全记录 ----
+# ---- 安全记录留痕分级（2026-09-29：否定不记录；提问/病史记 noted 不跟进） ----
 
 def _agent(uid="safety_auto"):
     import tempfile
@@ -163,27 +220,67 @@ def _agent(uid="safety_auto"):
     return CoachAgent(user_id=uid, db_path=Path(tempfile.mkdtemp()) / "t.db")
 
 
-def test_auto_resolve_closes_flag_on_medical_clearance():
-    a = _agent()
-    a.chat("我练的时候胸口痛")  # block：记录 pain_flag
-    assert a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
-    a.chat("去医院查了，心电图没事，医生说就是太累，休息好再练")
-    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
-    assert all(f["status"] == "resolved" for f in flags)
-    assert "自动关闭" in flags[0]["note"]
+def _flags(agent):
+    return agent.db.get_profile(agent.user_id)["conditions"]["pain_flags"]
 
 
-def test_auto_resolve_not_triggered_by_question():
+def test_block_records_open_flag():
     a = _agent()
     a.chat("我练的时候胸口痛")
-    a.chat("要不要去医院检查？医生说没事吗")
-    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
-    assert any(f["status"] == "open" for f in flags)
+    flags = _flags(a)
+    assert len(flags) == 1 and flags[0]["status"] == "open"
 
 
-def test_auto_resolve_not_triggered_without_medical_source():
+def test_negation_records_nothing():
+    """"我没有胸闷"：否定语境不留任何记录（建档问答必然出现）"""
+    a = _agent()
+    a.chat("没有，我没有胸闷")
+    assert _flags(a) == []
+
+
+def test_question_records_noted_not_open():
+    """知识提问最多记一条 noted（已提醒），不进入待跟进"""
+    a = _agent()
+    a.chat("心悸是什么原因引起的")
+    flags = _flags(a)
+    assert len(flags) == 1 and flags[0]["status"] == "noted"
+    # noted 不进待跟进（不影响计划注意项与登录复盘）
+    from coach.profile import open_pain_flags
+    assert open_pain_flags(a.db.get_profile(a.user_id)) == []
+
+
+def test_history_records_noted_not_open():
+    a = _agent()
+    a.chat("去年肩膀刺痛过一次，后来好了")
+    flags = _flags(a)
+    assert len(flags) == 1 and flags[0]["status"] == "noted"
+
+
+# ---- resolve_pain_flag：必须指定对应那一条，不得批量关闭 ----
+
+def test_resolve_single_open_flag_without_index():
     a = _agent()
     a.chat("我练的时候胸口痛")
-    a.chat("没事了，我感觉好了")
-    flags = a.db.get_profile(a.user_id)["conditions"]["pain_flags"]
-    assert any(f["status"] == "open" for f in flags)
+    result = a._handle_tool(
+        {"name": "resolve_pain_flag", "arguments": '{"note": "去医院检查了没事"}'},
+        "normal")
+    assert "已关闭 1 条" in result
+    assert _flags(a)[0]["status"] == "resolved"
+
+
+def test_resolve_multiple_flags_requires_index():
+    """多条待跟进时不给 index → 拒绝全关，要求指明对应那一条"""
+    a = _agent()
+    a.chat("我练的时候胸口痛")
+    a.chat("硬拉时腰突然剧痛")
+    assert len([f for f in _flags(a) if f["status"] == "open"]) == 2
+    result = a._handle_tool(
+        {"name": "resolve_pain_flag", "arguments": '{"note": "看过了"}'}, "normal")
+    assert "已关闭" not in result and "哪一条" in result
+    # 指定 index 后只关对应那条
+    result = a._handle_tool(
+        {"name": "resolve_pain_flag",
+         "arguments": '{"index": 1, "note": "腰看过医生了"}'}, "normal")
+    assert "已关闭 1 条" in result
+    flags = _flags(a)
+    assert flags[0]["status"] == "open" and flags[1]["status"] == "resolved"

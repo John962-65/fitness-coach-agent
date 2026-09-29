@@ -63,9 +63,10 @@ def test_agent_soft_negation_not_blocked():
     agent = _agent()
     r = agent.chat("我没有胸闷，就是问问")
     assert "请立即停止当前训练" not in r  # 不是硬拦截话术
-    # soft 命中也结构化记录（待跟进）
+    # 2026-09-29：否定语境不留安全记录（建档问 PAR-Q 时必然出现，
+    # 留下 open 记录会污染每轮 prompt 与首份计划注意项）
     flags = agent.profile["conditions"]["pain_flags"]
-    assert flags and flags[-1]["mode"] == "soft" and flags[-1]["kw"] == "胸闷"
+    assert flags == []
 
 
 def test_agent_resolve_pain_flag():
@@ -102,8 +103,9 @@ def test_trim_messages_budget_and_no_orphan_tool():
             {"role": "tool", "tool_call_id": f"t{i}", "content": "知" * 2000})
         agent.messages.append({"role": "assistant", "content": "回" * 500})
     agent._trim_messages()
-    total = sum(len(m.get("content") or "") for m in agent.messages)
-    assert total <= MAX_CONTEXT_CHARS
+    # 2026-09-29：16000 预算只约束对话历史；system prompt 单独计算、不被计入
+    dialogue = sum(len(m.get("content") or "") for m in agent.messages[1:])
+    assert dialogue <= MAX_CONTEXT_CHARS
     assert agent.messages[0]["role"] == "system"
     # 截断后 system 之后不能是孤儿 tool 消息（会导致 API 400）
     assert agent.messages[1].get("role") != "tool"

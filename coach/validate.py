@@ -14,7 +14,11 @@ def round_half(x: float) -> float:
 
 
 def _to_number(v) -> float | None:
-    """数字或含数字的字符串 → float；失败返回 None"""
+    """数字或含数字的字符串 → float；失败返回 None。
+
+    中国用户报体重/重量经常用"斤"："150斤"是 75kg，不是 150kg——
+    带"斤"的字符串按 1 斤 = 0.5 kg 换算（否则体重、三大项、定级全被翻倍）。
+    """
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
@@ -22,7 +26,11 @@ def _to_number(v) -> float | None:
     if isinstance(v, str):
         m = re.search(r"-?\d+(?:\.\d+)?", v)
         if m:
-            return float(m.group())
+            n = float(m.group())
+            # "150斤"→75kg；但"公斤"里的"斤"不算（"84.5公斤"=84.5kg）
+            if "斤" in v and "公斤" not in v:
+                n *= 0.5
+            return n
     return None
 
 
