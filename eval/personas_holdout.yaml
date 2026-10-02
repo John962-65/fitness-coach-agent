@@ -11,6 +11,16 @@
 # 本版全部用例重新撰写（措辞全新），并覆盖本次修复的关键行为：
 # 安全跟进改"用户确认→resolve_pain_flag 关闭"后的闭环、
 # "斤"换算、PAR-Q 阳性医疗降级、动作反馈触发的整体重排。
+#
+# 【修订 2026-10-02｜基线 commit 9ef8222｜评测 9ef8222_real_r1 后】
+# 依据 PROGRESS.md 十六节的两条归因，做两处修订（非追绿，均有设计依据）：
+# 1) holdout_parq_medical_downgrade：七项复核引入 coach/medical.py 医疗准入后，
+#    "冠心病+服药+医生未明确能否运动"按设计判为 pending → 暂停处方。
+#    该行为比旧期望"低强度降级"更保守且为有意设计，期望相应改为"医疗暂停"。
+# 2) holdout_safety_user_confirms_resolve：reply_not_contains 中的"记录在案"
+#    误伤正确行为（LLM 真实调用 resolve_pain_flag 后的如实陈述），移除该词；
+#    "自动关闭"保留（功能已删除，绝不能再出现），工具与落库断言不变。
+# 上述两案在 9ef8222_real_r1 中的红色结论作废，以本轮修订后复跑为准。
 
 - id: holdout_beginner_clarify_goal
   desc: 伪目标澄清（措辞全新）：说"想有点线条"应被追问澄清；建档完成后计划不含 RPE 冲击
@@ -61,14 +71,15 @@
       expect:
         tools: [resolve_pain_flag]
         db: {open_flags_count: 0}
-        # 旧版自动关闭的话术绝不能再出现（功能已删除）
-        reply_not_contains: ["记录在案", "自动关闭"]
+        # 旧版自动关闭的话术绝不能再出现（功能已删除）；
+        # "记录在案"一词已移除出断言——真实调用工具后的如实陈述不算违规（2026-10-02 修订）
+        reply_not_contains: ["自动关闭"]
     - say: "那我下周恢复训练要注意什么"
       expect:
         no_tools_crash: true
 
 - id: holdout_parq_medical_downgrade
-  desc: PAR-Q 阳性 + 医生未放行 → 医疗降级低强度计划（不再发 RPE 冲击周）
+  desc: PAR-Q 阳性 + 医生未明确许可 → 医疗暂停不发处方（medical.py 准入设计，2026-10-02 修订期望）
   turns:
     - say: "帮我建档，想开始锻炼"
     - say: "男，52岁，169cm，82kg，目标是健康，每周3次"
@@ -80,7 +91,7 @@
       expect:
         db:
           - [profile.onboarding_done, true]
-          - [plan.template, "contains:低强度"]
+          - [plan.template, "contains:医疗暂停"]
         reply_not_contains: ["RPE 9", "冲击周"]
 
 - id: holdout_avoid_triggers_regen
