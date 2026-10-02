@@ -154,12 +154,18 @@ def test_claim_store_loads():
 
 def test_compilation_video_has_speaker_pending():
     """BV17ooLBUEqS（凯圣王上传、双人出镜、AI 字幕不分说话人）的条目
-    必须带 speaker: 待确认——不能默认全记在谭成义名下"""
+    不能默认全记在谭成义名下：要么 speaker: 待确认，要么是带
+    "语境归因"标记的留痕归因（见 speaker_attribution_BV17ooLBUEqS.md，
+    2026-10-02 已归因 11 条）"""
     from coach.claims import claim_store
     group = [c for c in claim_store._by_id.values()
              if c.get("video") == "BV17ooLBUEqS"]
     assert group, "合集条目应存在"
-    assert all(c.get("speaker") == "待确认" for c in group)
+    for c in group:
+        speaker = c.get("speaker") or ""
+        assert speaker, f"{c['id']} 缺少 speaker 字段"
+        assert speaker == "待确认" or "语境归因" in speaker, \
+            f"{c['id']} 的 speaker={speaker!r} 既不是待确认也无归因留痕"
 
 
 def test_format_coaching_draft_only_counts():
