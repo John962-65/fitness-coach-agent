@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
-import re
+import uuid
+
+from .medical import screening_positive
 
 _TIER_LABEL = {"emergency": "急症", "injury": "损伤", "yellow": "黄色"}
 
@@ -16,12 +18,31 @@ def open_pain_flags(profile: dict) -> list:
     ]
 
 
+def ensure_flag_ids(profile: dict) -> bool:
+    """旧记录增量补 ID；不改变已有状态，不按显示顺序重新编号。"""
+    flags = profile.setdefault("conditions", {}).setdefault("pain_flags", [])
+    changed, seen = False, set()
+    for i, flag in enumerate(flags):
+        if isinstance(flag, str):
+            flag = {"text": flag, "kw": flag, "status": "open"}
+            flags[i] = flag
+            changed = True
+        if not isinstance(flag, dict):
+            continue
+        flag_id = flag.get("flag_id")
+        if not isinstance(flag_id, str) or not flag_id or flag_id in seen:
+            flag["flag_id"] = "flag-" + uuid.uuid4().hex
+            changed = True
+        seen.add(flag["flag_id"])
+    return changed
+
+
 def _flag_label(f) -> str:
     if isinstance(f, str):
         return f[:20]
     date = (f.get("at") or "")[:10]
     tier = _TIER_LABEL.get(f.get("tier"), f.get("tier", ""))
-    return f"{f.get('kw', '?')}·{tier}·{date}"
+    return f"[{f.get('flag_id', '?')}] {f.get('kw', '?')}·{tier}·{date}"
 
 
 def profile_summary(profile: dict) -> str:
@@ -57,45 +78,9 @@ def profile_summary(profile: dict) -> str:
     )
 
 
-_NEGATIVE_VALUES = {"", "无", "没有", "否", "无异常", "none", "None", "无。", "没有。"}
-# 阴性开头措辞："没问题/正常/没怀孕/未孕/都无"等都是阴性回答——
-# 注意"不"不在其中（"心电图不正常"必须是阳性）
-_NEGATIVE_PREFIX_RE = re.compile(
-    r"^(?:无|没有|没|未|否|正常|没问题|没事儿?|无异常|都正常|都没问题|都无|"
-    r"挺好|良好|健康|都好|一切正常)"
-)
-# 混合句的句首健康陈述："身体健康，无心血管疾病史/高血压"
-_HEALTHY_OPENING_RE = re.compile(r"^(?:身体|健康|一切|平时|目前)")
-_NEGATED_TAIL_RE = re.compile(r"[,，、/]\s*无")
-
-
 def _is_positive(v) -> bool:
-    """健康筛查项是否为阳性（用户报了具体情况）。
-
-    LLM 会把阴性回答提炼成各种写法——否定开头（无/没/未）、阴性结尾
-    （都正常/没问题）、"不适用（男性）"、以及"身体健康，无心血管疾病史"
-    这类健康陈述+否定列举的混合句，都是阴性；其余从严按阳性处理
-    （安全场景宁可多提示一句，也不漏掉真阳性）。
-    """
-    if isinstance(v, bool):
-        return v
-    s = str(v).strip()
-    if s in _NEGATIVE_VALUES:
-        return False
-    if _NEGATIVE_PREFIX_RE.match(s):
-        return False
-    # "心脏血压都正常/心肺没问题"：以阴性词结尾且不含"不"（"不正常"必须阳性）
-    if s.endswith(("正常", "没问题", "没事", "无恙", "健康")) and "不" not in s:
-        return False
-    # "不适用（男性）/无需回答"：PAR-Q 里对性别不适用项的填法
-    if "不适用" in s or "无需" in s:
-        return False
-    if s.startswith("有"):
-        return True  # 规范填法"有：高血压"
-    # "身体健康，无心血管疾病史/高血压"：句首健康陈述 + 后半否定列举
-    if _HEALTHY_OPENING_RE.match(s) and _NEGATED_TAIL_RE.search(s):
-        return False
-    return True
+    """兼容调用点，健康筛查统一由医疗准入模块判断。"""
+    return screening_positive(v)
 
 
 # LLM 偶发自造字段时的归一化映射（安全网）

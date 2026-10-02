@@ -114,8 +114,8 @@ def test_positive_health_screen_adds_note():
 
 # ---- PAR-Q 阳性 + 医生未放行 → 医疗降级（2026-09-29） ----
 
-def test_parq_positive_without_clearance_gets_low_intensity_only():
-    """有心血管阳性、医生没有放行 → 只给低强度版本，不发 RPE 9 冲击周"""
+def test_parq_positive_without_clearance_waits_for_permission():
+    """阳性且尚无明确许可：暂停自动处方，不用低强度替代医疗评估。"""
     p = mk(experience={"big3": {"squat": 130}},  # 老炮也一样降级
            conditions={
                "injuries": [], "injuries_collected": True,
@@ -123,15 +123,15 @@ def test_parq_positive_without_clearance_gets_low_intensity_only():
                "health_screen": {"heart": "冠心病史", "medication": "无"},
            })
     plan = generate_plan(p)
-    assert "医疗降级" in plan["template"] or "低强度" in plan["template"]
+    assert plan["medical_status"] == "pending" and plan["schedule"] == []
     assert "老炮周期化" not in plan["template"]
     text = plan_to_text(plan)
     assert "RPE 9" not in text and "冲击" not in text
     assert any("放行" in n for n in plan["notes"])
 
 
-def test_parq_positive_with_clearance_keeps_normal_plan():
-    """阳性但医生明确放行（"医生允许中等强度运动"）→ 正常计划 + 注意项"""
+def test_parq_limited_clearance_does_not_unlock_normal_plan():
+    """仅允许中等强度不等于允许 RPE 9；有限许可不自动生成力量处方。"""
     p = mk(experience={"big3": {"squat": 130}},
            conditions={
                "injuries": [], "injuries_collected": True,
@@ -140,7 +140,8 @@ def test_parq_positive_with_clearance_keeps_normal_plan():
                                  "clearance": "医生允许中等强度运动"},
            })
     plan = generate_plan(p)
-    assert "老炮周期化" in plan["template"]  # 不降级
+    assert plan["medical_status"] == "limited" and plan["schedule"] == []
+    assert "RPE 9" not in plan_to_text(plan)
     assert any("健康筛查" in n for n in plan["notes"])  # 注意项保留
 
 
@@ -153,7 +154,7 @@ def test_parq_clearance_wu_is_not_clearance():
                "health_screen": {"heart": "冠心病史", "clearance": "无"},
            })
     plan = generate_plan(p)
-    assert "低强度" in plan["template"] or "医疗降级" in plan["template"]
+    assert plan["medical_status"] == "pending" and plan["schedule"] == []
 
 
 def test_clean_health_screen_no_note():

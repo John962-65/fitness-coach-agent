@@ -37,13 +37,24 @@ def _parse(at: str) -> datetime:
     return datetime.fromisoformat(at)
 
 
-def _same_exercise(name_a: str, name_b: str) -> bool:
-    """按动作库 id 判断两个叫法是否同一动作；都未入库时退化为子串匹配"""
-    id_a, _, _ = exercise_lib.normalize(name_a or "")
-    id_b, _, _ = exercise_lib.normalize(name_b or "")
-    if id_a and id_b:
-        return id_a == id_b
-    return bool(name_a and name_b and (name_a in name_b or name_b in name_a))
+def _same_exercise(a: str | dict, b: str | dict) -> bool:
+    """已确认 ID 优先；未确认变式绝不回退为基础动作的子串。"""
+    def identity(value):
+        if isinstance(value, dict):
+            name = str(value.get("name") or "")
+            if "exercise_id" in value:
+                ex_id = value["exercise_id"]
+                return (ex_id if isinstance(ex_id, str) and exercise_lib.get(ex_id) else None), name
+        else:
+            name = str(value or "")
+        ex_id, _, _ = exercise_lib.normalize(name)
+        return ex_id, name
+
+    id_a, name_a = identity(a)
+    id_b, name_b = identity(b)
+    if id_a or id_b:
+        return bool(id_a and id_b and id_a == id_b)
+    return bool(name_a and name_b and exercise_lib._norm(name_a) == exercise_lib._norm(name_b))
 
 
 def _iter_exercise_rows(checkins: list[dict]):
@@ -62,7 +73,7 @@ def strength_trend(checkins: list[dict], exercise: str) -> list[tuple[str, float
     """某动作每次训练的最好 e1RM，按日期升序"""
     by_day: dict[str, float] = {}
     for day, ex in _iter_exercise_rows(checkins):
-        if not _same_exercise(exercise, ex.get("name", "")):
+        if not _same_exercise(exercise, ex):
             continue
         w = _to_number(ex.get("weight_kg"))
         score = e1rm(w, _to_reps(ex.get("reps")))
@@ -117,7 +128,7 @@ def rpe_drift(checkins: list[dict], exercise: str, window: int = 6) -> str | Non
     """同一重量下 RPE 持续上升 = 疲劳累积。返回 'rising'/'stable'/None"""
     points = []
     for day, ex in _iter_exercise_rows(checkins):
-        if not _same_exercise(exercise, ex.get("name", "")):
+        if not _same_exercise(exercise, ex):
             continue
         rpe = _to_number(ex.get("rpe"))
         w = _to_number(ex.get("weight_kg"))
@@ -139,7 +150,7 @@ def last_weight(checkins: list[dict], exercise: str) -> float | None:
     """某动作最近一次的使用重量（调整引擎算处方重量用，A5）"""
     best_day, best_w = "", None
     for day, ex in _iter_exercise_rows(checkins):
-        if not _same_exercise(exercise, ex.get("name", "")):
+        if not _same_exercise(exercise, ex):
             continue
         w = _to_number(ex.get("weight_kg"))
         if w and day >= best_day:

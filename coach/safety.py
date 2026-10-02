@@ -1,6 +1,6 @@
 """安全前置检查（确定性规则，不经过 LLM）
 
-设计铁律：红旗检测必须是 100% 可靠的代码规则。
+设计约束：规则提供保守前置拦截，不声称能识别全部临床风险。
 - 关键词唯一来源：knowledge/60_injury_safety/red_flags.md 的一/二/三档表格
 - 三档：
   emergency 急症（硬拦截，话术含 120 提示）
@@ -106,7 +106,12 @@ _QUESTION = (
 # 出现这些词说明用户正在亲历，不能按知识提问软化
 _FIRST_PERSON = ("我", "现在", "刚刚", "刚才", "今天", "训练时", "练的时候", "突然", "又")
 
-_CLAUSE_SPLIT = re.compile(r"[，。！？；,;!?\n]")
+_CLAUSE_SPLIT = re.compile(r"[，。！？；,;!?\n]|但是|不过|然而|但")
+_CURRENT = ("现在", "此刻", "正在", "刚刚", "刚才", "今天", "突然", "又", "训练时", "练的时候")
+
+
+def _latest(text: str, words) -> int:
+    return max((text.rfind(w) for w in words), default=-1)
 
 
 def _clause_start(text: str, pos: int) -> int:
@@ -135,9 +140,13 @@ def _soft_reason(text: str, kw: str, pos: int) -> str:
     # 否定：否定词必须贴着命中词（同一分句、前缀以否定词收尾）
     if _NEGATED_PREFIX.search(prefix):
         return "negated"
-    # 病史：历史时间词必须与命中词在同一个分句
-    # （"以前胸闷过"软化；"训练之前还好好的，现在胸口疼"中"之前"在上一分句，不软化）
-    if any(h in prefix for h in _HISTORY):
+    # 最近一次“当前状态”切换优先于较早的病史或猜测；问原因不撤销症状。
+    current = _latest(prefix, _CURRENT)
+    historical = _latest(prefix, _HISTORY)
+    hypothetical = _latest(prefix, (*_QUESTION_HYPOTHETICAL_BEFORE, "如果", "假如", "万一"))
+    if current > max(historical, hypothetical):
+        return ""
+    if historical >= 0:
         return "history"
     before = text[max(0, pos - 12):pos]
     after = text[pos + len(kw):pos + len(kw) + 10]

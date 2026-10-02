@@ -16,9 +16,8 @@ default 是模板默认动作。填槽三步（全部确定性代码，LLM 只�
 """
 from __future__ import annotations
 
-import re
-
 from .exercises import library as exercise_lib
+from .medical import training_permission
 from .profile import _is_positive, open_pain_flags
 
 LEVEL_ORDER = {"beginner": 0, "intermediate": 1, "advanced": 2}
@@ -35,23 +34,6 @@ JOINT_KEYWORDS = {"腰": "lumbar", "下背": "lumbar", "背": "lumbar",
                   "膝": "knee",
                   "肩": "shoulder", "腕": "wrist", "肘": "elbow", "髋": "hip"}
 INJURY_STRESS_THRESHOLD = 2
-
-# 医生明确放行的措辞（PAR-Q clearance 项）：不含这些措辞一律按"未放行"处理
-_CLEARANCE_OK = re.compile(r"允许|可以|同意|放行|没问题")
-
-
-def _medical_clearance_ok(hs: dict) -> bool:
-    """医生是否明确放行运动。
-
-    health_screen.clearance 是 PAR-Q 的"医生是否嘱咐过限制运动"：
-    只有出现明确放行措辞（"医生允许中等强度运动"）才算放行；
-    "无/没说过"只是没有限制记录，不等于放行——有阳性项时从紧处理。
-    """
-    v = str((hs or {}).get("clearance", ""))
-    if not v.strip():
-        return False
-    return bool(_CLEARANCE_OK.search(v))
-
 
 def assess_level(profile: dict) -> str:
     """系统定级：优先三大项体重倍数，其次训练年限"""
@@ -285,7 +267,8 @@ def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set,
             parts.append(f"发力感 {states[best['id']]['feel']}/3")
         why = "；".join(parts) or f"{PATTERN_LABEL.get(slot['pattern'], slot['pattern'])}模式主推"
 
-    entry = {"name": picked["name"], "sets": slot["sets"], "reps": slot["reps"]}
+    entry = {"exercise_id": picked["id"], "name": picked["name"],
+             "sets": slot["sets"], "reps": slot["reps"]}
     if slot.get("note"):
         entry["note"] = slot["note"]
     entry["why"] = why
@@ -314,6 +297,20 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
     states = _states_by_id(exercise_states)
 
     notes: list[str] = ["每次训练先热身 5-10 分钟，主力动作从小重量组开始"]
+    permission = training_permission(profile)
+    if not permission.allows_prescription:
+        return {
+            "template": "（医疗暂停）等待明确训练许可",
+            "level": level, "days_per_week": days, "schedule": [],
+            "medical_status": permission.status,
+            "medical_evidence": permission.evidence,
+            "notes": [f"健康筛查：{permission.reason}；"
+                      + "、".join(str(v) for k, v in (c.get("health_screen") or {}).items()
+                                if k != "clearance" and _is_positive(v)),
+                      f"医嘱原话：{permission.evidence or '尚无明确放行'}",
+                      "暂停自动训练处方不等于诊断。请与医疗专业人员确认活动范围；"
+                      "拿到明确许可后可提出恢复计划，确认后再执行。"],
+        }
     joints, unknown_injuries = _injured_joints(c.get("injuries"))
     no_data_joints = _joints_without_data(joints)
     joints -= no_data_joints
@@ -350,36 +347,17 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
             f"⚠️ 有未确认的安全记录（{kws}）：确认无恙前避免力竭、大重量与独自训练"
         )
     hs = c.get("health_screen") or {}
-    # 阳性项只统计病史字段（heart/pregnancy/medication 等）；
-    # clearance 是"医生放行"信息源，它本身有内容不算病史阳性——
-    # 否则"医生没说过不让运动"的健康用户全会被误判降级
     positives = [v for k, v in hs.items() if k != "clearance" and _is_positive(v)]
-    low_intensity_only = False
     if c.get("health_screen_collected") and positives:
         notes.append(
             f"⚠️ 健康筛查有需要关注项（{'、'.join(str(p)[:15] for p in positives)}）："
-            "建议先咨询医生确认运动许可，初期保持中低强度"
+            "遵循已经确认的运动许可；如健康状态变化请及时更新"
         )
-        # 2026-09-29：阳性 + 医生未明确放行 → 只给低强度版本
-        # （修复前：照样发含 RPE 9 冲击周的完整计划）
-        low_intensity_only = not _medical_clearance_ok(hs)
     if g.get("primary") == "fat_loss":
         notes.append("减脂期保持训练强度以保肌肉，热量缺口控制在 10-25%")
 
     # ---- 模板与槽位选择 ----
-    if low_intensity_only:
-        # 医疗降级：骨架用低强度全身 A/B，不走进阶/老炮的 RPE 8-9 周期化模板
-        ab = [FULL_BODY_A, FULL_BODY_B]
-        day_slots = [ab[i % 2] for i in range(min(days, 3))]
-        names = _day_names(min(days, 3))
-        day_focus = ["全身 A", "全身 B"] * 2
-        template = "（医疗降级）低强度全身 A/B（医生放行前：RPE ≤6，不上大重量、不力竭）"
-        notes.insert(
-            0,
-            "⚠️ 健康筛查有阳性项且医生未明确放行：当前只提供低强度版本；"
-            "拿到医生放行后告诉我，我立刻给你换成正常强度的计划",
-        )
-    elif days <= 2:
+    if days <= 2:
         cycle_slots, day_focus = BUSY_SLOTS, "全身（高强度复合）"
         template = "忙碌高效全身计划（低频次高刺激）"
         notes += [
@@ -443,6 +421,7 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
 
     return {
         "template": template,
+        "medical_status": "allowed",
         "level": level,
         "days_per_week": days,
         "schedule": schedule,

@@ -54,7 +54,7 @@ def _increment(exercise: str) -> float:
 
 def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
     """规则引擎：输出调整建议列表（确定性，可测试）"""
-    if not plan:
+    if not plan or plan.get("medical_status", "allowed") != "allowed":
         return []
     checkins = db.list_checkins(user_id, limit=200)
     if not checkins:
@@ -122,6 +122,8 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str,
     """
     if action not in ACTIONS:
         raise ValueError(f"非法调整动作: {action}")
+    if plan.get("medical_status", "allowed") != "allowed":
+        raise ValueError("训练处方已因医疗限制暂停，不能执行训练调整")
 
     new = copy.deepcopy(plan)
     new["adjust_reason"] = reason
@@ -129,7 +131,7 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str,
 
     def _find_all(ex_name: str) -> list[dict]:
         return [ex for day in new["schedule"] for ex in day["exercises"]
-                if _same_exercise(ex_name, ex["name"])]
+                if _same_exercise(ex_name, ex)]
 
     if action in ("increase_weight", "hold_weight", "decrease_weight", "add_volume"):
         matches = _find_all(target)
@@ -180,7 +182,7 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str,
         pool: list[dict] = []
         for day in days:
             for ex in day["exercises"][:2]:
-                if not any(_same_exercise(ex["name"], p["name"]) for p in pool):
+                if not any(_same_exercise(ex, p) for p in pool):
                     pool.append(copy.deepcopy(ex))
         if not pool:
             raise ValueError("计划里没有可重组的动作")

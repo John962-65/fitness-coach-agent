@@ -17,10 +17,12 @@ R0 加固（设计书 17.2）：
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .db import Database
@@ -31,7 +33,8 @@ from .llm import LLMClient
 from .onboarding import (ONBOARDING_PROMPT, answers_health_question,
                          answers_injury_question, can_finish, missing_fields)
 from .plan import generate_plan, plan_to_text, regenerate_plan_preserve
-from .profile import merge_patch, open_pain_flags, profile_summary
+from .medical import training_permission
+from .profile import ensure_flag_ids, merge_patch, open_pain_flags, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
 from .review import e1rm, last_weight, review_context_text
 from .safety import SafetyHit, check_red_flags, soft_note
@@ -45,6 +48,7 @@ MAX_CONTEXT_CHARS = 16000
 MAX_SYSTEM_CHARS = 20000  # system prompt 自身的预算上限（超出只告警不截断）
 # 两步确认：建议生成后必须等用户下一轮说话才能 apply；超过 N 轮未确认自动过期
 PENDING_EXPIRE_TURNS = 10
+PENDING_EXPIRE_DAYS = 7
 
 _log = logging.getLogger("coach")
 if not _log.handlers:
@@ -289,14 +293,13 @@ RESOLVE_PAIN_FLAG_TOOL = {
         "description": (
             "用户明确确认此前的安全记录已处理（已就医/症状消失/确认无恙）后调用，"
             "关闭对应的那一条安全跟进。必须先向用户确认、得到明确答复才允许调用；"
-            "一次只关闭与用户结论对应的一条（传 index），不得批量关闭。"
+            "一次只关闭与用户结论对应的一条（传 flag_id），不得批量关闭。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "index": {"type": "integer",
-                          "description": "要关闭的记录序号（pain_flags 列表下标）；"
-                                         "有多条待跟进时必填，只关与结论对应的那条"},
+                "flag_id": {"type": "string",
+                            "description": "提示中显示的稳定安全记录 ID，一次只关闭一条"},
                 "note": {"type": "string", "description": "用户确认的原话摘要"},
             },
         },
@@ -386,15 +389,17 @@ class CoachAgent:
         self.llm = LLMClient()
         self.kb = KnowledgeBase()
         self.profile = self.db.get_profile(user_id)
+        if ensure_flag_ids(self.profile):
+            self.db.save_profile(user_id, self.profile)
         self._turn_tools: set[str] = set()
         self._turn_tool_results: list[str] = []
-        self._turn_no: int = 0  # 对话轮次（两步确认/建议过期用）
+        self._turn_no: int = 0  # 仅供本地诊断；确认/过期使用持久化用户消息
         self.messages: list[dict] = [
             {"role": "system", "content": self._build_system_prompt()}
         ] + self.db.recent_messages(user_id, HISTORY_LIMIT)
 
     def _build_system_prompt(self) -> str:
-        plan = self.db.get_active_plan(self.user_id)
+        plan = self._enforce_medical_permission()
         try:
             dynamic = review_context_text(self.db, self.user_id, plan)
         except Exception:
@@ -510,6 +515,7 @@ class CoachAgent:
         # block → open（待跟进）；soft（提问/病史）→ noted（已提醒，不跟进）
         status = "open" if hit.mode == "block" else "noted"
         flags.append({
+            "flag_id": "flag-" + uuid.uuid4().hex,
             "at": datetime.now().isoformat(timespec="seconds"),
             "text": text[:50],
             "kw": hit.keyword,
@@ -523,28 +529,92 @@ class CoachAgent:
         plan = self.db.get_active_plan(self.user_id)
         return json.dumps(plan, ensure_ascii=False, sort_keys=True)
 
+    def _commit_plan(self, plan: dict, expected_plan_id: int) -> None:
+        updated = copy.deepcopy(self.profile)
+        # 每条建议都属于旧计划版本，计划改变后不得继续执行。
+        updated["pending_adjustments"] = []
+        self.db.create_plan(self.user_id, plan, profile=updated,
+                            expected_plan_id=expected_plan_id)
+        self.profile = updated
+
+    def _enforce_medical_permission(self) -> dict | None:
+        """新增限制立即停用旧处方；解除限制不自动恢复强度。"""
+        record = self.db.get_active_plan_record(self.user_id)
+        if not record:
+            return None
+        plan = record["content"]
+        permission = training_permission(self.profile)
+        if permission.allows_prescription:
+            return plan
+        if (plan.get("medical_status") == permission.status
+                and plan.get("medical_evidence") == permission.evidence
+                and not plan.get("schedule")):
+            return plan
+        restricted = generate_plan(self.profile)
+        restricted["resume_plan_id"] = plan.get("resume_plan_id", record["id"])
+        restricted["adjust_reason"] = permission.reason
+        restricted["adjust_action"] = "medical_suspend"
+        self._commit_plan(restricted, record["id"])
+        return restricted
+
+    def _new_suggestion(self, suggestion: dict, source: str, record: dict) -> dict:
+        return {
+            **suggestion, "id": "adj-" + uuid.uuid4().hex,
+            "user_id": self.user_id, "source": source,
+            "plan_id": record["id"], "plan_version": record["version"],
+            "created_message_id": self.db.latest_user_message_id(self.user_id),
+            "expires_at": (datetime.now(timezone.utc)
+                           + timedelta(days=PENDING_EXPIRE_DAYS)).isoformat(),
+        }
+
+    def _pending_error(self, suggestion: dict, record: dict | None) -> str | None:
+        # 遗留建议没有可靠的版本/消息依据，不能猜测它原来针对哪一版计划。
+        if (suggestion.get("user_id") != self.user_id
+                or suggestion.get("source") not in ("rule", "regenerate")
+                or not record
+                or suggestion.get("plan_id") != record["id"]
+                or suggestion.get("plan_version") != record["version"]):
+            return "建议对应的计划版本已失效或缺少版本依据，已作废，请重新获取建议"
+        mid = suggestion.get("created_message_id")
+        if not isinstance(mid, int) or mid < 0:
+            return "建议缺少用户消息依据，已作废，请重新获取建议"
+        try:
+            expired = datetime.fromisoformat(suggestion["expires_at"]) <= datetime.now(timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            return "建议缺少有效期依据，已作废，请重新获取建议"
+        if expired or self.db.user_messages_after(self.user_id, mid) > PENDING_EXPIRE_TURNS:
+            return "建议已过期，已作废，请重新获取建议"
+        return None
+
+    def _live_pending(self, record: dict) -> list[dict]:
+        return [s for s in self.profile.get("pending_adjustments", [])
+                if isinstance(s, dict) and not self._pending_error(s, record)]
+
     def _offer_regenerate(self, reason: str) -> str:
-        """个性化闭环（2026-09-29）：反馈/伤病/场地/天数变化后，生成
-        "重排计划"建议并落 pending——与 get_adjustment_suggestions 同一套
-        两步确认（apply_adjustment 执行；重排保留已有处方重量与卸载状态）。"""
+        """重排与规则建议共享身份/版本机制，但刷新规则不能覆盖重排。"""
         if not self.profile.get("onboarding_done"):
             return ""
-        if not self.db.get_active_plan(self.user_id):
+        record = self.db.get_active_plan_record(self.user_id)
+        if not record:
             return ""
-        pending = self.profile.setdefault("pending_adjustments", [])
-        if any(s.get("action") == "regenerate_plan" for s in pending):
-            return "（已有一条待确认的重排计划建议，无需重复生成）"
-        sug = {"id": f"adj-{len(pending) + 1}", "action": "regenerate_plan",
-               "target": "整体计划", "reason": reason,
-               "created_turn": self._turn_no}
+        pending = self._live_pending(record)
+        existing = next((s for s in pending if s["action"] == "regenerate_plan"), None)
+        if existing and existing["reason"] == reason:
+            self.profile["pending_adjustments"] = pending
+            self.db.save_profile(self.user_id, self.profile)
+            return f"（已有待确认重排建议 [{existing['id']}]，无需重复生成）"
+        if existing:
+            pending.remove(existing)
+            reason = existing["reason"] + "；" + reason
+        sug = self._new_suggestion({"action": "regenerate_plan", "target": "整体计划",
+                                    "reason": reason}, "regenerate", record)
         pending.append(sug)
+        self.profile["pending_adjustments"] = pending
         self.db.save_profile(self.user_id, self.profile)
         return (
-            f"[{sug['id']}] regenerate_plan｜整体计划：检测到计划需要重排"
-            f"（{reason}），已生成重排建议。"
-            "请用一两句向用户说明为什么要重排，等用户确认后调用 "
-            "apply_adjustment(suggestion_id=对应id) 执行；"
-            "重排会按最新档案与动作反馈整体重排，已有的处方重量会保留。"
+            f"[{sug['id']}] regenerate_plan｜整体计划：检测到计划需要重排（{reason}）。"
+            "请说明原因，等用户下一轮确认后再调用 apply_adjustment 执行；"
+            "重排将遵守最新健康限制并保留兼容的处方重量。"
         )
 
     def _guard_plan_claim(self, reply: str) -> str:
@@ -580,6 +650,8 @@ class CoachAgent:
 
     # ---- 对话-工具循环 ----
     def _loop(self, mode: str) -> str:
+        if ensure_flag_ids(self.profile):
+            self.db.save_profile(self.user_id, self.profile)
         if mode == "onboarding":
             # 安全跟进不分模式：建档中被拦截的用户带回医生结论时也要能关闭
             tools = [UPDATE_PROFILE_TOOL, FINISH_ONBOARDING_TOOL,
@@ -590,12 +662,12 @@ class CoachAgent:
             flags = open_pain_flags(self.profile)
             if flags:
                 listing = "；".join(
-                    f"[{i}] {f.get('kw', '?')}·{str(f.get('at', ''))[:10]}"
-                    for i, f in enumerate(flags))
+                    f"[{f['flag_id']}] {f.get('kw', '?')}·{str(f.get('at', ''))[:10]}"
+                    for f in flags)
                 prompt += (
                     f"\n\n# ⚠️ 待跟进安全记录（{len(flags)} 条）\n{listing}\n"
                     "本轮先自然地问一句近况；用户明确表示已就医无恙或症状消失后，"
-                    "调用 resolve_pain_flag 关闭对应那条（多条时必须传 index），"
+                    "调用 resolve_pain_flag 关闭对应那条（传 flag_id），"
                     "关闭后再继续建档流程。"
                 )
             self.messages[0] = {"role": "system", "content": prompt}
@@ -685,6 +757,7 @@ class CoachAgent:
             return result
 
         if name == "update_profile":
+            previous_health = copy.deepcopy(self.profile.get("conditions", {}).get("health_screen"))
             patch = args.get("patch", {})
             # G2 门槛（2026-09-29 收紧）：伤病史/健康筛查必须有真凭实据——
             # LLM 自附 *_evidence，或本轮用户原话能判定为真的在回答该问题；
@@ -738,8 +811,18 @@ class CoachAgent:
                 return "已保存" + suffix + "。仍缺：" + (
                     "、".join(still) or "无，可以 finish_onboarding"
                 )
-            # 闭环：伤病变化 / 场地变化 / 每周天数变化 → 计划需要整体重排
+            # 医疗约束收紧立即停用旧处方；放行恢复仍需用户确认重排。
+            health_changed = self.profile.get("conditions", {}).get("health_screen") != previous_health
             plan_affecting = []
+            if health_changed:
+                self.profile["pending_adjustments"] = []
+                self.db.save_profile(self.user_id, self.profile)
+                self._enforce_medical_permission()
+                permission = training_permission(self.profile)
+                self._refresh_system_prompt()
+                if not permission.allows_prescription:
+                    return "档案已更新" + suffix + "。原训练处方已暂停：" + permission.reason
+                plan_affecting.append("健康筛查或医嘱已更新，请确认新的训练计划")
             if isinstance(patch, dict):
                 cond = patch.get("conditions") or {}
                 res = patch.get("resources") or {}
@@ -768,6 +851,8 @@ class CoachAgent:
             notes = list(warnings)
             if ctype == "training":
                 for ex in data.get("exercises", []):
+                    # 动作 ID 是系统判定，不能信任模型附带的字段。
+                    ex["exercise_id"] = None
                     raw_name = ex.get("name", "")
                     ex_id, official, _via = exercise_lib.normalize(raw_name)
                     if ex_id:
@@ -788,87 +873,87 @@ class CoachAgent:
             return "打卡已记录" + suffix + "。"
 
         if name == "get_plan":
-            plan = self.db.get_active_plan(self.user_id)
+            plan = self._enforce_medical_permission()
             return plan_to_text(plan) if plan else "当前没有生效的计划。"
 
         if name == "get_review":
-            plan = self.db.get_active_plan(self.user_id)
+            plan = self._enforce_medical_permission()
             return review_context_text(self.db, self.user_id, plan)
 
         if name == "get_adjustment_suggestions":
-            plan = self.db.get_active_plan(self.user_id)
-            sugs = suggest_adjustments(self.db, self.user_id, plan)
-            # A6 两步确认：建议带 id 落 pending，apply 只接受 pending 里的 id；
-            # 记录生成轮次——同轮不允许 apply（必须先向用户解释、等下一轮确认）
-            pending = [{"id": f"adj-{i + 1}", **s, "created_turn": self._turn_no}
-                       for i, s in enumerate(sugs)]
+            plan = self._enforce_medical_permission()
+            record = self.db.get_active_plan_record(self.user_id)
+            if not record:
+                return "当前没有生效的计划。"
+            if not training_permission(self.profile).allows_prescription:
+                return "训练处方已暂停，不能建议加重或增加训练量；请先确认医疗许可。"
+            existing = self._live_pending(record)
+            if plan.get("medical_status", "allowed") != "allowed" and not any(
+                    s["source"] == "regenerate" for s in existing):
+                self._offer_regenerate("医疗许可已更新，恢复训练计划需确认")
+                existing = self._live_pending(record)
+            pending = [s for s in existing if s["source"] == "regenerate"]
+            if plan.get("medical_status", "allowed") == "allowed":
+                for s in suggest_adjustments(self.db, self.user_id, plan):
+                    # 同一版计划、同一证据的重复查询保持身份与确认时点。
+                    previous = next((p for p in existing if p["source"] == "rule"
+                                     and all(p.get(k) == v for k, v in s.items())), None)
+                    pending.append(previous or self._new_suggestion(s, "rule", record))
             self.profile["pending_adjustments"] = pending
             self.db.save_profile(self.user_id, self.profile)
-            if not sugs:
+            if not pending:
                 return "当前数据下没有需要调整的信号（或打卡数据不足）。"
-            lines = ["规则引擎建议："]
+            lines = ["待确认调整建议："]
             for s in pending:
                 lines.append(f"- [{s['id']}] {s['action']}｜{s['target']}：{s['reason']}")
-            lines.append("请先向用户解释建议；**用户下一轮确认后**再调用 "
-                         "apply_adjustment(suggestion_id=对应id)——同轮直接执行会被系统拒绝。")
+            lines.append("请先向用户解释建议；用户下一轮确认后再调用 "
+                         "apply_adjustment(suggestion_id=对应id)。")
             return "\n".join(lines)
 
         if name == "apply_adjustment":
-            plan = self.db.get_active_plan(self.user_id)
-            if not plan:
+            plan = self._enforce_medical_permission()
+            record = self.db.get_active_plan_record(self.user_id)
+            if not plan or not record:
                 return "当前没有生效的计划。"
+            if not training_permission(self.profile).allows_prescription:
+                return "当前医疗许可不足，训练处方已暂停，不能执行训练调整。"
             sid = args.get("suggestion_id", "")
             pending = self.profile.get("pending_adjustments") or []
             sug = next((s for s in pending if s.get("id") == sid), None)
             if not sug:
-                return (
-                    f"没有待执行的建议「{sid}」。请先用 get_adjustment_suggestions "
-                    "获取建议并向用户确认，再传入对应的 suggestion_id。"
-                )
-            # 两步确认的硬约束（2026-09-29）：
-            # 1) 同轮生成的建议不能同轮执行——必须先向用户解释、等用户下一轮表态；
-            # 2) 建议有保质期：超过 PENDING_EXPIRE_TURNS 轮未确认自动作废
-            created_turn = sug.get("created_turn")
-            if created_turn is not None:
-                if created_turn >= self._turn_no:
-                    return (
-                        f"建议「{sid}」是本轮刚生成的，现在还不能执行。"
-                        "请先向用户解释这条建议，等用户下一轮明确确认后再调用本工具。"
-                    )
-                if self._turn_no - created_turn > PENDING_EXPIRE_TURNS:
-                    pending.remove(sug)
-                    self.db.save_profile(self.user_id, self.profile)
-                    return (
-                        f"建议「{sid}」生成已超过 {PENDING_EXPIRE_TURNS} 轮，已作废。"
-                        "请重新调用 get_adjustment_suggestions 获取最新建议。"
-                    )
-            if sug["action"] == "regenerate_plan":
-                new_plan = regenerate_plan_preserve(
-                    self.profile,
-                    exercise_states=self.db.all_exercise_states(self.user_id),
-                    old_plan=plan, reason=sug["reason"])
-                self.db.create_plan(self.user_id, new_plan)
+                return f"没有待执行的建议「{sid}」，请重新获取建议并向用户确认。"
+            error = self._pending_error(sug, record)
+            if error:
                 pending.remove(sug)
                 self.db.save_profile(self.user_id, self.profile)
-                self._refresh_system_prompt()
-                return (f"计划已整体重排（新版本）：{sug['reason']}。"
-                        "已有处方重量已保留。")
-            lw = None
-            if sug["action"] in ("increase_weight", "decrease_weight"):
-                lw = last_weight(
-                    self.db.list_checkins(self.user_id, 200), sug["target"])
+                return error
+            if self.db.latest_user_message_id(self.user_id) <= sug["created_message_id"]:
+                return "建议是本轮刚生成的，现在不能执行；请等用户下一轮明确确认。"
+            if sug["action"] != "regenerate_plan" and (
+                    plan.get("medical_status", "allowed") != "allowed"
+                    or any(s["action"] == "regenerate_plan" for s in self._live_pending(record))):
+                return "计划条件已有变化，请先确认重排，再获取适用于新计划的调整建议。"
             try:
-                new_plan = apply_adjustment(
-                    plan, sug["action"], sug["target"], sug["reason"],
-                    last_weight=lw)
+                if sug["action"] == "regenerate_plan":
+                    previous = plan
+                    if plan.get("resume_plan_id"):
+                        previous = self.db.get_plan_content(self.user_id, plan["resume_plan_id"]) or plan
+                    new_plan = regenerate_plan_preserve(
+                        self.profile, exercise_states=self.db.all_exercise_states(self.user_id),
+                        old_plan=previous, reason=sug["reason"])
+                else:
+                    lw = None
+                    if sug["action"] in ("increase_weight", "decrease_weight"):
+                        lw = last_weight(self.db.list_checkins(self.user_id, 200), sug["target"])
+                    new_plan = apply_adjustment(
+                        plan, sug["action"], sug["target"], sug["reason"], last_weight=lw)
+                self._commit_plan(new_plan, record["id"])
             except ValueError as e:
                 return str(e)
-            self.db.create_plan(self.user_id, new_plan)
-            pending.remove(sug)
-            self.db.save_profile(self.user_id, self.profile)
             self._refresh_system_prompt()
-            return (f"计划已更新（新版本）：{sug['action']}｜{sug['target']}。"
-                    f"调整理由：{sug['reason']}")
+            label = "新版本，整体重排" if sug["action"] == "regenerate_plan" else "新版本"
+            return (f"计划已更新（{label}）：{sug['action']}｜{sug['target']}。"
+                    f"调整理由：{sug['reason']}。旧版本建议已失效。")
 
         if name == "record_exercise_feedback":
             ex_input = args.get("exercise", "")
@@ -938,33 +1023,35 @@ class CoachAgent:
             return f"没有找到 open 状态的教练笔记 #{note_id}。"
 
         if name == "resolve_pain_flag":
+            if ensure_flag_ids(self.profile):
+                self.db.save_profile(self.user_id, self.profile)
             flags = self.profile.get("conditions", {}).get("pain_flags", [])
-            idx = args.get("index")
-            open_list = [(i, f) for i, f in enumerate(flags)
-                         if isinstance(f, dict) and f.get("status") == "open"]
+            open_list = [f for f in flags if isinstance(f, dict) and f.get("status") == "open"]
             if not open_list:
                 return "没有待跟进的安全记录。"
-            if idx is None:
-                if len(open_list) == 1:
-                    idx = open_list[0][0]  # 只有一条时，它就是要关的那条
-                else:
-                    listing = "；".join(
-                        f"[{i}] {f.get('kw', '?')}·{f.get('at', '')[:10]}"
-                        for i, f in open_list)
-                    return (f"有 {len(open_list)} 条待跟进的安全记录：{listing}。"
-                            "请向用户确认是哪一条已有结论，再用 index 指定关闭那一条"
-                            "（不得一次全部关闭）。")
-            target = next((pair for pair in open_list if pair[0] == idx), None)
+            flag_id = args.get("flag_id")
+            if flag_id is not None:
+                target = next((f for f in open_list if f["flag_id"] == flag_id), None)
+            elif args.get("index") is not None:
+                # 兼容旧调用，只解释原始数组索引；新提示和工具只提供稳定 ID。
+                idx = args["index"]
+                target = flags[idx] if isinstance(idx, int) and 0 <= idx < len(flags) else None
+                if target not in open_list:
+                    target = None
+            elif len(open_list) == 1:
+                target = open_list[0]
+            else:
+                listing = "；".join(f"[{f['flag_id']}] {f.get('kw', '?')}" for f in open_list)
+                return (f"有 {len(open_list)} 条待跟进的安全记录：{listing}。"
+                        "请确认具体哪一条，再传 flag_id（不得批量关闭，也不要用显示 index）。")
             if target is None:
-                return (f"序号 {idx} 不是待跟进的安全记录（当前待跟进："
-                        f"{[i for i, _ in open_list]}），未做任何修改。")
-            f = flags[idx]
-            f["status"] = "resolved"
-            f["resolved_at"] = datetime.now().isoformat(timespec="seconds")
-            f["note"] = args.get("note", "")
+                return "指定的 ID/序号不是待跟进的安全记录，未做任何修改。"
+            target["status"] = "resolved"
+            target["resolved_at"] = datetime.now().isoformat(timespec="seconds")
+            target["note"] = args.get("note", "")
             self.db.save_profile(self.user_id, self.profile)
             self._refresh_system_prompt()
-            return f"已关闭 1 条安全跟进记录（{f.get('kw', '?')}）。"
+            return f"已关闭 1 条安全跟进记录（{target.get('kw', '?')}）。"
 
         return f"未知工具：{name}"
 

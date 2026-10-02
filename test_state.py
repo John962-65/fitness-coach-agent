@@ -226,7 +226,7 @@ def test_two_step_flow():
                               "arguments": '{"suggestion_id": "adj-99"}'}, "normal")
     assert "没有待执行的建议" in bad
     # 3. 用户下一轮确认（轮次前进），正确 id 执行 → 新版本 + pending 消费
-    agent._turn_no += 1
+    agent.db.add_message(agent.user_id, "user", "确认执行")
     ok = agent._handle_tool({"name": "apply_adjustment",
                              "arguments": json.dumps(
                                  {"suggestion_id": inc["id"]})}, "normal")
@@ -261,7 +261,8 @@ def test_pending_suggestion_expires():
                         "arguments": "{}"}, "normal")
     inc = next(s for s in agent.profile["pending_adjustments"]
                if s["action"] == "increase_weight")
-    agent._turn_no += PENDING_EXPIRE_TURNS + 1
+    for _ in range(PENDING_EXPIRE_TURNS + 1):
+        agent.db.add_message(agent.user_id, "user", "新的对话轮次")
     expired = agent._handle_tool({"name": "apply_adjustment",
                                   "arguments": json.dumps(
                                       {"suggestion_id": inc["id"]})}, "normal")
@@ -439,7 +440,7 @@ def _agent_with_plan(uid="s"):
 def test_avoid_feedback_offers_regenerate():
     """用户说"先不练它"（avoid）→ 生成重排建议（pending），走两步确认"""
     agent = _agent_with_plan()
-    agent._turn_no = 1
+    agent.db.add_message(agent.user_id, "user", "本轮反馈")
     result = agent._handle_tool({"name": "record_exercise_feedback",
                                  "arguments": json.dumps({
                                      "exercise": "杠铃卧推", "status": "avoid",
@@ -448,7 +449,7 @@ def test_avoid_feedback_offers_regenerate():
     regen = next(s for s in agent.profile["pending_adjustments"]
                  if s["action"] == "regenerate_plan")
     # 同轮不能执行；下一轮确认后 apply → 新版本中杠铃平板卧推被替换
-    agent._turn_no += 1
+    agent.db.add_message(agent.user_id, "user", "确认执行")
     ok = agent._handle_tool({"name": "apply_adjustment",
                              "arguments": json.dumps(
                                  {"suggestion_id": regen["id"]})}, "normal")
@@ -465,14 +466,14 @@ def test_regenerate_preserves_prescription_weights():
     plan = agent.db.get_active_plan("s")
     plan["schedule"][2]["exercises"][0]["weight_kg"] = 100.0  # 周五杠铃深蹲
     agent.db.create_plan("s", plan)
-    agent._turn_no = 1
+    agent.db.add_message(agent.user_id, "user", "本轮反馈")
     agent._handle_tool({"name": "record_exercise_feedback",
                         "arguments": json.dumps({
                             "exercise": "杠铃卧推", "status": "avoid",
                             "evidence": "肩膀不舒服，先不练"})}, "normal")
     regen = next(s for s in agent.profile["pending_adjustments"]
                  if s["action"] == "regenerate_plan")
-    agent._turn_no += 1
+    agent.db.add_message(agent.user_id, "user", "确认执行")
     agent._handle_tool({"name": "apply_adjustment",
                         "arguments": json.dumps(
                             {"suggestion_id": regen["id"]})}, "normal")
@@ -485,7 +486,7 @@ def test_regenerate_preserves_prescription_weights():
 def test_profile_injury_change_offers_regenerate():
     """normal 模式新增伤病 → 生成重排建议"""
     agent = _agent_with_plan()
-    agent._turn_no = 1
+    agent.db.add_message(agent.user_id, "user", "本轮反馈")
     agent.profile["conditions"]["injuries_collected"] = True
     agent.profile["conditions"]["injuries_evidence"] = "建档时说过没有"
     result = agent._handle_tool({"name": "update_profile",
@@ -500,7 +501,7 @@ def test_profile_injury_change_offers_regenerate():
 def test_regenerate_not_duplicated():
     """已有一条待确认的重排建议时不重复生成"""
     agent = _agent_with_plan()
-    agent._turn_no = 1
+    agent.db.add_message(agent.user_id, "user", "本轮反馈")
     for _ in range(2):
         agent._handle_tool({"name": "record_exercise_feedback",
                             "arguments": json.dumps({

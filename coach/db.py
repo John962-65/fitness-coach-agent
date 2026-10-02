@@ -102,32 +102,55 @@ class Database:
         self.save_profile(user_id, profile)
         return profile
 
-    def save_profile(self, user_id: str, profile: dict) -> None:
+    def _write_profile(self, user_id: str, profile: dict) -> None:
         self.conn.execute(
             "INSERT INTO users(user_id, profile, created_at, updated_at)"
             " VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile=?, updated_at=?",
             (user_id, json.dumps(profile, ensure_ascii=False), _now(), _now(),
              json.dumps(profile, ensure_ascii=False), _now()),
         )
-        self.conn.commit()
+
+    def save_profile(self, user_id: str, profile: dict) -> None:
+        with self.conn:
+            self._write_profile(user_id, profile)
 
     # ---- plans ----
-    def create_plan(self, user_id: str, content: dict) -> int:
-        self.conn.execute("UPDATE plans SET active=0 WHERE user_id=?", (user_id,))
-        v = self.conn.execute(
-            "SELECT COALESCE(MAX(version),0)+1 FROM plans WHERE user_id=?", (user_id,)
-        ).fetchone()[0]
-        cur = self.conn.execute(
-            "INSERT INTO plans(user_id, version, content, active, created_at)"
-            " VALUES(?,?,?,1,?)",
-            (user_id, v, json.dumps(content, ensure_ascii=False), _now()),
-        )
-        self.conn.commit()
+    def create_plan(self, user_id: str, content: dict, *,
+                    profile: dict | None = None, expected_plan_id: int | None = None) -> int:
+        """计划与建议状态一起提交；有基准版本时拒绝基于旧版本的写入。"""
+        with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            current = self.get_active_plan_record(user_id)
+            if expected_plan_id is not None and (current or {}).get("id") != expected_plan_id:
+                raise ValueError("计划版本已变化，请重新获取建议")
+            self.conn.execute("UPDATE plans SET active=0 WHERE user_id=?", (user_id,))
+            v = self.conn.execute(
+                "SELECT COALESCE(MAX(version),0)+1 FROM plans WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
+            cur = self.conn.execute(
+                "INSERT INTO plans(user_id, version, content, active, created_at)"
+                " VALUES(?,?,?,1,?)",
+                (user_id, v, json.dumps(content, ensure_ascii=False), _now()),
+            )
+            if profile is not None:
+                self._write_profile(user_id, profile)
         return cur.lastrowid
 
-    def get_active_plan(self, user_id: str) -> dict | None:
+    def get_active_plan_record(self, user_id: str) -> dict | None:
         row = self.conn.execute(
-            "SELECT content FROM plans WHERE user_id=? AND active=1", (user_id,)
+            "SELECT id, version, content FROM plans WHERE user_id=? AND active=1",
+            (user_id,),
+        ).fetchone()
+        return dict(row, content=json.loads(row["content"])) if row else None
+
+    def get_active_plan(self, user_id: str) -> dict | None:
+        row = self.get_active_plan_record(user_id)
+        return row["content"] if row else None
+
+    def get_plan_content(self, user_id: str, plan_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT content FROM plans WHERE user_id=? AND id=?", (user_id, plan_id)
         ).fetchone()
         return json.loads(row["content"]) if row else None
 
@@ -152,12 +175,25 @@ class Database:
         ]
 
     # ---- messages ----
-    def add_message(self, user_id: str, role: str, content: str) -> None:
-        self.conn.execute(
+    def add_message(self, user_id: str, role: str, content: str) -> int:
+        cur = self.conn.execute(
             "INSERT INTO messages(user_id, role, content, created_at) VALUES(?,?,?,?)",
             (user_id, role, content, _now()),
         )
         self.conn.commit()
+        return cur.lastrowid
+
+    def latest_user_message_id(self, user_id: str) -> int:
+        return self.conn.execute(
+            "SELECT COALESCE(MAX(id),0) FROM messages WHERE user_id=? AND role='user'",
+            (user_id,),
+        ).fetchone()[0]
+
+    def user_messages_after(self, user_id: str, message_id: int) -> int:
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE user_id=? AND role='user' AND id>?",
+            (user_id, message_id),
+        ).fetchone()[0]
 
     def recent_messages(self, user_id: str, limit: int = 20) -> list[dict]:
         rows = self.conn.execute(
