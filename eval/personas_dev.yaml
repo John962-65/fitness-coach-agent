@@ -149,7 +149,8 @@
       expect: {tools: [save_checkin]}
     - say: "卧推一直没进步，计划要不要调整"
       expect:
-        reply_contains_any: ["容量", "add_volume", "换刺激"]
+        # 措辞同义词均为"加容量"语义的合法表达（2026-10-02 补：LLM 措辞抖动，行为语义一致）
+        reply_contains_any: ["容量", "add_volume", "换刺激", "训练量", "新刺激"]
 
 - id: low_adherence
   desc: 计划 3 天只练 1 天 → 应建议降频率（计划匹配真实生活）
