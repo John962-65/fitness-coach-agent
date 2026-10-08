@@ -6,13 +6,14 @@
 用法：
   python3 tools/review_ui.py --list [--flagged-only] [--video BV1xx]
   python3 tools/review_ui.py --show tcy-0001
-  python3 tools/review_ui.py --approve tcy-0001 [--by 发起人]
+  python3 tools/review_ui.py --approve tcy-0001 --stage source --speaker 已确认发言者 --by 实际审核者 --note 核对依据
+  python3 tools/review_ui.py --approve tcy-0001 --stage applicability --by 实际审核者 --note 适用条件
   python3 tools/review_ui.py --reject tcy-0001 --note "不是他的观点"
   python3 tools/review_ui.py --edit tcy-0001 --claim "修正后的表述"
   python3 tools/review_ui.py --keyframes tcy-0001     # 下载片段并截 3 帧（sources/frames/）
   python3 tools/review_ui.py --apply                  # 已审核条目挂到动作库字段（21.2 ③a）
 
-审核通过会把 status: draft → approved 并回填 reviewed；这是博主点名纪律的解锁条件。
+来源与适用性两步都通过且内容未变化后，才进入 approved 并允许点名引用。
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from tools.distill import segment_text_at  # noqa: E402
+from coach.claim_review import invalidate_review, is_publishable, record_review, review_issues
 
 CLAIMS = ROOT / "claims"
 TRANSCRIPTS = ROOT / "sources" / "transcripts"
@@ -81,6 +83,7 @@ def print_claim(claim: dict, idx: str = "") -> None:
     if claim.get("exercises"):
         print(f"    动作：{'、'.join(claim['exercises'])}")
     print(f"    原文：{transcript_excerpt(claim)[:160]}")
+    print(f"    门槛：{'可引用' if is_publishable(claim) else '；'.join(review_issues(claim))}")
     print(f"    跳转：{jump_url(claim)}")
 
 
@@ -109,33 +112,27 @@ def keyframes(claim: dict, n: int = 3) -> None:
 
 
 def apply_to_exercises(blogger_file: str) -> None:
-    """审核通过的条目按类型挂到动作 YAML 字段（21.2 ③a）"""
-    claims = [c for c in load_all(blogger_file) if c.get("status") == "approved"]
-    by_ex: dict[str, list[dict]] = {}
-    for c in claims:
-        for ex in c.get("exercises") or []:
-            by_ex.setdefault(ex, []).append(c)
+    """同步本来源的有效引用；撤销/变更后清除旧引用，不影响其他来源。"""
+    claims = load_all(blogger_file)
+    owned = {c["id"] for c in claims}
+    usable = [c for c in claims if is_publishable(c)]
     n = 0
-    for ex_id, cs in sorted(by_ex.items()):
-        path = ROOT / "exercises" / f"{ex_id}.yaml"
-        if not path.exists():
-            print(f"⚠️ 动作库无 {ex_id}，跳过")
-            continue
+    for path in sorted((ROOT / "exercises").glob("*.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         changed = False
-        for c in cs:
-            field = TYPE_TO_FIELD.get(c["type"])
-            if not field:
-                continue
-            ref = c["id"]
-            if ref not in (data.get(field) or []):
-                data.setdefault(field, []).append(ref)
+        for field in set(TYPE_TO_FIELD.values()):
+            current = data.get(field) or []
+            wanted = [c["id"] for c in usable if data["id"] in (c.get("exercises") or [])
+                      and TYPE_TO_FIELD.get(c["type"]) == field]
+            updated = list(dict.fromkeys([r for r in current if r not in owned] + wanted))
+            if updated != current:
+                data[field] = updated
                 changed = True
-                n += 1
         if changed:
             path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
                             encoding="utf-8")
-    print(f"已把 {n} 条 approved 条目的 id 挂到动作库字段")
+            n += 1
+    print(f"已同步 {n} 个动作的双层审核有效引用；草稿和失效审核不可引用")
 
 
 def main() -> int:
@@ -154,8 +151,11 @@ def main() -> int:
     ap.add_argument("--reject", default="")
     ap.add_argument("--edit", default="")
     ap.add_argument("--claim", default="")
+    ap.add_argument("--exercise-ids", default=None, help="与 --edit 配合修正动作映射，逗号分隔；空字符串清除映射")
     ap.add_argument("--note", default="")
-    ap.add_argument("--by", default="发起人")
+    ap.add_argument("--by", default="", help="实际审核者，不自动代填")
+    ap.add_argument("--stage", choices=["source", "applicability"])
+    ap.add_argument("--speaker", default="", help="对照原片确认的发言者")
     ap.add_argument("--keyframes", default="")
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
@@ -170,9 +170,15 @@ def main() -> int:
         c = find(claims, args.approve)
         if not c:
             sys.exit(f"找不到 {args.approve}")
-        c["status"] = "approved"
-        c["reviewed"] = {"by": args.by, "date": date.today().isoformat(),
-                         "against": f"{c['video']} 全片"}
+        if args.speaker and args.speaker != c.get("speaker"):
+            c["speaker"] = args.speaker
+            invalidate_review(c)
+        if args.stage == "source" and transcript_excerpt(c).startswith("（"):
+            sys.exit("本地缺少对应原文，不能签核来源；先导入或修正时间窗")
+        try:
+            record_review(c, args.stage, args.by, args.note)
+        except ValueError as e:
+            sys.exit(str(e))
         save_all(bfile, claims)
         print_claim(c)
         return 0
@@ -190,9 +196,19 @@ def main() -> int:
         c = find(claims, args.edit)
         if not c:
             sys.exit(f"找不到 {args.edit}")
-        if not args.claim:
-            sys.exit("--edit 需要同时给 --claim 新表述")
-        c["claim"] = args.claim
+        if not args.claim and args.exercise_ids is None and not args.speaker:
+            sys.exit("--edit 需要 --claim / --exercise-ids / --speaker 至少一项")
+        if args.claim:
+            c["claim"] = args.claim
+        if args.exercise_ids is not None:
+            from coach.exercises import library
+            ids = [s.strip() for s in args.exercise_ids.split(",") if s.strip()]
+            if any(library.get(eid) is None for eid in ids):
+                sys.exit("包含动作库不存在的 ID；不能把未知变式强行归类")
+            c["exercises"] = ids
+        if args.speaker:
+            c["speaker"] = args.speaker
+        invalidate_review(c)
         save_all(bfile, claims)
         print_claim(c)
         return 0

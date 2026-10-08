@@ -62,6 +62,15 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
 
     tracked = _tracked_exercises(plan)
     out: list[dict] = []
+    profile = db.get_existing_profile(user_id)
+    sleep = (profile.get("nutrition") or {}).get("sleep_hours")
+    sleep_low = isinstance(sleep, (int, float)) and not isinstance(sleep, bool) and 0 < sleep < 6
+    rising = [ex for ex in tracked if rpe_drift(checkins, ex) == "rising"]
+    recovery_limited = bool(rising) or sleep_low or is_deload_active(plan)
+    if sleep_low and tracked and not rising and not is_deload_active(plan):
+        out.append({"action": "hold_weight", "target": tracked[0],
+                    "reason": "已记录的睡眠偏少，先确认近期恢复与记录是否仍准确，暂不增加刺激",
+                    "evidence": f"sleep_hours={sleep}"})
 
     # 规则 1：任一主力动作 RPE 漂移上升 → 卸载（整体，有效期内不重复建议）
     if not is_deload_active(plan):
@@ -75,12 +84,12 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
                 })
                 break
 
-    # 规则 2/3：每个主力动作独立判断停滞（加容量）或进步（加重）
-    for ex in tracked:
+    # 恢复受限/卸载中不同时建议增加训练刺激。
+    for ex in ([] if recovery_limited else tracked):
         trend = strength_trend(checkins, ex)
         if len(trend) >= 3:
             recent = trend[-3:]
-            if abs(recent[-1][1] - recent[0][1]) < 0.5:
+            if max(v for _, v in recent) - min(v for _, v in recent) < 0.5:
                 out.append({
                     "action": "add_volume",
                     "target": ex,
@@ -111,7 +120,15 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
             "evidence": f"adherence={ad['rate']}",
         })
 
-    return out
+    feasible = []
+    for suggestion in out:
+        if suggestion["action"] in ("add_volume", "reduce_frequency"):
+            try:
+                apply_adjustment(plan, suggestion["action"], suggestion["target"], suggestion["reason"])
+            except ValueError:
+                continue
+        feasible.append(suggestion)
+    return feasible
 
 
 def apply_adjustment(plan: dict, action: str, target: str, reason: str,
@@ -197,4 +214,11 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str,
             "主项全部保留、辅助动作暂减，先把主项练满"
         ] + list(new.get("notes", []))
 
+    if new.get("time_budget_minutes") is not None:
+        from .programming import estimate_minutes
+        for day in new["schedule"]:
+            duration = estimate_minutes(day["exercises"])
+            if duration > new["time_budget_minutes"]:
+                raise ValueError("调整将超出已有时间预算，请先确认时间或重排方案")
+            day["estimated_minutes"] = duration
     return new

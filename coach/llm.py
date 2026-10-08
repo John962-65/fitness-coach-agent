@@ -8,7 +8,10 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any
+
+from .budget import RequestBudget
 
 
 class LLMClient:
@@ -19,6 +22,7 @@ class LLMClient:
         self.fake = os.getenv("FAKE_LLM", "0") == "1"
 
         self._client: Any = None
+        self.budget = None
         if not self.fake:
             if not self.api_key:
                 raise RuntimeError(
@@ -26,7 +30,11 @@ class LLMClient:
                 )
             from openai import OpenAI
 
-            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+            if os.getenv("LLM_BUDGET_PATH"):
+                self.budget = RequestBudget(Path(os.environ["LLM_BUDGET_PATH"]),
+                                            int(os.environ["LLM_MAX_REQUESTS"]))
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key,
+                                  max_retries=0, timeout=60.0)
 
     def chat(
         self,
@@ -47,7 +55,16 @@ class LLMClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
-        resp = self._client.chat.completions.create(**kwargs)
+        ticket = self.budget.reserve() if self.budget else None
+        try:
+            resp = self._client.chat.completions.create(**kwargs)
+        except Exception:
+            if ticket is not None:
+                self.budget.finish(ticket, failed=True)
+            raise
+        if ticket is not None:
+            usage = resp.usage.model_dump() if getattr(resp, "usage", None) else {}
+            self.budget.finish(ticket, usage=usage)
         msg = resp.choices[0].message
 
         tool_calls = []

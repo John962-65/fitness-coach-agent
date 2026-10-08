@@ -16,7 +16,10 @@ default 是模板默认动作。填槽三步（全部确定性代码，LLM 只�
 """
 from __future__ import annotations
 
+import copy
+
 from .exercises import library as exercise_lib
+from .programming import estimate_minutes, fit_time_budget
 from .medical import training_permission
 from .profile import _is_positive, open_pain_flags
 
@@ -241,7 +244,11 @@ def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set,
     default = exercise_lib.get(slot["default"])
     picked, why = None, ""
     st_default = states.get(slot["default"]) or {}
-    if default in candidates and not st_default.get("discomfort"):
+    best = max(candidates, key=lambda ex: (_score(ex, slot, states, day_muscles), ex["id"]))
+    keep_default = (default in candidates and not st_default.get("discomfort")
+                    and _score(default, slot, states, day_muscles) + 0.5
+                    >= _score(best, slot, states, day_muscles))
+    if keep_default:
         picked = default
         why = f"{PATTERN_LABEL.get(slot['pattern'], slot['pattern'])}模式主推"
     else:
@@ -267,7 +274,7 @@ def _fill_slot(slot: dict, profile: dict, states: dict, day_muscles: set,
             parts.append(f"发力感 {states[best['id']]['feel']}/3")
         why = "；".join(parts) or f"{PATTERN_LABEL.get(slot['pattern'], slot['pattern'])}模式主推"
 
-    entry = {"exercise_id": picked["id"], "name": picked["name"],
+    entry = {"exercise_id": picked["id"], "name": picked["name"], "role": slot["role"],
              "sets": slot["sets"], "reps": slot["reps"]}
     if slot.get("note"):
         entry["note"] = slot["note"]
@@ -292,6 +299,7 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
 
     level = assess_level(profile)
     days = r.get("days_per_week") or 3
+    minutes = max(0, int(r.get("session_minutes", 60)))
     layoff = e.get("recent_layoff_weeks") or 0
     injuries = "、".join(c.get("injuries") or [])
     states = _states_by_id(exercise_states)
@@ -408,7 +416,11 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
             ex = exercise_lib.get(_id_of(entry["name"])) or {}
             muscles |= set(ex.get("primary") or [])
             picked.append(entry)
-        schedule.append({"day": names[i], "focus": focus, "exercises": picked})
+        picked, time_changes = fit_time_budget(picked, minutes)
+        if time_changes:
+            notes.append(f"{names[i]}（{minutes}分钟预算）：" + "；".join(time_changes))
+        schedule.append({"day": names[i], "focus": focus, "exercises": picked,
+                         "estimated_minutes": estimate_minutes(picked)})
 
     # ---- 停训复训 ramp ----
     if layoff >= 2:
@@ -424,6 +436,8 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         "medical_status": "allowed",
         "level": level,
         "days_per_week": days,
+        "requested_days_per_week": days,
+        "time_budget_minutes": minutes,
         "schedule": schedule,
         "notes": notes,
     }
@@ -437,20 +451,44 @@ def regenerate_plan_preserve(profile: dict, exercise_states,
     - 已有处方重量 weight_kg（按动作 id 匹配拷贝到新计划同名动作上）
     - 卸载周状态 deload（仍在有效期的卸载不因重排丢失）
     """
-    new = generate_plan(profile, exercise_states=exercise_states)
-    weights: dict[str, float] = {}
-    for day in (old_plan or {}).get("schedule", []):
+    old_plan = old_plan or {}
+    effective = copy.deepcopy(profile)
+    requested_days = (profile.get("resources") or {}).get("days_per_week") or 3
+    prior_requested = old_plan.get("requested_days_per_week", old_plan.get("days_per_week"))
+    actual_days = len(old_plan.get("schedule", []))
+    if actual_days and requested_days == prior_requested:
+        effective.setdefault("resources", {})["days_per_week"] = actual_days
+    new = generate_plan(effective, exercise_states=exercise_states)
+    new["requested_days_per_week"] = requested_days
+    previous: dict[str, list[dict]] = {}
+    for day in old_plan.get("schedule", []):
         for ex in day.get("exercises", []):
-            ex_id, _, _ = exercise_lib.normalize(ex.get("name", ""))
-            if ex_id and ex.get("weight_kg") is not None:
-                weights[ex_id] = ex["weight_kg"]
+            ex_id = ex.get("exercise_id") or _id_of(ex.get("name", ""))
+            if ex_id:
+                previous.setdefault(ex_id, []).append(ex)
+    time_changed = new.get("time_budget_minutes", 60) != old_plan.get("time_budget_minutes", 60)
+    used = {}
     for day in new["schedule"]:
         for ex in day["exercises"]:
-            ex_id, _, _ = exercise_lib.normalize(ex.get("name", ""))
-            if ex_id in weights:
-                ex["weight_kg"] = weights[ex_id]
-    if (old_plan or {}).get("deload"):
-        new["deload"] = old_plan["deload"]
+            ex_id = ex.get("exercise_id") or _id_of(ex["name"])
+            prior = previous.get(ex_id)
+            if not prior:
+                continue
+            i = used.get(ex_id, 0)
+            saved = prior[min(i, len(prior) - 1)]
+            used[ex_id] = i + 1
+            fields = ["weight_kg"]
+            if not time_changed and new.get("level") == old_plan.get("level"):
+                fields += ["sets", "reps"]
+            for field in fields:
+                if saved.get(field) is not None:
+                    ex[field] = saved[field]
+        day["exercises"], changes = fit_time_budget(day["exercises"], new.get("time_budget_minutes", 60))
+        day["estimated_minutes"] = estimate_minutes(day["exercises"])
+        if changes:
+            new["notes"].append("重排时间取舍：" + "；".join(changes))
+    if old_plan.get("deload"):
+        new["deload"] = copy.deepcopy(old_plan["deload"])
     new["adjust_action"] = "regenerate_plan"
     new["adjust_reason"] = reason
     return new
@@ -476,6 +514,8 @@ def plan_to_text(plan: dict) -> str:
     factor = deload.get("factor", 0.5)
     for day in plan["schedule"]:
         lines.append(f"【{day['day']} · {day['focus']}】")
+        if day.get("estimated_minutes") is not None:
+            lines.append(f"  时间估算：约 {day['estimated_minutes']} 分钟（含热身与休息，非用时保证）")
         for ex in day["exercises"]:
             w = ex.get("weight_kg")
             if w and deload_active:

@@ -29,6 +29,18 @@ CREATE TABLE IF NOT EXISTS checkins (
     data        TEXT NOT NULL,          -- JSON
     created_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS checkin_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    checkin_id INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    old_data TEXT NOT NULL,
+    new_data TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(checkin_id, revision)
+);
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     TEXT NOT NULL,
@@ -92,6 +104,10 @@ class Database:
         self.conn.executescript(SCHEMA)
 
     # ---- users ----
+    def get_existing_profile(self, user_id: str) -> dict:
+        row = self.conn.execute("SELECT profile FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return json.loads(row["profile"]) if row else {}
+
     def get_profile(self, user_id: str) -> dict:
         row = self.conn.execute(
             "SELECT profile FROM users WHERE user_id=?", (user_id,)
@@ -165,14 +181,90 @@ class Database:
 
     def list_checkins(self, user_id: str, limit: int = 20) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT type, data, created_at FROM checkins WHERE user_id=?"
-            " ORDER BY id DESC LIMIT ?",
+            "SELECT c.id,c.type,c.data,c.created_at,"
+            " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision"
+            " FROM checkins c WHERE c.user_id=? ORDER BY c.id DESC LIMIT ?",
             (user_id, limit),
         ).fetchall()
-        return [
-            {"type": r["type"], "data": json.loads(r["data"]), "at": r["created_at"]}
-            for r in rows
-        ]
+        return [{"id": r["id"], "revision": r["revision"], "type": r["type"],
+                 "data": json.loads(r["data"]), "at": r["created_at"]} for r in rows]
+
+    def get_checkin(self, user_id: str, checkin_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT c.*, (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision"
+            " FROM checkins c WHERE c.user_id=? AND c.id=?", (user_id, checkin_id)).fetchone()
+        return ({"id": row["id"], "revision": row["revision"], "type": row["type"],
+                 "data": json.loads(row["data"]), "at": row["created_at"]} if row else None)
+
+    def revise_checkin(self, user_id: str, checkin_id: int, expected_revision: int,
+                       data: dict, reason: str, evidence: str) -> dict:
+        """保留原值、日期及用户归属；纠错和派生状态重算在同一事务内。"""
+        if not reason.strip() or not evidence.strip():
+            raise ValueError("纠错必须说明原因并附用户原话")
+        from .exercises import library
+        def ids(payload):
+            result = set()
+            for ex in payload.get("exercises", []) if isinstance(payload, dict) else []:
+                if isinstance(ex, dict):
+                    eid = ex.get("exercise_id") if "exercise_id" in ex else library.normalize(ex.get("name", ""))[0]
+                    if isinstance(eid, str) and library.get(eid):
+                        result.add(eid)
+            return result
+        with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            old = self.get_checkin(user_id, checkin_id)
+            if not old:
+                raise ValueError("记录不存在")
+            if old["revision"] != expected_revision:
+                raise ValueError("记录已被修订，请先重新读取最新版本")
+            revision = expected_revision + 1
+            self.conn.execute(
+                "INSERT INTO checkin_revisions(user_id,checkin_id,revision,old_data,new_data,reason,evidence,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (user_id, checkin_id, revision, json.dumps(old["data"], ensure_ascii=False),
+                 json.dumps(data, ensure_ascii=False), reason, evidence, _now()))
+            self.conn.execute("UPDATE checkins SET data=? WHERE user_id=? AND id=?",
+                              (json.dumps(data, ensure_ascii=False), user_id, checkin_id))
+            affected = ids(old["data"]) | ids(data)
+            self._recompute_exercise_states(user_id, affected)
+            profile = self.get_existing_profile(user_id)
+            if profile:
+                profile["pending_adjustments"] = []
+                self._write_profile(user_id, profile)
+        return self.get_checkin(user_id, checkin_id)
+
+    def _recompute_exercise_states(self, user_id: str, exercise_ids: set[str]) -> None:
+        from .exercises import library
+        from .review import _same_exercise, e1rm
+        from .validate import _to_number, _to_reps
+        values = {eid: {"best": None, "weight": None, "rpe": None} for eid in exercise_ids}
+        rows = self.conn.execute(
+            "SELECT data FROM checkins WHERE user_id=? AND type='training' ORDER BY created_at DESC,id DESC",
+            (user_id,))
+        for row in rows:
+            payload = json.loads(row["data"])
+            if not isinstance(payload, dict):
+                continue
+            for ex in payload.get("exercises", []) or []:
+                if not isinstance(ex, dict):
+                    continue
+                for eid, state in values.items():
+                    if not _same_exercise(library.get(eid)["name"], ex):
+                        continue
+                    weight, rpe = _to_number(ex.get("weight_kg")), _to_number(ex.get("rpe"))
+                    score = e1rm(weight, _to_reps(ex.get("reps")))
+                    if score is not None:
+                        state["best"] = max(state["best"] or 0, score)
+                    if state["weight"] is None and weight is not None:
+                        state["weight"], state["rpe"] = weight, rpe
+        for eid, state in values.items():
+            self.conn.execute(
+                "INSERT INTO user_exercise(user_id,exercise_id,best_e1rm,last_weight,last_rpe,updated_at)"
+                " VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,exercise_id) DO UPDATE SET"
+                " best_e1rm=excluded.best_e1rm,last_weight=excluded.last_weight,"
+                " last_rpe=excluded.last_rpe,updated_at=excluded.updated_at",
+                (user_id, eid, state["best"], state["weight"], state["rpe"], _now()))
 
     # ---- messages ----
     def add_message(self, user_id: str, role: str, content: str) -> int:
@@ -227,7 +319,12 @@ class Database:
                                  preference=None, feel=None, discomfort=None,
                                  status=None, evidence: str = "",
                                  notes: str = "") -> None:
-        """LLM 上报的动作反馈（18.1 第②层）；只写给了的字段，evidence 必填"""
+        """LLM 上报的动作反馈；空 discomfort 明确清除旧不适，不解除医疗限制。"""
+        for value, lo, hi in ((preference, -2, 2), (feel, 0, 3)):
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not lo <= value <= hi):
+                raise ValueError("动作反馈评分超出允许范围")
+        if status is not None and status not in ("active", "avoid", "learning"):
+            raise ValueError("未知动作状态")
         row = self.conn.execute(
             "SELECT * FROM user_exercise WHERE user_id=? AND exercise_id=?",
             (user_id, exercise_id)).fetchone()
@@ -239,7 +336,7 @@ class Database:
         for col, val in (("preference", preference), ("feel", feel),
                          ("discomfort", discomfort), ("status", status),
                          ("evidence", evidence), ("notes", notes)):
-            if val is not None and val != "":
+            if val is not None and (val != "" or col == "discomfort"):
                 sets.append(f"{col}=?")
                 params.append(val)
         sets.append("updated_at=?")

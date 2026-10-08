@@ -19,7 +19,10 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
+import subprocess
 import os
 import sys
 import traceback
@@ -31,10 +34,12 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-load_dotenv(ROOT / ".env")
+# 仅显式运行真实验收时加载环境，导入不读取密钥。
+os.environ["COACH_LOG_DIR"] = str(ROOT / "eval" / "runs" / "logs")
 
 from coach.agent import CoachAgent  # noqa: E402
 from coach.profile import open_pain_flags  # noqa: E402
+from coach.budget import BudgetExceeded, RequestBudget
 
 EVIDENCE_BLOCK_PHRASES = ["请立即停止当前训练", "立即停止引发症状的动作"]
 
@@ -191,8 +196,12 @@ def _backdate(agent, user_id, after_id: int, days: int) -> None:
 
 def run_persona(p: dict, run_dir: Path) -> dict:
     uid = f"eval_{p['id']}"
-    agent = CoachAgent(user_id=uid, db_path=run_dir / f"{p['id']}.db")
     result = {"id": p["id"], "desc": p.get("desc", ""), "turns": [], "ok": True}
+    try:
+        agent = CoachAgent(user_id=uid, db_path=run_dir / f"{p['id']}.db")
+    except Exception as e:
+        result.update(ok=False, incomplete=True, stop_reason="setup_failed", error_type=type(e).__name__)
+        return result
     transcript = [f"# {p['id']} — {p.get('desc', '')}\n"]
 
     for turn in p["turns"]:
@@ -200,6 +209,10 @@ def run_persona(p: dict, run_dir: Path) -> dict:
         before_ck = _max_checkin_id(agent, uid)
         try:
             reply = agent.chat(say)
+        except BudgetExceeded:
+            result.update(ok=False, incomplete=True, stop_reason="budget_exhausted")
+            transcript.append("预算已耗尽：剩余轮次未执行，不能算作通过。")
+            break
         except Exception:
             reply = f"<异常>\n{traceback.format_exc(limit=2)}"
         # 用 agent 自记录的本轮工具，避免 _trim_messages 删消息导致索引切片漏报
@@ -208,7 +221,7 @@ def run_persona(p: dict, run_dir: Path) -> dict:
         if turn.get("backdate_days"):
             _backdate(agent, uid, before_ck, turn["backdate_days"])
 
-        exp = turn.get("expect", {})
+        exp = copy.deepcopy(turn.get("expect", {}))
         if exp.pop("no_tools_crash", None):
             exp = {**exp, "reply_not_contains": ["<异常>"]}
         if reply.startswith("<异常>"):
@@ -235,6 +248,7 @@ def run_persona(p: dict, run_dir: Path) -> dict:
     (run_dir / "transcripts").mkdir(exist_ok=True)
     (run_dir / "transcripts" / f"{p['id']}.md").write_text(
         "\n".join(transcript), encoding="utf-8")
+    agent.db.conn.close()
     return result
 
 
@@ -245,6 +259,11 @@ def run_redteam(cases: list[dict], run_dir: Path) -> list[dict]:
         agent = CoachAgent(user_id=uid, db_path=run_dir / f"{case['id']}.db")
         try:
             reply = agent.chat(case["say"])
+        except BudgetExceeded:
+            agent.db.conn.close()
+            results.append({"id": case["id"], "set": case.get("set", "dev"),
+                            "ok": False, "incomplete": True, "fails": ["budget_exhausted"]})
+            break
         except Exception:
             reply = f"<异常>\n{traceback.format_exc(limit=2)}"
         tools = sorted(agent._turn_tools)
@@ -256,91 +275,116 @@ def run_redteam(cases: list[dict], run_dir: Path) -> list[dict]:
         results.append({"id": case["id"], "set": case.get("set", "dev"),
                         "say": case["say"], "reply": reply[:200],
                         "fails": fails, "ok": not fails})
+        agent.db.conn.close()
     return results
+
+
+def version_manifest() -> dict:
+    """只对源码、公开知识与测试定义取指纹，不读取 .env / 用户库 / cookies。"""
+    groups = {}
+    for folder, patterns in {
+        ".": ("*.py", "requirements.txt", "pytest.ini"),
+        "coach": ("*.py",), "tools": ("*.py",), "eval": ("*.py", "*.yaml"),
+        "claims": ("*.yaml",), "exercises": ("*.yaml",), "knowledge": ("*.md",),
+    }.items():
+        digest = hashlib.sha256()
+        paths = set()
+        for pattern in patterns:
+            paths.update((ROOT / folder).glob(pattern) if folder in (".", "eval")
+                         else (ROOT / folder).rglob(pattern))
+        for path in sorted(paths):
+            digest.update(str(path.relative_to(ROOT)).encode())
+            digest.update(path.read_bytes())
+        groups[folder] = digest.hexdigest()
+    try:
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True))
+    except (OSError, subprocess.CalledProcessError):
+        revision, dirty = "unknown", None
+    return {"revision": revision, "dirty": dirty, "sha256": groups}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", choices=["dev", "holdout", "redteam", "all"],
-                    default="dev")
+    ap.add_argument("--set", choices=["dev", "holdout", "redteam", "all", "pilot"], default="dev")
     ap.add_argument("--persona", action="append", default=[])
-    ap.add_argument("--fake", action="store_true",
-                    help="FAKE_LLM 模式：仅验证 harness 机制，不能作为行为结论")
+    ap.add_argument("--fake", action="store_true")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--budget-ledger", type=Path)
+    ap.add_argument("--max-calls", type=int)
     args = ap.parse_args()
-
+    if not 1 <= args.repeat <= 10 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in args.tag):
+        ap.error("repeat 须在1–10之间；tag 仅允许字母数字、下划线与短横线")
+    budget = None
     if args.fake:
         os.environ["FAKE_LLM"] = "1"
-    elif not os.getenv("LLM_API_KEY"):
-        print("未配置 LLM_API_KEY（.env）。真实评测需要 key；"
-          "或用 --fake 验证 harness 机制。")
-        return 2
-
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    else:
+        if not args.budget_ledger or not args.max_calls:
+            ap.error("真实验收必须显式提供 --budget-ledger 与 --max-calls")
+        load_dotenv(ROOT / ".env")
+        if not os.getenv("LLM_API_KEY"):
+            print("缺少 LLM_API_KEY；没有发送请求。")
+            return 2
+        os.environ["FAKE_LLM"] = "0"
+        os.environ["LLM_BUDGET_PATH"] = str(args.budget_ledger.resolve())
+        os.environ["LLM_MAX_REQUESTS"] = str(args.max_calls)
+        budget = RequestBudget(args.budget_ledger, args.max_calls)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     run_dir = ROOT / "eval" / "runs" / (ts + (f"_{args.tag}" if args.tag else ""))
-    run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"运行目录：{run_dir}（模式：{'FAKE，仅机制验证' if args.fake else '真实 LLM'}）\n")
-
+    run_dir.mkdir(parents=True, exist_ok=False)
+    manifest = version_manifest()
+    print(f"运行目录：{run_dir}（{'FAKE机制测试' if args.fake else '有预算的真实验收'}）")
     results, redteam_results = [], []
-    if args.set in ("dev", "holdout", "all"):
-        files = ([ROOT / "eval" / "personas_dev.yaml"] if args.set == "dev"
-                 else [ROOT / "eval" / "personas_holdout.yaml"] if args.set == "holdout"
-                 else [ROOT / "eval" / "personas_dev.yaml",
-                       ROOT / "eval" / "personas_holdout.yaml"])
-        for f in files:
-            for p in yaml.safe_load(f.read_text(encoding="utf-8")):
-                if args.persona and p["id"] not in args.persona:
-                    continue
-                print(f"▶ {p['id']}：{p.get('desc', '')}")
-                r = run_persona(p, run_dir)
-                results.append(r)
-                n_fail = sum(len(t["fails"]) for t in r["turns"])
-                print(f"  {'✅' if r['ok'] else '❌'} "
-                      f"{len(r['turns'])} 轮，{n_fail} 项断言失败\n")
-
-    if args.set in ("redteam", "all"):
-        cases = yaml.safe_load((ROOT / "eval" / "redteam.yaml").read_text("utf-8"))
-        dev_cases = [c for c in cases if c.get("set", "dev") == "dev"]
-        hold_cases = [c for c in cases if c.get("set") == "holdout"]
-        redteam_results = run_redteam(dev_cases + hold_cases, run_dir)
-        for r in redteam_results:
-            print(f"  {'✅' if r['ok'] else '❌'} [{r['set']}] {r['id']}"
-                  + (f"：{r['fails']}" if r["fails"] else ""))
-
+    incomplete = False
+    names = ({"dev": ["personas_dev"], "holdout": ["personas_holdout"],
+              "all": ["personas_dev", "personas_holdout"], "pilot": ["personas_pilot"]}
+             .get(args.set, []))
+    definitions = []
+    for name in names:
+        definitions += yaml.safe_load((ROOT / "eval" / f"{name}.yaml").read_text()) or []
+    definitions = [p for p in definitions if not args.persona or p["id"] in args.persona]
+    if names and not definitions:
+        ap.error("没有匹配的验收用例")
+    for repeat in range(args.repeat):
+        round_dir = run_dir / f"round_{repeat + 1}"
+        round_dir.mkdir()
+        for p in definitions:
+            if budget and budget.snapshot()["remaining"] == 0:
+                incomplete = True
+                break
+            r = run_persona(copy.deepcopy(p), round_dir)
+            r["round"] = repeat + 1
+            results.append(r)
+            print(f"{p['id']}：{'PASS' if r['ok'] else 'FAIL/INCOMPLETE'}")
+            if r.get("incomplete"):
+                incomplete = True
+                break
+        if incomplete:
+            break
+        if args.set in ("redteam", "all"):
+            cases = yaml.safe_load((ROOT / "eval" / "redteam.yaml").read_text()) or []
+            red = run_redteam(cases, round_dir)
+            redteam_results.extend(red)
+            if any(r.get("incomplete") for r in red):
+                incomplete = True
+                break
     diversity = {}
     for r in results:
-        t = r.get("final_plan_template") or "（无计划）"
-        diversity[t] = diversity.get(t, 0) + 1
-
-    report = {
-        "mode": "fake" if args.fake else "real",
-        "model": os.getenv("LLM_MODEL", "deepseek-chat") if not args.fake else "fake",
-        "set": args.set,
-        "started_at": ts,
-        "results": results,
-        "redteam": redteam_results,
-        "plan_diversity": diversity,
-        "summary": {
-            "personas": len(results),
-            "personas_failed": sum(1 for r in results if not r["ok"]),
-            "redteam": len(redteam_results),
-            "redteam_failed": sum(1 for r in redteam_results if not r["ok"]),
-        },
-    }
-    (run_dir / "report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    s = report["summary"]
-    print(f"\n== 汇总 ==\n虚拟用户 {s['personas']} 个（失败 {s['personas_failed']}），"
-          f"红队 {s['redteam']} 项（失败 {s['redteam_failed']}）")
-    if diversity:
-        print("计划多样性（模板 → 人数）：")
-        for t, n in sorted(diversity.items(), key=lambda x: -x[1]):
-            print(f"  {n} × {t}")
-    if args.fake:
-        print("\n⚠️ 本次为 FAKE_LLM 机制验证，不能作为行为结论。")
-    failed = s["personas_failed"] + s["redteam_failed"]
-    return 1 if failed else 0
+        key = r.get("final_plan_template") or "（无计划）"
+        diversity[key] = diversity.get(key, 0) + 1
+    summary = {"personas": len(results), "personas_failed": sum(not r["ok"] for r in results),
+               "redteam": len(redteam_results), "redteam_failed": sum(not r["ok"] for r in redteam_results)}
+    failed = summary["personas_failed"] + summary["redteam_failed"]
+    report = {"mode": "fake" if args.fake else "real", "model": "fake" if args.fake else os.getenv("LLM_MODEL", "deepseek-chat"),
+              "status": "incomplete" if incomplete else "failed" if failed else "passed",
+              "version": manifest, "set": args.set, "repeat": args.repeat, "started_at": ts,
+              "budget": budget.snapshot() if budget else None, "results": results,
+              "redteam": redteam_results, "plan_diversity": diversity, "summary": summary,
+              "limits": "固定工具/关键词测试不等于临床或长期训练效果；未执行部分不算通过"}
+    (run_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps({"status": report["status"], "summary": summary, "budget": report["budget"]}, ensure_ascii=False))
+    return 2 if incomplete else 1 if failed else 0
 
 
 if __name__ == "__main__":

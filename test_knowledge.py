@@ -132,6 +132,19 @@ def test_validate_claim():
          "evidence": "blogger_experience", "exercises": ["no_such"]}))
 
 
+def test_validate_claim_applies_to_shape():
+    """K-A01：applies_to 形状校验——维度固定、字符串数组；空=未知不报错"""
+    base = {"claim": "x", "ts": [1.0, 2.0], "type": "cue", "evidence": "blogger_experience"}
+    # 合法：空维度（未知）与已填维度
+    assert validate_claim({**base, "applies_to": {"level": [], "goal": [], "condition": []}}) == []
+    assert validate_claim({**base, "applies_to": {"level": ["beginner"], "goal": ["减脂"], "condition": []}}) == []
+    assert validate_claim({**base, "applies_to": {}}) == []
+    # 非法：未知维度 / 非数组值 / 整体不是对象
+    assert validate_claim({**base, "applies_to": {"sex": ["male"]}})
+    assert validate_claim({**base, "applies_to": {"level": "beginner"}})
+    assert validate_claim({**base, "applies_to": "beginner"})
+
+
 def test_parse_json_array_tolerant():
     assert _parse_json_array('[{"a":1}]') == [{"a": 1}]
     assert _parse_json_array('```json\n[{"a":1}]\n```') == [{"a": 1}]
@@ -164,8 +177,61 @@ def test_compilation_video_has_speaker_pending():
     for c in group:
         speaker = c.get("speaker") or ""
         assert speaker, f"{c['id']} 缺少 speaker 字段"
-        assert speaker == "待确认" or "语境归因" in speaker, \
-            f"{c['id']} 的 speaker={speaker!r} 既不是待确认也无归因留痕"
+        from coach.claim_review import content_fingerprint
+        source = (c.get("reviews") or {}).get("source") or {}
+        confirmed = (source.get("status") == "approved" and source.get("by")
+                     and source.get("note") and source.get("at")
+                     and source.get("fingerprint") == content_fingerprint(c))
+        assert speaker == "待确认" or "语境归因" in speaker or confirmed, \
+            f"{c['id']} 的 speaker={speaker!r} 缺少待确认/语境归因或有效来源签核留痕"
+
+
+def test_ka02_mismapped_exercises_removed():
+    """K-A02（KNOWLEDGE_AUDIT_2026-10-05）：语义错配修复回归。
+
+    弹力带套膝上侧向移动（髋/臀中肌激活）≠ 弹力带扩胸（后束/中背）；
+    俯身哑铃臂屈伸（kickback 姿势）≠ 仰卧臂屈伸。库内无对应动作时
+    取消错误映射并待建，不得为覆盖率强挂近似 ID。
+    """
+    import yaml
+    tcy = {c["id"]: c for c in yaml.safe_load((ROOT / "claims/tcy.yaml").read_text("utf-8"))}
+    for i in range(18, 23):
+        c = tcy[f"tcy-BV1pZiZBxE8y-{i:04d}"]
+        assert "band_pull_apart" not in c["exercises"], f"{c['id']} 仍错挂 band_pull_apart"
+    for i in range(37, 41):
+        c = tcy[f"tcy-BV1MvwxzGEio-{i:04d}"]
+        assert "skull_crusher" not in c["exercises"], f"{c['id']} 仍错挂 skull_crusher"
+    # 组合总结条目：提示不能统一归给单一动作；颈后/俯身臂屈伸都不是仰卧臂屈伸
+    combo = tcy["tcy-BV1MvwxzGEio-0041"]
+    assert "skull_crusher" not in combo["exercises"], "组合条目仍错挂 skull_crusher"
+    # K-A02 后续（2026-10-06 卡片准备时发现）：《New tech下斜卧推》教的是下斜，
+    # 27 条不得错挂到 incline_bench_press（上斜≠下斜，库内暂无下斜动作）
+    ksw = {c["id"]: c for c in yaml.safe_load((ROOT / "claims/ksw.yaml").read_text("utf-8"))}
+    decline = [c for c in ksw.values() if c.get("video") == "BV1HXXsBBEiE"]
+    assert decline, "下斜卧推视频条目应存在"
+    for c in decline:
+        assert "incline_bench_press" not in (c.get("exercises") or []), \
+            f"{c['id']} 仍把下斜卧推条目挂到上斜"
+    # K-A02 后续②：《倒蹬详解》教学对象是倒蹬（深蹲/高脚杯只是引用标准）
+    lp = [c for c in ksw.values() if c.get("video") == "BV1mT4y1b7Z5"]
+    assert lp and all(c["exercises"] == ["leg_press"] for c in lp), \
+        "倒蹬详解条目应统一挂 leg_press"
+
+
+def test_ka03_ea_sleep_is_conditional_research_finding():
+    """K-A03：研究结果不得包装为通用 self_check 阈值。
+
+    cs-BV1Tiec6TEv1-0008 的 EA 数值来自每周高强度训练约 15 小时的橄榄球
+    运动员研究，单位为大卡/kg去脂体重；条目必须保留人群与单位并取消
+    通用自检含义，引用窗口需覆盖 EA 定义段以便核对。
+    """
+    import yaml
+    cs = {c["id"]: c for c in yaml.safe_load((ROOT / "claims/cs.yaml").read_text("utf-8"))}
+    c = cs["cs-BV1Tiec6TEv1-0008"]
+    assert c["type"] != "self_check", "EA 研究数值不得再标为通用 self_check"
+    assert c["ts"][0] <= 32.0, "引用窗口应覆盖 EA 定义段（视频 29s 起）"
+    for kw in ("橄榄球运动员", "去脂体重"):
+        assert kw in c["claim"], f"claim 缺少研究要素：{kw}"
 
 
 def test_format_coaching_draft_only_counts():
@@ -185,11 +251,14 @@ def test_format_coaching_approved_has_source():
     from coach.claims import ClaimStore
     store = ClaimStore.__new__(ClaimStore)
     store._by_id = {
-        "x-1": {"id": "x-1", "blogger": "谭成义", "video": "BV1xx",
-                "ts": [192.0, 201.0], "claim": "起身先顶髋", "status": "approved"},
+        "x-1": {"id": "x-1", "blogger": "谭成义", "speaker": "谭成义", "video": "BV128bX6eExV",
+                "ts": [192.0, 201.0], "claim": "起身先顶髋", "status": "draft", "provenance": "transcript"},
     }
+    from coach.claim_review import record_review
+    record_review(store._by_id["x-1"], "source", "测试审核员", "合成测试素材来源核对")
+    record_review(store._by_id["x-1"], "applicability", "测试审核员", "合成测试适用性核对")
     text = store.format_coaching({"cues": ["x-1"]})
-    assert "起身先顶髋" in text and "BV1xx?t=192" in text and "谭成义" in text
+    assert "起身先顶髋" in text and "BV128bX6eExV?t=192" in text and "谭成义" in text
 
 
 def test_format_coaching_plain_text_passthrough():
@@ -246,12 +315,25 @@ def test_distill_end_to_end_supported(tmp_path, monkeypatch):
     monkeypatch.setattr("tools.distill.ROOT", tmp_path)
     (tmp_path / "claims").mkdir()
     claims_in = [{"claim": "深蹲起身先顶髋", "ts": [0.0, 10.0], "type": "cue",
-                  "evidence": "blogger_experience", "exercises": ["barbell_back_squat"]}]
+                  "evidence": "blogger_experience", "exercises": ["barbell_back_squat"],
+                  "applies_to": {"level": ["beginner"], "goal": [], "condition": []}}]
     llm = _StubLLM(claims_in, "支持")
     report = distill(_fixture_transcript(tmp_path), "谭成义", llm)
     assert report["valid"] == 1 and not report["flagged"]
     out = (tmp_path / "claims" / "tcy.yaml").read_text("utf-8")
     assert "anti_hallucination: pass" in out and "provenance: transcript" in out
+    # K-A01：LLM 明确给出的适用条件应原样落盘（不做普适化默认）
+    import yaml as _y
+    saved = _y.safe_load(out)
+    assert saved[0]["applies_to"]["level"] == ["beginner"]
+    # 未提供 applies_to 时默认为全空=未知，不得填充臆测条件
+    claims_in2 = [{"claim": "另一条", "ts": [0.0, 10.0], "type": "cue",
+                   "evidence": "blogger_experience", "exercises": []}]
+    llm2 = _StubLLM(claims_in2, "支持")
+    distill(_fixture_transcript(tmp_path), "谭成义", llm2)
+    saved2 = _y.safe_load((tmp_path / "claims" / "tcy.yaml").read_text("utf-8"))
+    newest = [c for c in saved2 if c["claim"] == "另一条"][0]
+    assert newest["applies_to"] == {"level": [], "goal": [], "condition": []}
 
 
 def test_distill_flags_unsupported(tmp_path, monkeypatch):

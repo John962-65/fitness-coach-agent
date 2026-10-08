@@ -20,13 +20,16 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .db import Database
+from .budget import BudgetExceeded
 from .claims import claim_store
+from .cards import card_for_exercise, card_for_topic, serve_card
 from .exercises import library as exercise_lib
 from .knowledge import LOAD_KNOWLEDGE_TOOL, KnowledgeBase
 from .llm import LLMClient
@@ -52,8 +55,8 @@ PENDING_EXPIRE_DAYS = 7
 
 _log = logging.getLogger("coach")
 if not _log.handlers:
-    _log_dir = Path(__file__).resolve().parent.parent / "data"
-    _log_dir.mkdir(exist_ok=True)
+    _log_dir = Path(os.getenv("COACH_LOG_DIR", str(Path(__file__).resolve().parent.parent / "data")))
+    _log_dir.mkdir(parents=True, exist_ok=True)
     _log.addHandler(logging.FileHandler(_log_dir / "agent.log", encoding="utf-8"))
     _log.setLevel(logging.WARNING)
 
@@ -147,6 +150,26 @@ SAVE_CHECKIN_TOOL = {
     },
 }
 
+GET_CHECKINS_TOOL = {
+    "type": "function", "function": {
+        "name": "get_checkins", "description": "读取最近打卡的记录ID、修订版本和完整数据；纠错前先调用。",
+        "parameters": {"type": "object", "properties": {"limit": {"type": "integer"}}},
+    },
+}
+
+CORRECT_CHECKIN_TOOL = {
+    "type": "function", "function": {
+        "name": "correct_checkin",
+        "description": "用户明确指出打卡记错时修订原记录。先get_checkins；保留原值/日期，不能替别人改。训练记录传exercise_index定位一项动作，patch只包含纠正字段。",
+        "parameters": {"type": "object", "properties": {
+            "checkin_id": {"type": "integer"}, "expected_revision": {"type": "integer"},
+            "exercise_index": {"type": "integer", "description": "训练记录里要改的动作下标，从0开始"},
+            "patch": {"type": "object", "description": "如 {weight_kg:60} 或 {reps:8}；不能改ID、类型、训练日期"},
+            "reason": {"type": "string"}, "evidence": {"type": "string", "description": "本轮用户原话的原样摘录"},
+        }, "required": ["checkin_id", "expected_revision", "patch", "reason", "evidence"]},
+    },
+}
+
 GET_PLAN_TOOL = {
     "type": "function",
     "function": {
@@ -222,7 +245,7 @@ RECORD_EXERCISE_FEEDBACK_TOOL = {
                 "feel": {"type": "integer",
                          "description": "目标肌群发力感 0-3，可选"},
                 "discomfort": {"type": "string",
-                               "description": "不适描述，如'肩前侧不适'，可选"},
+                               "description": "不适描述；用户明确表示该不适消失时传空字符串清除，可选"},
                 "status": {"type": "string", "enum": ["active", "avoid", "learning"],
                            "description": "avoid=用户明确不想练或说'先不练'；"
                                           "learning=动作不熟还在学。可选"},
@@ -271,6 +294,27 @@ GET_EXERCISE_COACHING_TOOL = {
                              "description": "动作名（用户叫法即可，系统会自动归一）"},
             },
             "required": ["exercise"],
+        },
+    },
+}
+
+GET_COACHING_CARD_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_coaching_card",
+        "description": (
+            "获取某类训练/营养主题的已审核教练卡（发起人签核的完整表达，含适用条件、"
+            "限制与分歧说明，带视频出处）。用户问蛋白质怎么吃、热量/减脂原理、睡眠恢复、"
+            "训练强度(RPE/RM)、进阶加重、计划安排、恢复疲劳等一般性主题时调用；"
+            "具体动作技术用 get_exercise_coaching。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string",
+                          "description": "主题关键词（如：蛋白质、热量、睡眠、恢复、加重、分化安排）"},
+            },
+            "required": ["topic"],
         },
     },
 }
@@ -350,7 +394,7 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 5. 用户提供新的个人信息（体重变化、伤病等）时调用 update_profile
 6. 档案中有待跟进的安全记录时，自然地询问近况；**必须等用户明确确认**
    （已就医无恙/症状消失）后才调用 resolve_pain_flag，且只关闭与用户结论
-   对应的那一条（传 index）——用户没确认就不关，一次也不许多关
+   对应的那一条（传 flag_id）——用户没确认就不关，一次也不许多关
 7. 用户问进度/复盘/练得怎么样时调用 get_review；问"计划要不要调整/怎么调"时**必须**
    调用 get_adjustment_suggestions——注入的近期动态只是提示，不能代替规则引擎；
    即使打卡数据很少也要先调用，让规则引擎基于现有数据给候选，
@@ -363,12 +407,19 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
    必须附用户原话
 10. 值得记住的定性观察（如"周三常加班""硬拉时下背先酸"）用 add_coach_note 记录，
     必须附依据；观察失效时用 close_coach_note 关闭
-11. 用户问某个动作怎么练、找不到发力感或要纠错时，先调用 get_exercise_coaching
-    获取该动作的教学要点；返回里带出处的条目可以照引并说明出处，
-    没有素材的动作用教练自己的话讲
+11. 用户问某个动作怎么练、找不到发力感或要做动作技术纠错时，先调用 get_exercise_coaching
+    获取该动作的教学要点（返回若含【已审核教练卡】段落，以该段落为该动作的准绳表达，
+    可照引并说明出处）；用户问蛋白质、热量减脂、睡眠恢复、进阶加重、计划安排等
+    一般训练营养主题时，先调用 get_coaching_card 获取对应的已审核教练卡。
+    没有素材/卡片覆盖的动作用教练自己的话讲
 12. **博主点名纪律**：知识索引每条标了 [来源:xxx]。只有 transcript/article（一手）
     来源才能说"某博主讲过……"；general/third_party_distill 来源的内容，用教练自己
     的话讲，可泛称"整理自公开健身内容"，**不要把具体说法安在凯圣王/谭成义/陈石名下**
+13. 用户说打卡记错（重量/次数/体重等），先 get_checkins 读取 ID 与 revision，
+    再 correct_checkin 修订指定记录；这不是新一次训练，不能用 save_checkin 重复记账。
+    纠错要附本轮原话。修订后旧调整建议作废；不要声称已经自动改变训练计划。
+14. 单次可用时间变化写 resources.session_minutes；单纯喜欢/讨厌也要记录 preference，
+    不必等到疼痛才调整。收到重排建议后解释时间取舍和选择理由，确认后再执行。
 """
 
 # R3：输出侧数字承诺兜底（"30 天瘦 5 斤"类）
@@ -507,6 +558,8 @@ class CoachAgent:
         mode = "normal" if self.profile.get("onboarding_done") else "onboarding"
         try:
             reply = self._loop(mode=mode)
+        except BudgetExceeded:
+            raise
         except Exception:
             _log.exception("对话循环异常")
             reply = "（教练这边出了点小状况，刚才那句没接住——换个说法再说一次？）"
@@ -683,6 +736,8 @@ class CoachAgent:
             tools = [
                 LOAD_KNOWLEDGE_TOOL,
                 SAVE_CHECKIN_TOOL,
+                GET_CHECKINS_TOOL,
+                CORRECT_CHECKIN_TOOL,
                 UPDATE_PROFILE_TOOL,
                 GET_PLAN_TOOL,
                 GET_REVIEW_TOOL,
@@ -693,6 +748,7 @@ class CoachAgent:
                 ADD_COACH_NOTE_TOOL,
                 CLOSE_COACH_NOTE_TOOL,
                 GET_EXERCISE_COACHING_TOOL,
+                GET_COACHING_CARD_TOOL,
             ]
             self._refresh_system_prompt()
 
@@ -766,6 +822,7 @@ class CoachAgent:
 
         if name == "update_profile":
             previous_health = copy.deepcopy(self.profile.get("conditions", {}).get("health_screen"))
+            previous_resources = copy.deepcopy(self.profile.get("resources", {}))
             patch = args.get("patch", {})
             # G2 门槛（2026-09-29 收紧）：伤病史/健康筛查必须有真凭实据——
             # LLM 自附 *_evidence，或本轮用户原话能判定为真的在回答该问题；
@@ -836,10 +893,11 @@ class CoachAgent:
                 res = patch.get("resources") or {}
                 if "injuries" in cond and "伤病史" not in rejected:
                     plan_affecting.append("伤病有更新")
-                if "location" in res:
-                    plan_affecting.append("训练场地变了")
-                if "days_per_week" in res:
-                    plan_affecting.append("每周训练天数变了")
+                current_resources = self.profile.get("resources", {})
+                for key, label in (("location", "训练场地变了"), ("days_per_week", "每周训练天数变了"),
+                                   ("session_minutes", "单次训练时间变了")):
+                    if current_resources.get(key) != previous_resources.get(key):
+                        plan_affecting.append(label)
             result = "档案已更新" + suffix + "。"
             if plan_affecting:
                 extra = self._offer_regenerate("、".join(plan_affecting))
@@ -879,6 +937,16 @@ class CoachAgent:
             self.db.add_checkin(self.user_id, ctype, data)
             suffix = ("；" + "；".join(notes)) if notes else ""
             return "打卡已记录" + suffix + "。"
+
+        if name == "get_checkins":
+            limit = max(1, min(int(args.get("limit", 10)), 20))
+            return json.dumps(self.db.list_checkins(self.user_id, limit), ensure_ascii=False)
+
+        if name == "correct_checkin":
+            try:
+                return self._correct_checkin(args)
+            except (ValueError, TypeError, IndexError) as e:
+                return f"打卡未修改：{e}"
 
         if name == "get_plan":
             plan = self._enforce_medical_permission()
@@ -984,10 +1052,10 @@ class CoachAgent:
             self._refresh_system_prompt()
             result = f"已记录「{official}」的动作反馈。"
             # 闭环：avoid / 报不适 → 当前计划可能还排着这个动作，生成重排建议
-            if args.get("status") == "avoid" or (args.get("discomfort") or "").strip():
+            if (args.get("status") == "avoid" or "preference" in args
+                    or "feel" in args or "discomfort" in args):
                 extra = self._offer_regenerate(
-                    f"你对「{official}」的反馈有变化（"
-                    + ("明确避开" if args.get("status") == "avoid" else "报了不适") + "）")
+                    f"你对「{official}」的偏好或感受有更新，需要重新评估动作选择")
                 if extra:
                     result += "\n" + extra
             return result
@@ -1003,7 +1071,11 @@ class CoachAgent:
             coaching = claim_store.format_coaching(ex)
             refs = ex.get("knowledge_refs") or []
             parts = [f"【{official}】教学要点（动作库 + 已审核博主素材）"]
-            if coaching:
+            ex_card = card_for_exercise(ex_id)
+            if ex_card:
+                # 已批准核心卡优先：卡片是发起人审过的完整表达（§12），底层条目仍为 draft
+                parts.append(serve_card(ex_card))
+            elif coaching:
                 parts.append(coaching)
             else:
                 parts.append("（该动作暂无已审核的博主教学素材——"
@@ -1012,6 +1084,14 @@ class CoachAgent:
                 parts.append("关联知识文件（可用 load_knowledge 加载）："
                              + "、".join(refs))
             return "\n".join(parts)
+
+        if name == "get_coaching_card":
+            topic = (args.get("topic") or "").strip()
+            card = card_for_topic(topic)
+            if not card:
+                return ("（暂无覆盖该主题的已审核教练卡——"
+                        "用教练自己的话按通用知识回答，不要点名博主）")
+            return serve_card(card)
 
         if name == "add_coach_note":
             note = (args.get("note") or "").strip()
@@ -1062,6 +1142,52 @@ class CoachAgent:
             return f"已关闭 1 条安全跟进记录（{target.get('kw', '?')}）。"
 
         return f"未知工具：{name}"
+
+    def _correct_checkin(self, args: dict) -> str:
+        evidence = str(args.get("evidence") or "").strip()
+        last_user = next((m["content"] for m in reversed(self.messages) if m.get("role") == "user"), "")
+        if not evidence or evidence not in last_user:
+            raise ValueError("必须附本轮用户的真实原话，不能代造纠错依据")
+        old = self.db.get_checkin(self.user_id, args["checkin_id"])
+        if not old:
+            raise ValueError("记录不存在，请先 get_checkins 确认记录ID")
+        patch = args.get("patch")
+        if not isinstance(patch, dict) or not patch:
+            raise ValueError("patch 必须包含要纠正的字段")
+        data = copy.deepcopy(old["data"])
+        allowed = {"body": {"weight_kg", "waist_cm", "note"},
+                   "diet": {"meals", "hunger_level", "note"},
+                   "training": {"name", "weight_kg", "sets", "reps", "rpe"}}
+        if set(patch) - allowed.get(old["type"], set()):
+            raise ValueError("不能修改记录ID、类型、日期或未知字段")
+        if old["type"] == "training":
+            idx = args.get("exercise_index")
+            exs = data.get("exercises") or []
+            if not isinstance(idx, int) or isinstance(idx, bool) or not 0 <= idx < len(exs):
+                raise ValueError("请指定要纠正的 exercise_index")
+            exs[idx].update(patch)
+        else:
+            data.update(patch)
+        data, warnings = coerce_checkin(old["type"], data)
+        if warnings:
+            raise ValueError("；".join(warnings))
+        for ex in data.get("exercises", []) if old["type"] == "training" else []:
+            raw = ex.get("name", "")
+            eid, official, _ = exercise_lib.normalize(raw)
+            ex["exercise_id"] = eid
+            if eid:
+                ex["name"] = official
+                if official != raw:
+                    ex["name_raw"] = raw
+            else:
+                self._log_unmatched_exercise(raw)
+        row = self.db.revise_checkin(self.user_id, old["id"], args["expected_revision"], data,
+                                     str(args.get("reason") or ""), evidence)
+        self.profile = self.db.get_profile(self.user_id)
+        self._refresh_system_prompt()
+        return (f"打卡 #{row['id']} 已修订为版本 {row['revision']}；原日期和修订历史保留，"
+                "力量趋势与最佳值已重算，旧调整建议已作废。"
+                "已生效的计划没有自动改动，如曾依据错误数据加重，需要重新评估。")
 
     def _append_tool_exchange(self, tc: dict, result: str) -> None:
         self._turn_tool_results.append(result)

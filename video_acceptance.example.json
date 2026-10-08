@@ -1,0 +1,16 @@
+{
+  "description": "真实视频验收清单模板，不是已完成的验收数据。未经标注不计算准确率。",
+  "required_case_fields": [
+    "case_id", "local_video_path", "video_sha256", "exercise_id", "camera_view",
+    "occlusion", "quality_acceptable", "reviewer", "expected_observations",
+    "must_not_infer", "actual_output", "model_and_rules_version"
+  ],
+  "review_requirements": [
+    "覆盖不同视角、体型、遮挡、动作变式和拍摄质量",
+    "对低质量或不可观测的项目，验收拒绝判断而不是强行诊断",
+    "不从二维关键点直接推断肌肉激活、疼痛病因或组织损伤",
+    "结果必须同时检查错误报警和漏报；合成数据不能代替真实样例"
+  ],
+  "cases": [],
+  "status": "awaiting_real_video_and_human_labels"
+}

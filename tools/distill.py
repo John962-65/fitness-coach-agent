@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 import yaml  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-load_dotenv(ROOT / ".env")  # 同 eval/runner.py：工具入口自己加载 key
+# 只在显式执行 main 时读取环境；审核工具导入本模块不得读取密钥。
 
 from coach.exercises import library as exercise_lib  # noqa: E402
 from coach.llm import LLMClient  # noqa: E402
@@ -75,6 +75,19 @@ def validate_claim(claim: dict) -> list[str]:
     for ex in claim.get("exercises") or []:
         if not exercise_lib.get(ex):
             errors.append(f"exercises 引用了动作库不存在的 id: {ex!r}")
+    # K-A01：applies_to 形状校验——维度固定、值为字符串数组；空数组表示
+    # "原文未说明（未知）"，绝不可解释为普适。
+    at = claim.get("applies_to")
+    if at is not None:
+        if not isinstance(at, dict):
+            errors.append("applies_to 必须是对象")
+        else:
+            bad_keys = set(at) - {"level", "goal", "condition"}
+            if bad_keys:
+                errors.append(f"applies_to 含未知维度: {sorted(bad_keys)!r}")
+            for k, v in at.items():
+                if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                    errors.append(f"applies_to.{k} 必须是字符串数组: {v!r}")
     return errors
 
 
@@ -92,6 +105,10 @@ EXTRACT_PROMPT = """你是健身内容整理助手。下面是一段博主视频
 - exercises 用给定的动作库 id（从下方列表里选，没有就留空）
 - type 取值：principle/method/cue/error/self_check/nutrition/anecdote
 - evidence 取值：blogger_experience/cites_research/consensus
+- applies_to 是适用条件对象 {{level, goal, condition}}（数组值）：
+  只填**原文明确说出**的条件（如水平/人群/目标/阶段/伤病限制），
+  原文没说的维度一律留空数组——留空表示"未知"，不要猜测、
+  不要因为"听起来像通用建议"就留成普适；研究结果只对该研究人群成立
 - 多人出镜的视频（对话/合作/合集）：AI 字幕不区分说话人，
   每条加 "speaker" 字段——能确定说话人就填名字，不能确定填"待确认"
 - 只输出 JSON 数组，不要解释
@@ -185,6 +202,7 @@ def distill(transcript_path: Path, blogger: str, llm: LLMClient,
             "exercises": c.get("exercises") or [],
             "applies_to": c.get("applies_to") or {"level": [], "goal": [], "condition": []},
             "evidence": c["evidence"],
+            "speaker": str(c.get("speaker") or "").strip() or "待确认",
             "provenance": "transcript",
             "status": "draft",
             "anti_hallucination": "pass" if supported else "FLAGGED",
@@ -220,6 +238,7 @@ def main() -> int:
                     help="窗口标记，写入 id 后缀避免多窗口冲突")
     args = ap.parse_args()
 
+    load_dotenv(ROOT / ".env")
     llm = LLMClient()
     if llm.fake:
         print("⚠️ FAKE_LLM 模式：提炼结果为占位，仅验证流程，不能入库。")

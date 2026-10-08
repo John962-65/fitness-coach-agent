@@ -1,0 +1,12 @@
+{
+  "description": "连续试用记录模板；只填写实际发生的事件，不代填使用天数或成功率。",
+  "entry_fields": {
+    "date": "YYYY-MM-DD",
+    "category": "time/preference/recovery/correction/memory/other",
+    "expected": "期望教练采取的具体行为",
+    "actual": "实际发生的行为及可核对依据",
+    "follow_up": "仍需改进或确认的事项"
+  },
+  "entries": [],
+  "human_evaluation": null
+}

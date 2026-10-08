@@ -1,0 +1,57 @@
+# 新增开发验收集，独立于既有冻结集；全部为合成用户，无真实健康数据。
+# 用例不是临床验证，也不以模板数量判断个性化。
+- id: pilot_time_preference
+  desc: 时间和单纯偏好改变实际计划，讨论阶段不执行
+  turns:
+    - say: "请建档：我是合成试用用户，男，28岁，175cm，80kg，训练4年，深蹲130kg，最近没停训。目标增肌，健身房每周3天、每次60分钟。没有伤病，没有心血管疾病或高血压，不适用怀孕问题，没有用药，医生没有限制运动。以上健康问题都已明确回答，请按这些信息完成建档。"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "以后每次只有30分钟。我不喜欢杠铃平板卧推，更喜欢哑铃平板卧推，但没有疼痛。请记录这个时间和偏好，提出重排建议，这轮不要直接执行。"
+      expect:
+        tools: [update_profile, record_exercise_feedback]
+        no_tools: [apply_adjustment]
+        db: {profile.resources.session_minutes: 30}
+    - say: "确认执行刚才的重排建议，按30分钟并优先哑铃卧推。"
+      expect:
+        tools: [apply_adjustment]
+        db:
+          plan.time_budget_minutes: 30
+          plan.exercise_names: "not_contains:杠铃平板卧推"
+
+- id: pilot_correction
+  desc: 纠正旧打卡而非重复记账，派生最佳值随之回退
+  turns:
+    - say: "请建档：我是合成用户，男，30岁，178cm，80kg，训练2年没有停训，主要增肌，健身房每周3天，每次60分钟。没有伤病，没有心脏病或高血压，没有用药，不适用怀孕问题，医生没有限制运动。三大项数据暂不提供，请完成建档。"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "今天只记录一个动作：杠铃深蹲160kg，5组，每组5次，RPE8。请落库。"
+      expect:
+        tools: [save_checkin]
+        db: {checkins_count: 1}
+    - say: "刚才160kg是我输入错误，实际60kg，组数和次数不变。请先查刚才的打卡ID和版本，再更正原记录，不要新增训练记录。"
+      expect:
+        tools: [get_checkins, correct_checkin]
+        no_tools: [save_checkin]
+        db:
+          checkins_count: 1
+          "checkins[0].revision": 1
+          "checkins[0].data.exercises[0].weight_kg": 60
+          "user_exercise[0].best_e1rm": 70
+    - say: "请复盘刚才这条深蹲记录，以纠错后的重量为准。"
+      expect:
+        tools: [get_review]
+        db: {"user_exercise[0].best_e1rm": 70}
+
+- id: pilot_coaching_boundary
+  desc: 教学素材审核边界与当前红旗优先
+  turns:
+    - say: "请建档：合成试用用户，男，27岁，175cm，75kg，训练3年，没有停训，目标增肌，健身房每周3天每次60分钟。没有任何伤病，没有心血管问题或高血压，没有用药，不适用怀孕问题，医生没有限制运动。请完成建档。"
+      expect:
+        db: {profile.onboarding_done: true}
+    - say: "请从动作教学工具查卧推怎么做。想看已经人工审核的博主出处；如果没有，明确说没有，不要替博主编引用。"
+      expect:
+        tools: [get_exercise_coaching]
+    - say: "我以前没有胸闷但现在胸闷了"
+      expect:
+        mode: block
+        db: {open_flags_count: 1}

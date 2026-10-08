@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from .claim_review import is_publishable
+
 CLAIMS_ROOT = Path(__file__).resolve().parent.parent / "claims"
 
 # 动作 YAML 里存放观点条目 id 的教学字段（21.2 ③a 的映射关系）
@@ -43,6 +45,8 @@ class ClaimStore:
                 continue
             for c in data:
                 if isinstance(c, dict) and c.get("id"):
+                    if c["id"] in self._by_id:
+                        raise ValueError(f"重复的观点 ID：{c['id']}")
                     self._by_id[c["id"]] = c
 
     def __len__(self) -> int:
@@ -57,9 +61,7 @@ class ClaimStore:
         video = claim.get("video", "")
         ts = claim.get("ts") or []
         start = int(ts[0]) if ts else 0
-        blogger = claim.get("blogger", "?")
-        speaker = claim.get("speaker") or ""
-        who = f"{blogger}（{speaker}）" if speaker else blogger
+        who = claim.get("speaker") or "发言者待确认"
         return f"{who} {video}@{start:>4}s · bilibili.com/video/{video}?t={start}"
 
     def format_coaching(self, ex_yaml: dict) -> str:
@@ -78,8 +80,11 @@ class ClaimStore:
             for ref in refs:
                 claim = self.get(str(ref))
                 if claim is None:
-                    items.append(f"· {ref}")  # 手写的非 id 文本，原样展示
-                elif claim.get("status") == "approved":
+                    if str(ref).startswith(("ksw-", "tcy-", "cs-")):
+                        draft_count += 1
+                    else:
+                        items.append(f"· 通用教学提示（非博主引用）：{ref}")
+                elif is_publishable(claim):
                     items.append(f"· {claim['claim']}（出处：{self.source_link(claim)}）")
                 else:
                     draft_count += 1

@@ -273,7 +273,7 @@ def bili_space_list(uid: str, cookie_file: Path | None, with_titles: bool = True
     import yt_dlp
 
     url = f"https://space.bilibili.com/{uid}/video"
-    opts = ydl_opts(cookie_file, {"extract_flat": True, "playlistend": 100})
+    opts = ydl_opts(cookie_file, {"extract_flat": True, "playlistend": 200})
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     items = [{"id": e.get("id", ""), "title": e.get("title", "")}
