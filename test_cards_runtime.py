@@ -8,8 +8,9 @@ import sys
 sys.path.insert(0, str(ROOT))
 
 from coach.agent import CoachAgent
-from coach.cards import (CardError, USE_PRESCRIBE, approval_valid, card_for_exercise,
-                         card_for_topic, check_use_permission, load_cards, serve_card)
+from coach.cards import (CardError, USE_PRESCRIBE, approval_valid, approve_card,
+                         card_for_exercise, card_for_topic,
+                         check_use_permission, load_cards, serve_card)
 
 
 def test_card_for_exercise_returns_approved():
@@ -76,3 +77,65 @@ def test_agent_topic_card_tool():
         {"name": "get_coaching_card",
          "arguments": json.dumps({"topic": "今天天气"})}, "normal")
     assert "暂无覆盖该主题的已审核教练卡" in miss
+
+
+def _reapprove(card: dict, purpose: str) -> dict:
+    """合成审批：改变用途后旧指纹审批必然失效，需重新签发（仅测试用）。"""
+    changed = dict(card, purpose=purpose)
+    changed["review"] = approve_card(changed, by="合成审核者", note="测试夹具",
+                                     at="2026-10-08T00:00:00+08:00")
+    return changed
+
+
+def test_exercise_channel_blocks_reference_only(monkeypatch):
+    """动作卡通道会被处方上下文使用，reference_only 即使审批有效也不得进入（§12.3）。"""
+    import coach.cards as cards_mod
+    real = cards_mod.load_cards()
+    blocked = _reapprove(real["card-action-barbell_back_squat"], "reference_only")
+    monkeypatch.setattr(cards_mod, "load_cards",
+                        lambda: {**real, "card-action-barbell_back_squat": blocked})
+    assert approval_valid(blocked, blocked["review"])  # 审批本身有效
+    assert cards_mod.card_for_exercise("barbell_back_squat") is None
+    agent = CoachAgent(user_id="card_rt_ro", db_path=Path(tempfile.mkdtemp()) / "t.db")
+    result = agent._handle_tool(
+        {"name": "get_exercise_coaching",
+         "arguments": json.dumps({"exercise": "深蹲"})}, "normal")
+    assert "已审核教练卡" not in result
+
+
+def test_topic_channel_still_serves_reference_only_for_explanation(monkeypatch):
+    """主题通道只作解释用途，reference_only 可用（§12.3 低风险参考的独立通道）。"""
+    import coach.cards as cards_mod
+    real = cards_mod.load_cards()
+    ref = _reapprove(real["card-nutrition-protein-basics"], "reference_only")
+    monkeypatch.setattr(cards_mod, "load_cards",
+                        lambda: {**real, "card-nutrition-protein-basics": ref})
+    served = cards_mod.card_for_topic("蛋白质吃多少")
+    assert served and served["purpose"] == "reference_only"
+    assert "已审核教练卡" in serve_card(served)
+
+
+def test_no_card_rules_by_newest():
+    """口径分歧一律并列保留（发起人 2026-10-08）：此后签署或待签的卡不得再声称按发布先后取新。
+
+    该规则不追溯：2026-10-08 之前已批准的卡片保持原样不重签；一旦因实质改动重新签核，
+    就自动落入本检查（按 review.at 日期判定，不写死卡名）。
+    """
+    forbidden = ("本卡采用其更新后口径", "按发布先后取最新", "采用更新后口径", "取新口径")
+    for card in load_cards().values():
+        signed_at = str(((card.get("review") or {}).get("at") or ""))[:10]
+        if signed_at and signed_at < "2026-10-08":
+            continue
+        blob = card.get("body", "") + card.get("limits", "") + card.get("notes", "")
+        for phrase in forbidden:
+            assert phrase not in blob, f"{card['card_id']} 仍在用取新口径：{phrase}"
+
+
+def test_grandfathered_card_untouched_and_still_served():
+    """不追溯必须真的生效：旧规则批准的卡未被改写，审批仍有效、仍在运行时服务。"""
+    card = load_cards()["card-action-lat_pulldown"]
+    assert card["version"] == 1 and card["status"] == "approved_v1"
+    assert "采用其更新后口径" in card["limits"]      # 旧规则原文保留
+    assert "review_history" not in card              # 没有被迫出新版
+    assert approval_valid(card, card["review"])
+    assert card_for_exercise("lat_pulldown") == card

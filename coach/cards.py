@@ -143,8 +143,15 @@ def approved_cards() -> dict[str, dict]:
 
 
 def card_for_exercise(exercise_id: str) -> dict | None:
-    """动作卡与动作库 id 直接对应（card-action-<exercise_id>）。"""
-    return approved_cards().get(f"card-action-{exercise_id}")
+    """动作卡与动作库 id 直接对应（card-action-<exercise_id>）。
+
+    动作卡通道服务于教学与处方上下文，因此只放行 coaching_card；reference_only
+    卡即使绑定同一动作也不得经此通道进入（§12.3，发起人 2026-10-08 决定）。
+    """
+    card = approved_cards().get(f"card-action-{exercise_id}")
+    if card and card.get("purpose") != "coaching_card":
+        return None
+    return card
 
 
 # 主题路由表：非动作卡按主题关键词匹配（路由元数据，不属于卡片内容指纹）。
