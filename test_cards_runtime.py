@@ -1,4 +1,4 @@
-"""卡片运行时接入测试：20 张已批卡进入教练工具链（任务书 §12 第四层）。"""
+"""卡片运行时接入测试：已批卡进入教练工具链（任务书 §12 第四层；2026-10-11 起 39 张）。"""
 import json
 import tempfile
 from pathlib import Path
@@ -17,14 +17,50 @@ def test_card_for_exercise_returns_approved():
     c = card_for_exercise("barbell_back_squat")
     assert c and c["card_id"] == "card-action-barbell_back_squat"
     assert approval_valid(c, c["review"])
-    # 无卡动作返回 None（面拉有 claims 但没建卡）
-    assert card_for_exercise("face_pull") is None
+    # 面拉卡 2026-10-09 经发起人批准，动作卡通道现在服务它
+    c = card_for_exercise("face_pull")
+    assert c and c["card_id"] == "card-action-face_pull"
+    assert approval_valid(c, c["review"])
+    # 杠铃弯举卡 2026-10-10 经发起人批准，动作卡通道现在服务它
+    c = card_for_exercise("barbell_curl")
+    assert c and c["card_id"] == "card-action-barbell_curl"
+    assert approval_valid(c, c["review"])
+    # 哑铃划船卡 2026-10-11 经发起人批准（Q16），动作卡通道现在服务它
+    c = card_for_exercise("dumbbell_row")
+    assert c and c["card_id"] == "card-action-dumbbell_row"
+    assert approval_valid(c, c["review"])
+    # 哑铃夹胸卡 2026-10-11 经发起人批准（Q20），动作卡通道现在服务它
+    c = card_for_exercise("dumbbell_fly")
+    assert c and c["card_id"] == "card-action-dumbbell_fly"
+    assert approval_valid(c, c["review"])
+    # 反飞鸟卡 2026-10-11 经发起人批准（Q22），动作卡通道现在服务它
+    c = card_for_exercise("rear_delt_fly")
+    assert c and c["card_id"] == "card-action-rear_delt_fly"
+    assert approval_valid(c, c["review"])
+    # 反向山羊挺身卡 2026-10-12 经发起人批准（Q23），动作卡通道现在服务它
+    c = card_for_exercise("reverse_back_extension")
+    assert c and c["card_id"] == "card-action-reverse_back_extension"
+    assert approval_valid(c, c["review"])
+    # 颈前深蹲卡 2026-10-12 经发起人批准（Q24），动作卡通道现在服务它
+    c = card_for_exercise("front_squat")
+    assert c and c["card_id"] == "card-action-front_squat"
+    assert approval_valid(c, c["review"])
+    # 山羊挺身（正向）卡 2026-10-12 经发起人批准（Q28）——拆分裁定的收尾，动作卡通道现在服务它
+    c = card_for_exercise("back_extension")
+    assert c and c["card_id"] == "card-action-back_extension"
+    assert approval_valid(c, c["review"])
+    # 无卡动作返回 None（平板支撑暂无卡）
+    assert card_for_exercise("plank") is None
 
 
 def test_card_for_topic_routing():
     assert card_for_topic("蛋白质吃多少才对")["card_id"] == "card-nutrition-protein-basics"
     assert card_for_topic("最近睡眠不好")["card_id"] == "card-nutrition-sleep-recovery"
     assert card_for_topic("重量怎么加重卡住了")["card_id"] == "card-training-progression"
+    # 方向②主题卡 2026-10-11 经发起人批准（Q18），三卡路由生效
+    assert card_for_topic("有氧强度怎么定")["card_id"] == "card-training-cardio-basics"
+    assert card_for_topic("今晚要应酬喝酒")["card_id"] == "card-nutrition-alcohol"
+    assert card_for_topic("肌酸怎么吃")["card_id"] == "card-nutrition-supplements"
     assert card_for_topic("今天天气不错") is None
 
 
@@ -62,7 +98,7 @@ def test_agent_falls_back_without_card():
     agent = CoachAgent(user_id="card_rt_f", db_path=Path(tempfile.mkdtemp()) / "t.db")
     result = agent._handle_tool(
         {"name": "get_exercise_coaching",
-         "arguments": json.dumps({"exercise": "面拉"})}, "normal")
+             "arguments": json.dumps({"exercise": "平板支撑"})}, "normal")
     assert "已审核教练卡" not in result  # 无卡动作保持原行为
 
 
@@ -113,6 +149,27 @@ def test_topic_channel_still_serves_reference_only_for_explanation(monkeypatch):
     served = cards_mod.card_for_topic("蛋白质吃多少")
     assert served and served["purpose"] == "reference_only"
     assert "已审核教练卡" in serve_card(served)
+
+
+def test_topic_routing_direction2_cards(monkeypatch):
+    """方向②与 Q19 缺口主题卡的路由映射：用合成审批验证关键词命中，不依赖签核状态。
+
+    关键词经排查不与既有路由碰撞（“练几次”归 goal-time、“平台期”归 progression——
+    减脂停滞卡用“不掉秤/减不下去”等词，避开 progression 的“平台期”）。
+    """
+    import coach.cards as cards_mod
+    real = cards_mod.load_cards()
+    patched = dict(real)
+    for cid in ("card-training-cardio-basics", "card-nutrition-alcohol",
+                "card-nutrition-supplements",
+                "card-training-layoff-comeback", "card-training-fat-loss-plateau"):
+        patched[cid] = _reapprove(real[cid], "coaching_card")
+    monkeypatch.setattr(cards_mod, "load_cards", lambda: patched)
+    assert cards_mod.card_for_topic("有氧强度怎么定")["card_id"] == "card-training-cardio-basics"
+    assert cards_mod.card_for_topic("今晚要应酬喝酒")["card_id"] == "card-nutrition-alcohol"
+    assert cards_mod.card_for_topic("肌酸怎么吃")["card_id"] == "card-nutrition-supplements"
+    assert cards_mod.card_for_topic("过年停训两周会掉肌肉吗")["card_id"] == "card-training-layoff-comeback"
+    assert cards_mod.card_for_topic("两个月一直不掉秤怎么办")["card_id"] == "card-training-fat-loss-plateau"
 
 
 def test_no_card_rules_by_newest():

@@ -1,0 +1,27 @@
+id: overhead_squat_screen
+name: 过头蹲筛查
+aliases: [持杆过头深蹲筛查, 过头深蹲]
+pattern: squat
+primary: ['quads', 'glutes']
+secondary: ['front_delt', 'core']
+equipment: ['barbell']
+location: ['gym']
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 1, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['bodyweight_squat']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 体测/筛查用法（张丹岳讲解），结构化判断为通用知识
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；筛查动作用轻杆/PVC 杆，占位 1
+  equipment: llm                # 筛查用木杆/PVC 杆，库里最接近的 equipment 取 barbell
+  substitutes: pending
+  source_claims: ksw-BV1A1s3zUEN6-0004/0005（张丹岳，合作视频筛查段；2026-10-12 混池复核解除 bodyweight_squat 错挂，Q25 发起人批准建库后改挂本 id）

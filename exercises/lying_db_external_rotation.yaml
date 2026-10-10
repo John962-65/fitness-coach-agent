@@ -1,0 +1,27 @@
+id: lying_db_external_rotation
+name: 仰卧哑铃外旋
+aliases: [仰卧哑铃外旋推举, 仰卧外旋]
+pattern: isolation
+primary: ['rotator_cuff']
+secondary: ['rear_delt']
+equipment: ['dumbbell']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: unilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: []
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 激活/热身用法，非正式处方动作；命名取自谭成义讲解用语
+  pattern: llm                  # 库内无热身/激活类 pattern，取最接近的 isolation（参照 band_pull_apart）
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；轻负荷激活，占位全 0
+  laterality: llm               # 仰卧单臂外旋按常规理解为单侧，待发起人核定
+  substitutes: pending
+  source_claims: tcy-BV1FL2MBME3G-0002~0008（谭成义；2026-10-10 解除 dumbbell_bench_press 错挂，2026-10-11 发起人批准建库后改挂本 id）

@@ -5797,7 +5797,8 @@
   - 3089.48
   claim: 没有山羊挺身器械时，可以躺在瑜伽垫上让人按着脚，向上抬练竖脊肌。
   type: method
-  exercises: []
+  exercises:
+  - back_extension
   applies_to:
     level: []
     goal: []
@@ -5810,7 +5811,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-12 确认归属）
 - id: tcy-0259
   blogger: 谭成义
   video: BV1Fzd2BBEdM
@@ -5819,7 +5820,8 @@
   - 3103.75
   claim: 山羊挺身是万金油动作，可以练竖脊肌，也可以练俯卧撑。
   type: anecdote
-  exercises: []
+  exercises:
+  - back_extension
   applies_to:
     level: []
     goal: []
@@ -5832,7 +5834,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-12 确认归属）
 - id: tcy-0260
   blogger: 谭成义
   video: BV1Fzd2BBEdM
@@ -5841,7 +5843,8 @@
   - 3113.66
   claim: 山羊挺身不负重，膝盖微屈，上身保持整体，屈髋下放，角度不用太大。
   type: method
-  exercises: []
+  exercises:
+  - back_extension
   applies_to:
     level: []
     goal: []
@@ -5854,7 +5857,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-12 确认归属）
 - id: tcy-0261
   blogger: 谭成义
   video: BV1Fzd2BBEdM
@@ -5863,7 +5866,8 @@
   - 3123.52
   claim: 山羊挺身时上半身松掉是常见错误，腰要保持紧。
   type: error
-  exercises: []
+  exercises:
+  - back_extension
   applies_to:
     level: []
     goal: []
@@ -5876,7 +5880,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-12 确认归属）
 - id: tcy-0262
   blogger: 谭成义
   video: BV1Fzd2BBEdM
@@ -10622,7 +10626,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0474
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10645,7 +10649,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0475
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10668,7 +10672,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0476
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10691,7 +10695,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0477
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10714,7 +10718,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0478
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10737,7 +10741,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0479
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10760,7 +10764,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0480
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10783,7 +10787,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0481
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10806,7 +10810,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0482
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -10829,7 +10833,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0483
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -12411,7 +12415,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0553
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -12434,7 +12438,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0554
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -12457,7 +12461,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0555
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -12480,7 +12484,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0556
   blogger: 谭成义
   video: BV1RjTT6FEKo
@@ -20842,7 +20846,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0930
   blogger: 谭成义
   video: BV1w9kKBfEsi
@@ -20865,7 +20869,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-0931
   blogger: 谭成义
   video: BV1w9kKBfEsi
@@ -23926,8 +23930,7 @@
   - 133.52
   claim: 弹力带绕肩热身时不要完全松掉弹力带，要先拉开一部分再向后拉，做连续小幅度运动，手向两端发力延长，不要向后挤。
   type: cue
-  exercises:
-  - band_pull_apart
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -23949,8 +23952,7 @@
   - 141.1
   claim: 弹力带前后拉一组做20个，做两组，然后再做绕肩。
   type: method
-  exercises:
-  - band_pull_apart
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -23972,8 +23974,7 @@
   - 172.84
   claim: 绕肩时不要为了绕而故意把手臂放下去，否则肩膀会卡、增加磨损和肌腱损伤；应在拉开的基础上从眼睛正前方绕到肩膀正后方即可，不要再往下。
   type: error
-  exercises:
-  - band_pull_apart
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -23995,8 +23996,7 @@
   - 184.13
   claim: 绕肩做两组，感到肩膀有点酸、有点热就可以结束。
   type: method
-  exercises:
-  - band_pull_apart
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -24725,7 +24725,8 @@
   - 1083.84
   claim: 最后一个三头动作是俯身哑铃臂屈伸，更趋向三头肌的刻度；颈后臂屈伸更趋向三头肌的维度，两者兼顾所以选这两个动作。
   type: principle
-  exercises: []
+  exercises:
+  - bent_over_triceps_extension
   applies_to:
     level: []
     goal: []
@@ -24738,7 +24739,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1MvwxzGEio-0038
   blogger: 谭成义
   video: BV1MvwxzGEio
@@ -24747,7 +24748,8 @@
   - 1109.19
   claim: 俯身哑铃臂屈伸：扶床或墙，大臂向后像划船姿势，把肘伸直，三头完全收紧；下放时大臂不要掉下来，重量会比较轻，太重维持不住。
   type: cue
-  exercises: []
+  exercises:
+  - bent_over_triceps_extension
   applies_to:
     level: []
     goal: []
@@ -24760,7 +24762,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1MvwxzGEio-0039
   blogger: 谭成义
   video: BV1MvwxzGEio
@@ -24769,7 +24771,8 @@
   - 1134.25
   claim: 俯身哑铃臂屈伸每次都要把肘锁死（只要肘不疼），会感觉三头收得非常紧，对三头刻度帮助特别大；如果每次到一半就结束，三头刻度不会好。
   type: cue
-  exercises: []
+  exercises:
+  - bent_over_triceps_extension
   applies_to:
     level: []
     goal: []
@@ -24782,7 +24785,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1MvwxzGEio-0040
   blogger: 谭成义
   video: BV1MvwxzGEio
@@ -24791,7 +24794,8 @@
   - 1148.86
   claim: 俯身哑铃臂屈伸每边10~12次，左边做完再做右边，做三组，每组每边12次。
   type: method
-  exercises: []
+  exercises:
+  - bent_over_triceps_extension
   applies_to:
     level: []
     goal: []
@@ -24804,7 +24808,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1MvwxzGEio-0041
   blogger: 谭成义
   video: BV1MvwxzGEio
@@ -26236,7 +26240,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1LbcWzyE64-0015
   blogger: 谭成义
   video: BV1LbcWzyE64
@@ -26259,7 +26263,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1LbcWzyE64-0016
   blogger: 谭成义
   video: BV1LbcWzyE64
@@ -26282,7 +26286,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1LbcWzyE64-0017
   blogger: 谭成义
   video: BV1LbcWzyE64
@@ -26305,7 +26309,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1LbcWzyE64-0018
   blogger: 谭成义
   video: BV1LbcWzyE64
@@ -26328,7 +26332,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1LbcWzyE64-0019
   blogger: 谭成义
   video: BV1LbcWzyE64
@@ -27636,7 +27640,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0014
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -27659,7 +27663,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0015
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -27682,7 +27686,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0016
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -27705,7 +27709,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0017
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -27728,7 +27732,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0018
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -27751,7 +27755,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1gyiqByEWZ-0019
   blogger: 谭成义
   video: BV1gyiqByEWZ
@@ -28485,7 +28489,7 @@
   claim: 推荐用大臂卡在膝盖上的二头弯举来改善二头问题，因为关节被固定、肩关节不会被带跑，压力小且不易代偿。
   type: method
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -28498,7 +28502,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1ND5S6pEgx-0010
   blogger: 谭成义
   video: BV1ND5S6pEgx
@@ -28508,7 +28512,7 @@
   claim: 做该二头弯举时要保持外旋位、靠尺侧（内侧）发力，这样二头刻度更好，且外旋恢复对展背、背展双弓和肩关节能力都很重要。
   type: cue
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -28521,7 +28525,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1ND5S6pEgx-0011
   blogger: 谭成义
   video: BV1ND5S6pEgx
@@ -28797,8 +28801,7 @@
   - 937.59
   claim: 可用弹力带或龙门架绳索做旋后训练来改善旋后无力，同时练对侧旋前以恢复平衡。
   type: method
-  exercises:
-  - band_pull_apart
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -29773,7 +29776,8 @@
   - 439.54
   claim: 侧向移动弹力带：弹力带套在膝盖上方一点，两脚与肩同宽，屈髋位，做之前就要先感受到臀部发力明显再去做。
   type: cue
-  exercises: []
+  exercises:
+  - lateral_band_walk
   applies_to:
     level: []
     goal: []
@@ -29786,7 +29790,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1pZiZBxE8y-0019
   blogger: 谭成义
   video: BV1pZiZBxE8y
@@ -29795,7 +29799,8 @@
   - 448.56
   claim: 侧向移动时不要屈膝太多（到大腿前侧）也不要伸膝太多（到大腿后侧），要找平衡点即臀位。
   type: error
-  exercises: []
+  exercises:
+  - lateral_band_walk
   applies_to:
     level: []
     goal: []
@@ -29808,7 +29813,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1pZiZBxE8y-0020
   blogger: 谭成义
   video: BV1pZiZBxE8y
@@ -29817,7 +29822,8 @@
   - 517.28
   claim: 侧向移动要想着膝盖向外走，而不是脚走；走的过程中膝盖始终对着脚尖，从正面看这条线始终是正的，并保证足弓参与。
   type: cue
-  exercises: []
+  exercises:
+  - lateral_band_walk
   applies_to:
     level: []
     goal: []
@@ -29830,7 +29836,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1pZiZBxE8y-0021
   blogger: 谭成义
   video: BV1pZiZBxE8y
@@ -29839,7 +29845,8 @@
   - 522.76
   claim: 侧向移动弹力带做两到三组，一般做完屁股会超级酸。
   type: method
-  exercises: []
+  exercises:
+  - lateral_band_walk
   applies_to:
     level: []
     goal: []
@@ -29852,7 +29859,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1pZiZBxE8y-0022
   blogger: 谭成义
   video: BV1pZiZBxE8y
@@ -29861,7 +29868,8 @@
   - 554.73
   claim: 外展对抗做完后，再找一个瑜伽砖垫在膝盖内侧夹住做内收对抗的侧向移动，同样手摸屁股感受发力。
   type: method
-  exercises: []
+  exercises:
+  - lateral_band_walk
   applies_to:
     level: []
     goal: []
@@ -29874,7 +29882,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1pZiZBxE8y-0023
   blogger: 谭成义
   video: BV1pZiZBxE8y
@@ -30533,7 +30541,7 @@
   type: method
   exercises:
   - cable_pushdown
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -30546,7 +30554,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1wvMF6ZEqL-0011
   blogger: 谭成义
   video: BV1wvMF6ZEqL
@@ -30556,7 +30564,7 @@
   claim: 做坐姿绳索弯举时肘卡在大臂上，外旋半握，靠二头肌内侧收紧，要外旋一点控制住
   type: cue
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -30569,7 +30577,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1wvMF6ZEqL-0012
   blogger: 谭成义
   video: BV1wvMF6ZEqL
@@ -30579,7 +30587,7 @@
   claim: 放的时候不要松手腕、不要塌下去，一定要勾起来去放并收紧
   type: cue
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -30592,7 +30600,7 @@
     by: ''
     date: ''
     against: ''
-  speaker: 待确认
+  speaker: 谭成义（发起人 2026-10-09 确认归属）
 - id: tcy-BV1wvMF6ZEqL-0013
   blogger: 谭成义
   video: BV1wvMF6ZEqL
@@ -32139,7 +32147,7 @@
   claim: 用山羊挺身凳反向（朝上）做腹肌动作时，大腿后侧必须用力对抗垫子，保持骨盆稳定后再上下起落。
   type: cue
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -32162,7 +32170,7 @@
   claim: 该动作幅度越往下越难，越往下腿容易翘起、大腿后侧松掉，所以必须保证大腿紧贴凳子后再下。
   type: error
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -32185,7 +32193,7 @@
   claim: 做该动作时上肢尽量保持直上直下，不要卷腹，否则动作意义就没了，不如去做地上卷腹。
   type: error
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -32230,7 +32238,7 @@
   claim: 该动作熟练后可加旋转增强身体旋转能力，但大腿后侧必须保持稳定，否则骨盆松掉再旋转可能伤腰椎。
   type: cue
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -32253,7 +32261,7 @@
   claim: 该反向山羊挺身动作是博主的核心关键动作，平时一般不对外说。
   type: anecdote
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -36250,7 +36258,7 @@
   claim: 用弹力带做肩胛上回旋：肘抵住弹力带，手从身后抓住，大拇指放在肩上，吸气时肘向上抬高，让弹力带引导肩胛骨上回旋。
   type: method
   exercises:
-  - band_pull_apart
+  - band_scapular_upward_rotation
   applies_to:
     level: []
     goal: []
@@ -36295,7 +36303,7 @@
   claim: 上回旋练习要点：通过弹力带引导肘向远端发力，配合呼吸，吸气向上、呼气还原，不要完全回到起点，保持张力始终存在。
   type: cue
   exercises:
-  - band_pull_apart
+  - band_scapular_upward_rotation
   applies_to:
     level: []
     goal: []
@@ -36318,7 +36326,7 @@
   claim: 两种训练模式：一是保持在顶端做长呼吸以提升空间/扩张能力；二是动态吸气向上、呼气还原以建立上回旋本体感受。
   type: method
   exercises:
-  - band_pull_apart
+  - band_scapular_upward_rotation
   applies_to:
     level: []
     goal: []
@@ -36363,7 +36371,7 @@
   claim: 肩胛骨后倾练习：手绕过来、肘往内收呈外旋状态，弹力带不用太大，大拇指放在肩上（放不到就放到能放的位置），从下吸气向上向前方抬，呼气还原，感受腋下发力拉伸感。
   type: method
   exercises:
-  - band_pull_apart
+  - band_scapular_upward_rotation
   applies_to:
     level: []
     goal: []
@@ -37069,7 +37077,7 @@
   claim: 反向山羊挺身卷腹主要练腹肌等长收缩以及腹内外斜肌的等长等张训练，对功能训练和肌肉细节都很有帮助。
   type: principle
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37114,7 +37122,7 @@
   claim: 做反向山羊挺身时是向上走、向远端走，上肢保持直立，不要向前卷、不要做收缩，幅度很小。
   type: cue
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37137,7 +37145,7 @@
   claim: 如果做反向山羊挺身时腰椎压力大、张力承载在腰侧而非前侧，应减小幅度，甚至直接做静态对抗维持。
   type: self_check
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37160,7 +37168,7 @@
   claim: 能力更强时可将手伸直做反向山羊挺身，对核心要求更高；也可加旋转动作或手持杠铃片做变式，功能性更好。
   type: method
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37183,7 +37191,7 @@
   claim: 反向山羊挺身还可加入推肩动作，对核心要求很高，是真正的功能性训练，拳击、跑步等项目也会练类似动作。
   type: method
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37206,7 +37214,7 @@
   claim: 反向山羊挺身是最推荐的动作，无论从形体、功能还是解决疼痛问题都可以通过它改善。
   type: anecdote
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37229,7 +37237,7 @@
   claim: 如果没有带护垫的山羊挺身器械，大腿后侧一定要主动对抗、主动蹬，不要松。
   type: cue
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37252,7 +37260,7 @@
   claim: 做反向山羊挺身时是水平向上卷、向远端走，不要向前做收缩卷腹。
   type: error
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37298,7 +37306,7 @@
   claim: 建议三个腹部动作交替去做，尤其是第一个反向山羊挺身一定要认真练。
   type: principle
   exercises:
-  - back_extension
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -37505,9 +37513,7 @@
   claim: 三个腹部动作已涵盖所有腹部训练：腹直肌饱满好看、腹内外斜肌刻度能力、腹部功能及身体健康，更推荐第一和第二个动作，第三个只符合特定情况。
   type: principle
   exercises:
-  - back_extension
-  - hanging_leg_raise
-  - cable_crunch
+  - reverse_back_extension
   applies_to:
     level: []
     goal: []
@@ -38633,7 +38639,7 @@
   claim: 仰卧地面做哑铃外旋推举时，手腕尽可能靠近地面，使手臂处于外旋位，阻力落在肩袖而非肩上，对肩袖刺激很好。
   type: cue
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38656,7 +38662,7 @@
   claim: 做仰卧外旋推举时要收紧核心、腰贴住地面、不要把肋骨翘出来，动作放慢。
   type: cue
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38679,7 +38685,7 @@
   claim: 做该外旋动作时手腕不要过多发力，托住哑铃即可，目的是激活外旋功能。
   type: cue
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38702,7 +38708,7 @@
   claim: 该仰卧外旋推举是激活外旋功能最好的动作，没有之一。
   type: anecdote
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38725,7 +38731,7 @@
   claim: 做该动作时下巴微收、头枕下去发力对抗地面。
   type: cue
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38748,7 +38754,7 @@
   claim: 腿伸直做该动作会更难，因为腰容易翘起；如果能做到直腿做是最好的。
   type: method
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -38771,7 +38777,7 @@
   claim: 多次数做该外旋动作去感受肩袖和肩，对做动作有弹响的人非常能改善这个问题。
   type: method
   exercises:
-  - dumbbell_bench_press
+  - lying_db_external_rotation
   applies_to:
     level: []
     goal: []
@@ -41444,7 +41450,7 @@
   claim: 做俯身哑铃飞鸟时重量要偏轻一点，太重根本控制不了。
   type: method
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41467,7 +41473,7 @@
   claim: 俯身哑铃飞鸟采用对握，因为对握对三角肌中束和后束之间的凹陷更好；正手虽然让后束更孤立（处于预先拉长位置），但会导致中束和后束之间的凹陷越来越大，为保持肌肉完整性选择对握。
   type: method
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41490,7 +41496,7 @@
   claim: 俯身哑铃飞鸟要从外展位开始做，不要从下方开始，因为从下方开始三角肌不发力；稍微把大臂往前一点点，不要在原位置做。
   type: cue
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41513,7 +41519,7 @@
   claim: 俯身哑铃飞鸟要深吸一口气把胸口抵住凳子、不要往后仰，维持住之后再飞；很多人身体塌掉，虽然肌肉感受不错，但前表链和后表链没有拮抗功能、结构混乱。
   type: cue
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41536,7 +41542,7 @@
   claim: 俯身哑铃飞鸟很多人飞的时候肩胛骨活动过大，这样练不到太多三角肌后束；需要把大臂往前、哑铃往前放一点再抬，此时肩胛骨活动范围就没那么大。
   type: error
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41559,7 +41565,7 @@
   claim: 俯身哑铃飞鸟放的时候不要放到底，放到底肌肉持续张力就软掉了，下到2/3就结束；头不要往前跑，手要稳住再抬。
   type: cue
   exercises:
-  - dumbbell_fly
+  - rear_delt_fly
   applies_to:
     level: []
     goal: []
@@ -41740,7 +41746,7 @@
   claim: 三头肌第二个动作（反手杠铃臂屈伸）练的是三头肌的维度，而绳索下压练的是三头肌的刻度。
   type: principle
   exercises:
-  - close_grip_bench_press
+  - skull_crusher
   applies_to:
     level: []
     goal: []
@@ -41763,7 +41769,7 @@
   claim: 做反手杠铃臂屈伸时腿不要往上放，否则核心不参与；要在宽伸位、大腿稍微夹一点使骨盆稳定，腰贴紧，做肩前屈后再做臂屈伸，连续稳定地做。
   type: cue
   exercises:
-  - close_grip_bench_press
+  - skull_crusher
   applies_to:
     level: []
     goal: []
@@ -41786,7 +41792,7 @@
   claim: 做臂屈伸时不要把大臂回到正中央，否则肘关节三头肌腱压力非常大且三头会软掉，持续张力不在效率低；要在肩屈位保持三头持续收缩再做动作。
   type: error
   exercises:
-  - close_grip_bench_press
+  - skull_crusher
   applies_to:
     level: []
     goal: []
@@ -49184,7 +49190,7 @@
   claim: 坐姿龙门架弯举（大臂架在膝盖上）对二头肌肌腹帮助非常大，想快速变大这个动作是首选。
   type: principle
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal:
@@ -49208,7 +49214,7 @@
   claim: 坐姿龙门架弯举做法：大臂放在膝盖上架住，不要内旋要外旋、肘窝朝上、手腕勾起来，大臂尽量靠近远端，弯举时保证肘窝和手腕在一条线上，放的时候手腕不要松要勾住。
   type: method
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -49231,7 +49237,7 @@
   claim: 做坐姿龙门架弯举时要把二头肌收紧，想象它是一个球把它挤爆的感觉。
   type: cue
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -49254,7 +49260,7 @@
   claim: 很多人做坐姿龙门架弯举时三头酸疼，可能是三头张力不够好，可以在膝盖上放一个垫子再做。
   type: error
   exercises:
-  - barbell_curl
+  - seated_cable_curl
   applies_to:
     level: []
     goal: []
@@ -56374,3 +56380,98 @@
     by: ''
     date: ''
     against: ''
+- id: tcy-BV1oEwZzVEP4-0001
+  blogger: 谭成义
+  video: BV1oEwZzVEP4
+  ts:
+  - 37.62
+  - 91.97
+  claim: 背部热身更多针对肩胛骨能力；平板支撑对肩胛骨能力训练不够，改用肘支撑变式——大臂往前、肘撑在垫上（不是整个小臂）、手抱头，肩胛骨撑起来不要掉下去并维持；做对时整个人会发抖。
+  type: method
+  exercises:
+  - plank
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1oEwZzVEP4-0002
+  blogger: 谭成义
+  video: BV1oEwZzVEP4
+  ts:
+  - 175.44
+  - 215.04
+  claim: 拉锯式平板（动态）：平板支撑位做前后移动，全程肩胛骨向上顶起撑住不掉；肩胛松掉容易产生胸曲问题、影响练背感觉；动作里加入呼吸能提高呼吸能力、改善体态。
+  type: method
+  exercises:
+  - plank
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1oEwZzVEP4-0003
+  blogger: 谭成义
+  video: BV1oEwZzVEP4
+  ts:
+  - 1054.04
+  - 1105.97
+  claim: 锤式弯举与掌心朝上的弯举区别：全程掌心相对、不翻转；大臂保持偏身体前侧一点；下放不要完全下到底（完全下时张力松掉），每次向上完全收紧；更针对大臂中间凸起的位置。
+  type: method
+  exercises:
+  - hammer_curl
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1448s6dEjx-0001
+  blogger: 谭成义
+  video: BV1448s6dEjx
+  ts:
+  - 862.64
+  - 886.36
+  claim: 坐姿划船窄距更趋向肩屈肩伸、宽距更复合，建议做相对复合的——关节联动更稳定；背阔肌已激活后，联动动作里背阔肌发力相当不错。
+  type: method
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1448s6dEjx-0002
+  blogger: 谭成义
+  video: BV1448s6dEjx
+  ts:
+  - 886.36
+  - 906.18
+  claim: 重量加重后仍要维持姿势稳定、募集到更多目标肌肉才算好；背阔肌是很难募集的肌肉，需要先有单手等简单动作建立的能力。
+  type: principle
+  exercises:
+  - seated_row
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass

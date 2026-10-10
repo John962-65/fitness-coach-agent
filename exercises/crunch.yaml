@@ -1,0 +1,26 @@
+id: crunch
+name: 地面卷腹
+aliases: [标准卷腹, 徒手卷腹]
+pattern: core
+primary: ['core']
+secondary: []
+equipment: ['bodyweight']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['plank', 'hanging_leg_raise']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名刻意避开单用"卷腹"，防止与 cable_crunch（绳索卷腹）归一混淆
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；占位参照 cable_crunch（躯干屈曲）
+  substitutes: pending
+  source_claims: ksw-BV1MG4y1G76W-0047/0048/0050/0051/0052（凯圣王家庭课腹部段；2026-10-11 解除 cable_crunch 错挂，Q21 发起人批准建库后改挂本 id）

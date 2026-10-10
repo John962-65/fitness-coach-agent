@@ -1,0 +1,26 @@
+id: t_bar_squat
+name: T杠深蹲
+aliases: [T杆深蹲]
+pattern: squat
+primary: ['quads', 'glutes']
+secondary: ['adductors']
+equipment: ['barbell']
+location: ['gym']
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 1, shoulder: 0, wrist: 0}
+fatigue: medium
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: true
+regressions: []
+progressions: []
+substitutes: ['hack_squat', 'leg_press']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 教学要点与结构化判断来自凯圣王讲解+通用知识，非博主原话逐字
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；占位参照 hack_squat
+  substitutes: pending
+  source_claims: ksw-BV1we4y1J72N-0052~0058（凯圣王；2026-10-10 解除 t_bar_row 错挂，2026-10-11 发起人批准建库后改挂本 id）

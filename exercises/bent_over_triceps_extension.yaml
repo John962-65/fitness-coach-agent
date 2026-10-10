@@ -1,0 +1,26 @@
+id: bent_over_triceps_extension
+name: 俯身哑铃臂屈伸
+aliases: [俯身臂屈伸, 俯身哑铃三头屈伸, 俯身三头臂屈伸]
+pattern: isolation
+primary: ['triceps']
+secondary: []
+equipment: ['dumbbell']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: unilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 1, wrist: 0}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['skull_crusher']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名取自谭成义讲解用语，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending
+  source_claims: tcy-BV1MvwxzGEio-0037~0040（谭成义；10-05 起因错挂 skull_crusher 解除映射，2026-10-09 发起人批准建库后改挂本 id）

@@ -10751,8 +10751,7 @@
   ts:
   - 212.68
   - 264.09
-  claim: 同样体脂率10%左右，靠节食低卡路里维持体脂的人总睾酮（12）明显低于靠耐力运动维持的人（18）和对照组（17），游离睾酮也最低（5.9 vs 10.9
-    vs 15.9）。
+  claim: 同样体脂率10%左右，靠节食低卡路里维持体脂的人总睾酮（12）明显低于靠耐力运动维持的人（18）和对照组（17），游离睾酮也最低（5.9 vs 10.9 vs 15.9）。
   type: principle
   exercises: []
   applies_to:
@@ -13071,11 +13070,7 @@
   - 274.4
   claim: 经典代谢性抗阻课表包含五个动作，涵盖推、拉、旋转、屈髋提起、单腿五大动作模式：自重深蹲、俯卧撑、弓箭步、划船、伐木动作，可居家训练。
   type: method
-  exercises:
-  - bodyweight_squat
-  - push_up
-  - walking_lunge
-  - barbell_row
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -13097,10 +13092,7 @@
   - 293.7
   claim: 五个动作建议按时间计算：如自重深蹲做30秒，组间休息10~30秒，紧接着立即做俯卧撑30秒，再休息10~30秒，接着做弓箭步，如此循环。
   type: method
-  exercises:
-  - bodyweight_squat
-  - push_up
-  - walking_lunge
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -13188,10 +13180,7 @@
   - 375.91
   claim: CrossFit经典训练Cindy：5个引体向上、10个俯卧撑、15个深蹲，看20分钟内能完成多少轮，一般完成10轮以上就不错，20轮以上很厉害。
   type: method
-  exercises:
-  - pull_up
-  - push_up
-  - bodyweight_squat
+  exercises: []
   applies_to:
     level: []
     goal: []
@@ -17386,8 +17375,7 @@
   ts:
   - 73.68
   - 128.78
-  claim: 指南原文用词谨慎：只有本身有糖代谢风险或慢病风险的人（individuals with certain chronic diseases）可能从低碳饮食中获利（may
-    experience improved），不能解读为所有人都要吃低碳。
+  claim: 指南原文用词谨慎：只有本身有糖代谢风险或慢病风险的人（individuals with certain chronic diseases）可能从低碳饮食中获利（may experience improved），不能解读为所有人都要吃低碳。
   type: principle
   exercises: []
   applies_to:
@@ -22249,8 +22237,7 @@
   ts:
   - 47.92
   - 72.94
-  claim: 发表在顶刊 Addiction 上的一篇综述显示，如果本身有 AUD（酒精成瘾/酒精依赖），后续发生抑郁的风险相关性非常显著；换句话说，有 AUD
-    的人喝酒不但不会抗抑郁，反而会使抑郁风险稳定增加。
+  claim: 发表在顶刊 Addiction 上的一篇综述显示，如果本身有 AUD（酒精成瘾/酒精依赖），后续发生抑郁的风险相关性非常显著；换句话说，有 AUD 的人喝酒不但不会抗抑郁，反而会使抑郁风险稳定增加。
   type: principle
   exercises: []
   applies_to:
@@ -23852,3 +23839,75 @@
     by: ''
     date: ''
     against: ''
+- id: cs-BV1S2Lq68EYD-0001
+  blogger: 陈石
+  video: BV1S2Lq68EYD
+  ts:
+  - 20.11
+  - 70.48
+  claim: 减肥减一两个月后人会变衰：营养不良导致睡眠变差、免疫力变差，精力下降、日常消耗的卡路里随之下降，减肥效果因此变差。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 陈石
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: cs-BV1S2Lq68EYD-0002
+  blogger: 陈石
+  video: BV1S2Lq68EYD
+  ts:
+  - 50.04
+  - 92.52
+  claim: 此时应该停下来休息一段时间（如两周），好好吃饭把热量吃平衡——碳水、蛋白质、脂肪吃够、适当活动；精力恢复后再减脂，能量消耗更高、状态更好，磨刀不误砍柴工。
+  type: method
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 陈石
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: cs-BV1S2Lq68EYD-0003
+  blogger: 陈石
+  video: BV1S2Lq68EYD
+  ts:
+  - 80.26
+  - 104.87
+  claim: 减肥减到训练过度时适当停一停很有必要，但休息节点因人而异，不是每个人统一的固定时长。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 陈石
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: cs-BV1S2Lq68EYD-0004
+  blogger: 陈石
+  video: BV1S2Lq68EYD
+  ts:
+  - 96.99
+  - 112.24
+  claim: 每天约1000大卡的过度节食者衰得更快，可能不到一个月就崩。
+  type: error
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 陈石
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass

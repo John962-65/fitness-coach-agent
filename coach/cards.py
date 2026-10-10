@@ -165,6 +165,11 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "card-training-intensity-rpe": ("rpe", "rm", "力竭", "强度单位"),
     "card-training-goal-time": ("分化", "频率", "安排", "练几次", "目标定"),
     "card-training-progression": ("加重", "进阶", "退阶", "卡住", "平台期"),
+    "card-training-cardio-basics": ("有氧", "心肺", "跑步", "间歇跑"),
+    "card-nutrition-alcohol": ("喝酒", "饮酒", "酒精", "应酬"),
+    "card-nutrition-supplements": ("补剂", "肌酸", "鱼油", "维生素", "钙镁", "谷氨酰胺"),
+    "card-training-layoff-comeback": ("停训", "复训", "中断训练", "休息了一段时间", "好久没练"),
+    "card-training-fat-loss-plateau": ("不掉秤", "减不下去", "瘦不下来", "越减越肥", "假平台期"),
 }
 
 

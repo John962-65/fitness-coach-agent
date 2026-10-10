@@ -1,0 +1,26 @@
+id: seated_cable_curl
+name: 坐姿龙门架弯举
+aliases: [坐姿绳索弯举, 龙门架弯举, 钢线弯举, 坐姿钢线弯举, 卡膝盖弯举]
+pattern: isolation
+primary: ['biceps']
+secondary: ['forearms']
+equipment: ['cable']
+location: ['gym']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 1}
+fatigue: low
+progression: {type: load, increment_kg: 2.5}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['barbell_curl', 'hammer_curl']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名取自谭成义讲解用语，非博主原话
+  pattern: llm
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending
+  source_claims: tcy-BV14JBHBYEMp-0024~0027、tcy-BV1ND5S6pEgx-0009~0010、tcy-BV1wvMF6ZEqL-0010~0012（原错挂 barbell_curl，2026-10-09 发起人批准新建后改挂本 id）

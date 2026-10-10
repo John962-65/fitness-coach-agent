@@ -1,0 +1,27 @@
+id: band_scapular_upward_rotation
+name: 弹力带肩胛上回旋
+aliases: [弹力带上回旋, 肩胛后倾练习]
+pattern: isolation
+primary: ['mid_back']
+secondary: ['rotator_cuff']
+equipment: ['band']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: unilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['band_pull_apart']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名取自谭成义讲解用语（肩胛上回旋/肩胛骨后倾练习）
+  pattern: llm                  # 肩胛活动度/激活训练，取 isolation（参照 band_pull_apart/lateral_band_walk）
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；轻弹力带活动度训练，占位全 0
+  laterality: llm               # 单侧手从身后抓带，按单侧理解，待发起人核定
+  substitutes: pending
+  source_claims: tcy-BV1QF4r6BE2S-0005/0007/0008/0010（谭成义；2026-10-12 混池复核解除 band_pull_apart 错挂，Q25 发起人批准建库后改挂本 id）

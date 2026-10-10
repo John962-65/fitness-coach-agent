@@ -1,0 +1,26 @@
+id: lateral_band_walk
+name: 侧向弹力带移动
+aliases: [侧向弹力带走, 弹力带侧向移动, 螃蟹步, 侧向走]
+pattern: isolation
+primary: ['glutes']
+secondary: []
+equipment: ['band']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['glute_bridge', 'hip_thrust']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名取自谭成义讲解用语，非博主原话
+  pattern: llm                  # 库内无热身/激活类 pattern，取最接近的 isolation（参照 band_pull_apart）
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）
+  substitutes: pending
+  source_claims: tcy-BV1pZiZBxE8y-0018~0022（谭成义；10-05 起因错挂 band_pull_apart 解除映射，2026-10-09 发起人批准建库后改挂本 id）

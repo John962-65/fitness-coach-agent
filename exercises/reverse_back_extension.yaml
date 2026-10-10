@@ -1,0 +1,26 @@
+id: reverse_back_extension
+name: 反向山羊挺身
+aliases: [反向山羊挺身卷腹, 反向背伸展]
+pattern: core
+primary: ['core']
+secondary: []
+equipment: ['machine']
+location: ['gym']
+level_min: beginner
+skill: medium
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 1, shoulder: 0, wrist: 0}
+fatigue: low
+progression: {type: reps}
+track_e1rm: false
+regressions: []
+progressions: []
+substitutes: ['crunch', 'plank']
+knowledge_refs: []
+status: draft
+_provenance:
+  name_video_fields: llm        # 命名即博主原话「反向山羊挺身」（谭成义），结构化判断为通用知识
+  pattern: llm                  # 腹肌/核心动作，取 core（同 hanging_leg_raise/crunch）
+  joint_stress: pending         # 必须由发起人判断（21.2 ③b）；博主提醒腰椎压力大须减幅度，占位参照 back_extension
+  substitutes: pending
+  source_claims: tcy-BV1Ehn7zmEHN-0014~0019、tcy-BV1W1BFBKEdR-0003~0022（谭成义；2026-10-12 发起人裁定「拆成两个动作」后自 back_extension 拆出改挂本 id；正向练竖脊肌用法留在 back_extension）
