@@ -1101,3 +1101,5 @@ P1（槽位模板默认动作）共 17 个动作，其中 12 个已有批准卡�
 - **决策项 3 落地**：全量回归后按 5-commit 预案提交（哈希见本节末 git log 追加记录）。
 - **维持待定**：组 7（需看片指认说话人，非"审批"可替代）、阿亮频道（需身份核验先行）——已在 PENDING_DECISIONS 决议表如实说明。
 - 全量回归 **342 passed**（341＋draft 披露测试）。
+
+- **真实 LLM 验收预检（同日补记）**：`eval/runner.py --set pilot --fake --tag preflight` 零成本跑通——重建的 4 轮场景被完整解析，断言键（tools/no_tools/db 含 `confirm_profile_change`）全部生效，失败均为 FAKE 未调工具的预期项；报告绑定 83be0aa（dirty: false）。额度到位即跑：`python3 eval/runner.py --set pilot --tag c1c4_real --budget-ledger eval/runs/pilot_c1c4_budget.json --max-calls <N>`（N 由发起人授予时定）。
