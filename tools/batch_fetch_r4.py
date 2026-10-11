@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path("/home/johb/fitness-coach-agent")
+ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("ft", ROOT / "tools" / "fetch_transcript.py")
 ft = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ft)

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, "/home/johb/fitness-coach-agent")
-R = Path("/home/johb/fitness-coach-agent")
+sys.path.insert(0, ".")
+R = Path(__file__).resolve().parent.parent
 from coach.claim_review import content_fingerprint  # noqa: E402
 from coach.cards import card_fingerprint, validate_card  # noqa: E402
 

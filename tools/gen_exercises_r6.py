@@ -6,7 +6,7 @@ _provenance 标明各字段来源：video=博主 / llm=通用知识推断 / pend
 import yaml
 from pathlib import Path
 
-ROOT = Path("/home/johb/fitness-coach-agent/exercises")
+ROOT = Path("./exercises")
 
 # id, name, aliases, pattern, primary, secondary, equipment, location,
 # level_min, skill, fatigue, stress(knee,lumbar,shoulder,wrist), track, substitutes, prog

@@ -1,6 +1,6 @@
 # 健身教练 Agent — 开发日志（PROGRESS.md）
 
-> 项目路径：`/home/johb/fitness-coach-agent/`
+> 项目路径：`./`
 > 本文件记录**每日开发进度、关键决策、测试状态与待办**。
 > 设计层面的讨论结论写入 `DESIGN.md`；知识库变更写入 `knowledge/CHANGELOG.md`。
 
@@ -158,7 +158,7 @@ coach/profile.py     # 档案摘要 + patch 深合并 + 字段别名归一化
 
 ```bash
 ssh ubu
-cd /home/johb/fitness-coach-agent
+cd 项目根（相对路径 ./）
 
 python3 main.py bob        # 开始对话（自己的 user_id）
 rm data/coach.db           # 清空档案重新建档
@@ -633,7 +633,7 @@ data/models/pose_landmarker_lite.task）；系统 matplotlib 与 numpy 2.x 不�
 ```bash
 FAKE_LLM=1 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   python3 -m pytest -q -p no:cacheprovider \
-  --confcutdir=/home/johb/fitness-coach-agent
+  --confcutdir=项目根（相对路径 ./）
 ```
 
 **边界**：本轮使用离线固定工具脚本检验调用链，没有重跑真实 LLM，不能把以上通过率解释为自然对话的工具选择准确率。有限许可的活动范围无法可靠映射时保守暂停力量处方，不作临床判断；规则仍不承诺覆盖所有医学表达。此前的真实 LLM 14/14、19/19 不是本轮验证结果。

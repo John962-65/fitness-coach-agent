@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-ROOT = Path("/home/johb/fitness-coach-agent")
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 spec = importlib.util.spec_from_file_location("distill_mod", ROOT / "tools" / "distill.py")
