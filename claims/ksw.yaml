@@ -63566,3 +63566,201 @@
   provenance: transcript
   status: draft
   anti_hallucination: pass
+- id: ksw-BV14x4y147Jw-0001
+  blogger: 凯圣王
+  video: BV14x4y147Jw
+  ts:
+  - 239.06
+  - 273.19
+  claim: 健身房没有哈克深蹲机时，史密斯深蹲是相近的替代选择。哈克/史密斯蹲不建议上太大重量：5次组以下的低次数大重量不推荐，更推荐12–15次/组左右的强度区间；全程控制节奏，下落与起身都保持核心收紧（起身呼气），主动屈髋、释放足背屈，去感受整条腿的张力。
+  type: method
+  exercises: ["hack_squat"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV14x4y147Jw-0002
+  blogger: 凯圣王
+  video: BV14x4y147Jw
+  ts:
+  - 282.72
+  - 342.42
+  claim: 深蹲收紧上背不靠玩命挺胸：挺胸只是前后向的劲儿，还会带出骨盆前倾、腰部反弓；正确做法是肩胛内收下降，再让膈肌下沉构建腹内压，后背像钢板一样把杠铃重量经脊柱传递到后侧链和腿。
+  type: error
+  exercises: ["barbell_back_squat"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1My411v7Gf-0001
+  blogger: 凯圣王
+  video: BV1My411v7Gf
+  ts:
+  - 61.22
+  - 101.8
+  claim: 深蹲类动作（杠铃/史密斯/哈克）都在宽站距、大腿外旋的姿态下进行，主要动用臀大肌、臀中肌、臀小肌甚至梨状肌等外展外旋肌群，内收肌往往练得不够；长期只练外旋会导致骨盆外侧肌肉过度紧张、挛缩，出现走路外八字等体态问题。做了大量外旋类训练后，应当用内侧肌群训练来平衡（视频中推荐哥本哈根支撑）。
+  type: principle
+  exercises: ["barbell_back_squat", "hack_squat"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 待确认（系列由一涵主讲、健哥出镜示范，旁白归属未确认）
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1yW42197Az-0001
+  blogger: 凯圣王
+  video: BV1yW42197Az
+  ts:
+  - 573.73
+  - 647.74
+  claim: 卧推握距以杠铃两端的环为参照：两手无限接近叫窄握，最宽到力量举规则的食指握环；握距因人而异——越窄越考验腕关节活动度，腕关节吃不消就别强求；身高臂展不同选择不同（臂展很长的人窄握难触胸、肩胛难保持收紧）；新手推荐中等握距，收益比较多。
+  type: method
+  exercises: ["barbell_bench_press"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1yW42197Az-0002
+  blogger: 凯圣王
+  video: BV1yW42197Az
+  ts:
+  - 544.8
+  - 571.87
+  claim: 卧推后半程推不动，很大一部分情况是肩胛松掉了（肩胛下角翘起、顶不住）；复合动作后半程只剩三头或肩单独参与时就会卡住；推起末端要主动收缩胸肌完成，而不是胳膊伸直就算完成。
+  type: cue
+  exercises: ["barbell_bench_press"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1hjUVYJE8X-0001
+  blogger: 凯圣王
+  video: BV1hjUVYJE8X
+  ts:
+  - 516.18
+  - 547.16
+  claim: 推类训练量大时三头已经很疲劳，选三头孤立动作要考虑肘关节疲劳程度：可以换成窄推或仰卧臂屈伸，但固定轨迹的龙门下压对肘关节压力更小；对新手也好掌握，能帮助建立三头发力。
+  type: method
+  exercises: ["cable_pushdown"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1LfztYyEUU-0001
+  blogger: 凯圣王
+  video: BV1LfztYyEUU
+  ts:
+  - 8.0
+  - 72.32
+  claim: 健身房自由重量区安全：上片、卸片必须保持杠铃两侧对称，两侧重量差不要超过20–30kg（窄架子20–30kg就可能压翻杠铃），只卸一边杠铃会瞬间拍下伤人；大重量推肩放不下来时应直接扔掉，扔之前确认两侧没人；别人做大重量硬拉时不要近距离穿行，别人卧推时不要碰到其脚部。
+  type: principle
+  exercises: []
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1Zb2mYHEWv-0001
+  blogger: 凯圣王
+  video: BV1Zb2mYHEWv
+  ts:
+  - 560.74
+  - 581.51
+  claim: 髋主导的山羊挺身：下放时臀大肌被拉长、起身时收紧，全程腰椎段变化不大；腘绳肌和竖脊肌都会参与（不可能完全孤立臀部），在这个结构稳定的前提下可以负重加强度。下放时腰部代偿是很多女性训练者的问题。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1Zb2mYHEWv-0002
+  blogger: 凯圣王
+  video: BV1Zb2mYHEWv
+  ts:
+  - 610.38
+  - 640.93
+  claim: 想让竖脊肌主导就做完全脊柱伸展版的山羊挺身：下放时先低头、胸椎段再腰椎段逐节弯曲，起身时再抬头——此时臀部参与非常少。不要模仿别人的行程，按自己的活动度决定。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 凯圣王
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1SEorB6Ekj-0001
+  blogger: 凯圣王
+  video: BV1SEorB6Ekj
+  ts:
+  - 1618.27
+  - 1625.12
+  claim: 坐姿绳索划船把支撑点做满更稳定：脚抵住、手撑着、前面也抵住，把躯干的旋转、前后、屈伸都固定住再拉。
+  type: cue
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 待确认（对谈）
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: ksw-BV1SEorB6Ekj-0002
+  blogger: 凯圣王
+  video: BV1SEorB6Ekj
+  ts:
+  - 2821.04
+  - 2834.47
+  claim: 双手绳索划船感受不好的常见原因是腿固定不住；力的方向是相对的——脚往下踩时只能往上发力，从前往后的拉力做不出来。
+  type: error
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 待确认（对谈）
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass

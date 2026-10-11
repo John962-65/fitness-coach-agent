@@ -56475,3 +56475,237 @@
   provenance: transcript
   status: draft
   anti_hallucination: pass
+- id: tcy-BV1cK1aBBEBd-0001
+  blogger: 谭成义
+  video: BV1cK1aBBEBd
+  ts:
+  - 392.03
+  - 467.75
+  claim: 坐姿绳索划船有两种做法：偏含胸的拉法更多练背的外沿；个人最推荐挺胸拉——主要动作模式是肩胛骨主动后缩、带着肘和背走，而不是肘带着肩胛骨走。含胸不等于弯腰：先把腰挺直再含胸；很多人腰变厚是因为弯着腰在做。
+  type: method
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1cK1aBBEBd-0002
+  blogger: 谭成义
+  video: BV1cK1aBBEBd
+  ts:
+  - 426.0
+  - 437.2
+  claim: 坐姿划船的躯干稳定要点：对握窄把手，腿蹬住、大腿后侧保持发力——腘绳肌不发力骨盆就软，骨盆一松腰的压力会很大。
+  type: method
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1448s6dEjx-0003
+  blogger: 谭成义
+  video: BV1448s6dEjx
+  ts:
+  - 864.24
+  - 927.8
+  claim: 坐姿划船窄距更趋向肩屈肩伸的单关节运动，宽距更复合；建议先激活背阔肌再做复合划船——背阔肌已激活时复合动作发力更好，完全没激活时双手划船很难找感觉。目标是大重量下仍维持姿势稳定并募集到目标肌肉。
+  type: method
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1CAaR6rECN-0001
+  blogger: 谭成义
+  video: BV1CAaR6rECN
+  ts:
+  - 469.51
+  - 542.87
+  claim: 选带胸前靠垫的坐姿划船：胸口抵住后躯干不会前后晃，肩胛后缩能做得更充分。大部分人肩胛后缩能力差，会导致关节压力较大、推肩推胸时不适；先把肩胛后缩功能练明白，这类力量训练本身就是功能性训练。
+  type: method
+  exercises: ["seated_row"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0001
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3079.2
+  - 3089.48
+  claim: 没有山羊挺身器械时的替代做法：找一张瑜伽垫躺在地上，让人帮你按住脚，向上抬起躯干练竖脊肌。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0002
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3106.63
+  - 3135.82
+  claim: 髋主导的山羊挺身：膝盖微屈、上身保持一个整体，屈髋下放（角度不用太大）再抬起，主要由腘绳肌发力、腰椎段变化不大；行程小练的是腘绳肌。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0003
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3223.51
+  - 3237.56
+  claim: 竖脊肌专项变式（脊柱逐节屈伸）：下放时想象胸椎一节一节向下弯、直到腰椎全部弯下去，起身时先仰头再逐节伸展。适合竖脊肌特别弱、屈髋也受限的人——练背日没有安排竖脊肌时，用这个动作补。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0004
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3097.05
+  - 3102.19
+  claim: 山羊挺身是万金油动作（就像箭步蹲一样），同一器械通过不同做法既可以练竖脊肌，也可以练髋主导的后侧链。
+  type: principle
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0005
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3459.16
+  - 3461.44
+  claim: 三分化计划里颈前深蹲、罗马尼亚硬拉、山羊挺身都只安排三组，不安排太高容量——腿在三分化里处于开发状态，追求稳步的耐力提高。
+  type: method
+  exercises: ["front_squat", "romanian_deadlift", "back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0006
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3365.54
+  - 3370.86
+  claim: 山羊挺身比罗马尼亚硬拉容易：多了支点和对抗的力，力量更好控制；可以作为罗马尼亚硬拉的退阶或前置动作。
+  type: principle
+  exercises: ["back_extension", "romanian_deadlift"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1Fzd2BBEdM-0007
+  blogger: 谭成义
+  video: BV1Fzd2BBEdM
+  ts:
+  - 3370.86
+  - 3385.48
+  claim: 山羊挺身建议每组八次左右、找好重量、不到力竭；腰酸往往提示髋关节/屈髋控制问题或竖脊肌太弱——竖脊肌是保护腰椎的重要肌肉，完全放弃俯身类训练会让髋关节功能与竖脊肌强度变差。
+  type: method
+  exercises: ["back_extension"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1oEwZzVEP4-0004
+  blogger: 谭成义
+  video: BV1oEwZzVEP4
+  ts:
+  - 51.88
+  - 80.67
+  claim: 平板支撑对肩胛骨能力的训练不太够；居家可改用肘支撑变式：跪姿、肘往前放而不是整个小臂贴垫、手抱头，撑起时肩胛骨不要掉下去并维持住。
+  type: method
+  exercises: ["plank"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
+- id: tcy-BV1oEwZzVEP4-0005
+  blogger: 谭成义
+  video: BV1oEwZzVEP4
+  ts:
+  - 102.88
+  - 126.9
+  claim: 肘支撑变式的难度调节：肘越往前越难、越往后越简单，按自己能力选位置；这个动作练肩胛骨往外打开的能力，保证肩胛骨贴合胸壁，之后再练背感受会好很多。
+  type: cue
+  exercises: ["plank"]
+  applies_to:
+    level: []
+    goal: []
+    condition: []
+  evidence: blogger_experience
+  speaker: 谭成义
+  provenance: transcript
+  status: draft
+  anti_hallucination: pass
