@@ -1,4 +1,5 @@
 """C1 记忆契约：来源性质分层、复核时点、失效传播、档案留旧值（DESIGN 26.2）"""
+import json
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -192,6 +193,7 @@ def test_confirm_accept_applies_and_invalidates_old_goal():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
@@ -213,6 +215,7 @@ def test_confirm_decline_keeps_old_value():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": false}}'}, "auto")
@@ -227,6 +230,7 @@ def test_confirm_expired_change_rejected():
     ag.profile["pending_profile_changes"] = [
         {"id": "prf-x", "changes": [{"field": "goal.primary", "old": "a", "new": "b"}],
          "created_message_id": 0, "expires_at": "2020-01-01T00:00:00+00:00"}]
+    ag.db.add_message("s", "user", "确认")  # 过跨轮门，命中过期分支
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": '{"change_id": "prf-x", "accept": true}'}, "auto")
@@ -252,3 +256,121 @@ def test_confirm_unknown_change_id():
         {"name": "confirm_profile_change",
          "arguments": '{"change_id": "prf-nope", "accept": true}'}, "auto")
     assert "没有待确认" in out
+
+
+# ---- 评审 P0 修复（2026-10-11）：跨轮确认 / 伤病隔离 / evidence 绑定 ----
+
+def test_confirm_same_turn_rejected():
+    """对抗：同一轮先创建变更再确认 → 必须拒绝（不得代用户批准）。"""
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    # 注意：此处不插入新用户消息——同轮创建+同轮确认必须被拒（对抗用例）
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "下一轮确认" in out and "不得代用户批准" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"        # 未生效
+    assert ag.profile["pending_profile_changes"]              # 暂存保留
+
+
+def test_confirm_rejected_when_old_value_drifted():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
+    # 暂存后档案被其他路径改写（模拟漂移）
+    ag.profile["goal"]["primary"] = "strength"
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "旧值不符" in out and "未执行" in out
+    assert ag.profile["goal"]["primary"] == "strength"        # 未被覆盖
+
+
+def test_injury_update_fences_plan_until_regenerate():
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.create_plan("s", {"days_per_week": 3, "template": "三分化推拉蹲",
+                            "schedule": [{"day": "周一", "focus": "推", "exercises": []}],
+                            "notes": []})
+    # 新增伤病 → 立即隔离（evidence 须为真实用户消息）
+    ag.db.add_message("s", "user", "肩膀最近受伤了")
+    out = ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"conditions": {"injuries": ["肩部受伤"],'
+                      ' "injuries_evidence": "肩膀最近受伤了"}}}'}, "auto")
+    fence = ag.profile.get("plan_fence")
+    assert fence and "肩部受伤" in fence["reason"]
+    # get_plan 带隔离警告
+    plan_text = ag._handle_tool({"name": "get_plan", "arguments": "{}"}, "auto")
+    assert "【计划已隔离】" in plan_text
+    # 隔离期拒绝非重排调整
+    ag.profile["pending_adjustments"] = [
+        {"id": "adj-f", "source": "rule", "user_id": "s", "action": "deload",
+         "target": "整体", "reason": "疲劳", "plan_id": 1, "plan_version": 1,
+         "created_message_id": 0, "expires_at": "2099-01-01T00:00:00+00:00"}]
+    out2 = ag._handle_tool(
+        {"name": "apply_adjustment", "arguments": '{"suggestion_id": "adj-f"}'}, "auto")
+    assert "被隔离" in out2 and "不接受对旧计划的增量调整" in out2
+    # 重排确认执行 → 解除隔离
+    ag._offer_regenerate("伤病更新，重排计划")
+    regen = next(s for s in ag.profile["pending_adjustments"]
+                 if s["action"] == "regenerate_plan")
+    ag.db.add_message("s", "user", "确认重排")
+    out3 = ag._handle_tool(
+        {"name": "apply_adjustment", "arguments": f'{{"suggestion_id": "{regen["id"]}"}}'},
+        "auto")
+    assert ag.profile.get("plan_fence") is None               # 已解除
+    assert "隔离" not in ag._handle_tool({"name": "get_plan", "arguments": "{}"}, "auto")
+
+
+def test_injury_removal_does_not_fence():
+    ag = _agent()
+    ag.profile["conditions"]["injuries"] = ["膝部旧伤"]
+    ag.profile["onboarding_done"] = True
+    ag.db.create_plan("s", {"days_per_week": 3, "template": "t", "schedule": [], "notes": []})
+    ag.db.add_message("s", "user", "膝盖好了")
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"conditions": {"injuries": [],'
+                      ' "injuries_evidence": "膝盖好了"}}}'}, "auto")
+    assert ag.profile.get("plan_fence") is None               # 删除伤病不隔离
+
+
+def test_unverifiable_evidence_rejected():
+    """对抗：LLM 附不在任何用户消息里的 evidence → 拒收该项。"""
+    ag = _agent()
+    ag.db.add_message("s", "user", "我膝盖不太好")
+    out = ag._handle_tool(
+        {"name": "update_profile",
+         'arguments': '{"patch": {"conditions": {"injuries": ["膝盖"],'
+                      ' "injuries_evidence": "用户确认有膝伤半年（编造依据）"}}}'.replace("'", '"')
+         if False else json.dumps({"patch": {"conditions": {
+             "injuries": ["膝盖"],
+             "injuries_evidence": "用户确认有膝伤半年（编造依据）"}}})}, "auto")
+    assert "不是用户原话" in out
+    assert "injuries" not in ag.profile.get("conditions", {}) or \
+        ag.profile["conditions"].get("injuries") in (None, [], ["膝盖"]) and \
+        not ag.profile["conditions"].get("injuries_evidence") in (None, "") and False or True
+    # 严格断言：injuries 未被保存（依据无效则整项拒收或走原话判定失败）
+    c = ag.profile.get("conditions", {})
+    assert not c.get("injuries"), c.get("injuries")
+
+
+def test_evidence_quoted_from_user_message_accepted():
+    ag = _agent()
+    ag.db.add_message("s", "user", "我最近肩膀疼痛，举不起来")
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": json.dumps({"patch": {"conditions": {
+             "injuries": ["肩膀疼痛"],
+             "injuries_evidence": "我最近肩膀疼痛，举不起来"}}})}, "auto")
+    assert ag.profile["conditions"]["injuries"] == ["肩膀疼痛"]
+    assert ag.profile["conditions"]["injuries_evidence"] == "我最近肩膀疼痛，举不起来"

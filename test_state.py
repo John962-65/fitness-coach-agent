@@ -171,8 +171,9 @@ def test_evidence_backfill_from_user_message():
 
 
 def test_evidence_backfill_keeps_explicit():
+    """2026-10-11 规格变更（评审 P0-3）：LLM 自附 evidence 必须出现在真实用户消息中。"""
     agent = _agent()
-    agent.messages.append({"role": "user", "content": "随便一句"})
+    agent.messages.append({"role": "user", "content": "我膝盖有伤，明确的原话"})
     agent._handle_tool({"name": "update_profile",
                         "arguments": json.dumps({"patch": {
                             "conditions": {"injuries": ["膝伤"],
@@ -184,12 +185,14 @@ def test_evidence_backfill_keeps_explicit():
 def test_auto_finalize_when_profile_complete():
     """兜底：档案齐了但 LLM 没调 finish_onboarding，代码自己收尾出计划"""
     agent = _agent()
-    agent.messages.append({"role": "user", "content": "男28岁178cm85kg"})
+    # 2026-10-11（评审 P0-3）：evidence 须为用户原话子串——原"没伤/没事"为编造依据，已废弃
+    agent.messages.append({"role": "user",
+                           "content": "男28岁178cm85kg，没有伤病，健康筛查没事"})
     complete = {"patch": {
         "basic": {"age": 28, "gender": "男", "height_cm": 178, "weight_kg": 85},
         "goal": {"primary": "fat_loss"},
         "resources": {"days_per_week": 3},
-        "conditions": {"injuries": [], "injuries_evidence": "没伤",
+        "conditions": {"injuries": [], "injuries_evidence": "没有伤病",
                        "health_screen": {"heart": "无"},
                        "health_screen_evidence": "没事"},
     }}

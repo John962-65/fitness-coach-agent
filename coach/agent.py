@@ -525,6 +525,7 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 
 # 用户当前计划
 {plan}
+{plan_fence}
 
 # 近期动态（打卡数据摘要，相关时引用）
 {dynamic}
@@ -626,6 +627,10 @@ class CoachAgent:
             knowledge_discussions=self._knowledge_discussions_text(),
             personal_trials=self._personal_trials_text(),
             plan=plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）",
+            plan_fence=(
+                "⚠️ 当前计划已隔离：" + self.profile["plan_fence"]["reason"]
+                + "。不要按旧计划指导训练；先解释并取得重排确认。" if self.profile.get("plan_fence")
+                else ""),
             dynamic=dynamic,
             principles=self.kb.l1_principles,
             knowledge_index=self.kb.l2_index,
@@ -1046,6 +1051,8 @@ class CoachAgent:
         if name == "update_profile":
             previous_health = copy.deepcopy(self.profile.get("conditions", {}).get("health_screen"))
             previous_resources = copy.deepcopy(self.profile.get("resources", {}))
+            previous_conditions_injuries = copy.deepcopy(
+                self.profile.get("conditions", {}).get("injuries"))
             patch = args.get("patch", {})
             # G2 门槛（2026-09-29 收紧）：伤病史/健康筛查必须有真凭实据——
             # LLM 自附 *_evidence，或本轮用户原话能判定为真的在回答该问题；
@@ -1059,6 +1066,23 @@ class CoachAgent:
                 last_user = next(
                     (m["content"] for m in reversed(self.messages)
                      if m.get("role") == "user"), "")
+
+                # 评审 P0-3：evidence 必须能在真实用户消息中找到（本轮或最近消息），
+                # LLM 自附的无出处文本不再作为有效依据（对齐 correct_checkin 的原话约束）。
+                def _evidence_trusted(text: str) -> bool:
+                    if not text.strip():
+                        return False
+                    sources = [m["content"] for m in self.messages if m.get("role") == "user"]
+                    sources += [m["content"] for m in self.db.recent_messages(self.user_id, 20)
+                                if m["role"] == "user"]
+                    return any(text in m for m in sources)
+
+                for field in ("injuries_evidence", "health_screen_evidence"):
+                    ev = (cond_patch.get(field) or "").strip()
+                    if ev and not _evidence_trusted(ev):
+                        cond_patch.pop(field, None)
+                        rejected.append(field.replace("_evidence", "")
+                                        + "的依据不是用户原话（未保存，请引用用户真实发言）")
                 if "injuries" in cond_patch \
                         and not (cond_patch.get("injuries_evidence") or "").strip() \
                         and not (c.get("injuries_evidence") or "").strip():
@@ -1147,6 +1171,19 @@ class CoachAgent:
                 cond = patch.get("conditions") or {}
                 res = patch.get("resources") or {}
                 if "injuries" in cond and "伤病史" not in rejected:
+                    # 评审 P0-1（DESIGN 26.4：安全限制收紧不等协商）：
+                    # 新增伤病时立即隔离现役计划（不兼容处方停止使用），
+                    # 重排仍走两步确认；重排成功后解除隔离。
+                    prev_inj = set(previous_conditions_injuries or [])
+                    new_inj = set(cond.get("injuries") or [])
+                    added = sorted(new_inj - prev_inj)
+                    if added:
+                        self.profile["plan_fence"] = {
+                            "reason": "新增伤病（" + "、".join(added)
+                                      + "）：旧计划可能对相关部位施压，重排确认前暂停使用",
+                            "at": datetime.now().isoformat(timespec="seconds"),
+                            "added_injuries": added,
+                        }
                     plan_affecting.append("伤病有更新")
                 current_resources = self.profile.get("resources", {})
                 for key, label in (("location", "训练场地变了"), ("days_per_week", "每周训练天数变了"),
@@ -1166,6 +1203,11 @@ class CoachAgent:
             entry = next((e for e in pending if isinstance(e, dict) and e.get("id") == cid), None)
             if not entry:
                 return f"没有待确认的档案变更「{cid}」。"
+            # 评审 P0-2（跨轮强制，对齐 apply_adjustment 的语义）：
+            # 本轮创建的变更本轮不能确认——防止 LLM 同轮自建自批。
+            if self.db.user_messages_after(self.user_id, entry["created_message_id"]) == 0:
+                return ("档案变更必须经用户下一轮确认：本轮刚创建的变更不能由本轮确认"
+                        "（不得代用户批准）。请先向用户说明变更内容与取舍。")
             try:
                 expired = datetime.fromisoformat(entry["expires_at"]) <= datetime.now(timezone.utc)
             except (KeyError, TypeError, ValueError):
@@ -1175,6 +1217,14 @@ class CoachAgent:
             if expired:
                 self.db.save_profile(self.user_id, self.profile)
                 return "该档案变更已过期，未生效；请与用户重新确认后再次提交。"
+            # 旧值校验：暂存后档案若已被其他变更改写，预期旧值不符则拒绝执行
+            drifted = [h["field"] for h in entry["changes"]
+                       if (self.profile.get(h["field"].split(".", 1)[0]) or {}
+                           ).get(h["field"].split(".", 1)[1]) != h["old"]]
+            if drifted:
+                self.db.save_profile(self.user_id, self.profile)
+                return ("档案在此期间已被修改（" + "、".join(drifted)
+                        + "），与确认时依据的旧值不符，本次确认未执行；请重新核对后再提交。")
             desc = "；".join(f"{h['field']}：{h['old']} → {h['new']}" for h in entry["changes"])
             if not args.get("accept"):
                 self.db.save_profile(self.user_id, self.profile)
@@ -1271,7 +1321,12 @@ class CoachAgent:
 
         if name == "get_plan":
             plan = self._enforce_medical_permission()
-            return plan_to_text(plan) if plan else "当前没有生效的计划。"
+            text = plan_to_text(plan) if plan else "当前没有生效的计划。"
+            fence = self.profile.get("plan_fence")
+            if fence and plan:
+                text = ("⚠️【计划已隔离】" + fence["reason"]
+                        + "。请勿按下列旧计划训练；先确认重排建议，新计划确认后自动解除。\n\n" + text)
+            return text
 
         if name == "get_review":
             plan = self._enforce_medical_permission()
@@ -1319,6 +1374,12 @@ class CoachAgent:
             sug = next((s for s in pending if s.get("id") == sid), None)
             if not sug:
                 return f"没有待执行的建议「{sid}」，请重新获取建议并向用户确认。"
+            # 评审 P0-1：隔离期只放行重排本身（解除隔离的唯一路径），拒绝旧计划增量调整
+            fence = self.profile.get("plan_fence")
+            if fence and sug["action"] != "regenerate_plan":
+                return ("⚠️ 当前计划已因伤病更新被隔离（" + fence["reason"]
+                        + "），暂不接受对旧计划的增量调整；请先确认重排建议"
+                          "，新计划生效后自动解除。")
             error = self._pending_error(sug, record)
             if error:
                 pending.remove(sug)
@@ -1345,6 +1406,10 @@ class CoachAgent:
                     new_plan = apply_adjustment(
                         plan, sug["action"], sug["target"], sug["reason"], last_weight=lw)
                 self._commit_plan(new_plan, record["id"])
+                if sug["action"] == "regenerate_plan" and self.profile.get("plan_fence"):
+                    # 新计划已按最新伤病生成，解除隔离
+                    self.profile.pop("plan_fence", None)
+                    self.db.save_profile(self.user_id, self.profile)
             except ValueError as e:
                 return str(e)
             self._refresh_system_prompt()

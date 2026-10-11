@@ -1,0 +1,35 @@
+{
+ "_comment": "脱敏示例卡：演示卡片结构、绑定指纹与审批机制（真实卡在私有 sources/，不入库）。此卡为合成内容，不对应任何博主或真实条目。",
+ "card_id": "card-action-example_squat",
+ "version": 1,
+ "scene": "示例深蹲：站位与膝方向（合成示例）",
+ "audience": "无伤病、可深蹲的训练者",
+ "non_audience": "膝/髋急性疼痛者先就医评估",
+ "purpose": "coaching_card",
+ "body": "1) 站距与肩同宽或略宽，脚尖自然外展 15-30 度（合成示例）。\n2) 下蹲时膝盖方向与脚尖一致，不内扣（合成示例）。",
+ "limits": "本卡为演示用合成内容；「膝盖不内扣」为一般性教学提示，不构成个体处方。",
+ "bindings": [
+  {
+   "claim_id": "demo-0001",
+   "claim_fingerprint": "demo-fingerprint-0001",
+   "video": "BVdemo0001",
+   "ts": [
+    10.0,
+    25.0
+   ],
+   "url": "https://www.bilibili.com/video/BVdemo0001?t=10",
+   "quote": "（合成示例引文）"
+  }
+ ],
+ "notes": "演示绑定结构：claim_id + 内容指纹 + 出处跳转。指纹变化使审批失效的机制见 coach/cards.py::approval_valid。",
+ "status": "approved_example",
+ "review": {
+  "status": "approved",
+  "stage": "card",
+  "by": "示例",
+  "at": "2026-10-11T00:00:00+08:00",
+  "note": "合成示例，演示审批记录形状",
+  "card_version": 1,
+  "fingerprint": "demo"
+ }
+}

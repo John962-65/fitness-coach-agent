@@ -51,6 +51,7 @@ def test_confirm_binds_version_and_evaluation():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "确认转增肌")  # 模拟下一轮（跨轮强制）
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
