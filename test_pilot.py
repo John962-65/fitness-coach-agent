@@ -161,8 +161,17 @@ def test_regeneration_keeps_prior_frequency_and_sets():
 
 
 def test_session_minutes_update_offers_real_regeneration(tmp_path):
+    # C1 收尾（2026-10-11 规格变更）：已有确认值的时长被改写 → 暂存待确认，
+    # 澄清并 confirm 后才落库并触发重排（26.2"冲突先澄清"，26.4 一致落库）。
     a = make_agent(tmp_path)
     chat_tools(a, "每次只有30分钟", ("update_profile", {"patch": {"resources": {"session_minutes": 30}}}))
+    assert a.profile["resources"]["session_minutes"] == 60          # 未静默生效
+    change = next(c for c in a.profile["pending_profile_changes"]
+                  if any(h["field"] == "resources.session_minutes" for h in c["changes"]))
+    chat_tools(a, "确认，以后每次按30分钟来",
+               ("confirm_profile_change", {"change_id": change["id"], "accept": True}))
+    assert a.profile["resources"]["session_minutes"] == 30
+    assert a.profile["_history"]["resources.session_minutes"]["old"] == 60
     sid = pending(a, "regenerate_plan")["id"]
     chat_tools(a, "确认按30分钟重排", ("apply_adjustment", {"suggestion_id": sid}))
     assert all(d["estimated_minutes"] <= 30 for d in a.db.get_active_plan(a.user_id)["schedule"])

@@ -50,7 +50,9 @@ def test_card_for_exercise_returns_approved():
     assert c and c["card_id"] == "card-action-back_extension"
     assert approval_valid(c, c["review"])
     # 无卡动作返回 None（平板支撑暂无卡）
-    assert card_for_exercise("plank") is None
+    # plank 卡 2026-10-11 经发起人整批授权批准（Q30 approved_v1），动作卡通道现在服务它
+    c = card_for_exercise("plank")
+    assert c and c["card_id"] == "card-action-plank" and approval_valid(c, c["review"])
 
 
 def test_card_for_topic_routing():
@@ -98,8 +100,8 @@ def test_agent_falls_back_without_card():
     agent = CoachAgent(user_id="card_rt_f", db_path=Path(tempfile.mkdtemp()) / "t.db")
     result = agent._handle_tool(
         {"name": "get_exercise_coaching",
-             "arguments": json.dumps({"exercise": "平板支撑"})}, "normal")
-    assert "已审核教练卡" not in result  # 无卡动作保持原行为
+             "arguments": json.dumps({"exercise": "窄距卧推"})}, "normal")
+    assert "已审核教练卡" not in result  # close_grip_bench_press 尚无已审核卡（2026-10-11），保持回退原行为
 
 
 def test_agent_topic_card_tool():
