@@ -198,3 +198,20 @@ def test_grandfathered_card_untouched_and_still_served():
     assert "review_history" not in card              # 没有被迫出新版
     assert approval_valid(card, card["review"])
     assert card_for_exercise("lat_pulldown") == card
+
+
+def test_sample_card_approval_mechanism():
+    """评审二轮：示例卡须真实通过 approval_valid，且内容变化使审批失效。"""
+    import copy
+    import json as _json
+    from pathlib import Path
+    from coach.cards import approval_valid
+    root = Path(__file__).resolve().parent
+    card = _json.loads((root / "eval" / "fixtures" / "sample_card.json").read_text())
+    assert approval_valid(card, card["review"])                  # 有效卡通过
+    mutated = copy.deepcopy(card)
+    mutated["body"] = mutated["body"] + "\n3) 新增要点。"
+    assert not approval_valid(mutated, card["review"])           # 正文变化 → 拒绝
+    mutated2 = copy.deepcopy(card)
+    mutated2["bindings"][0]["claim_fingerprint"] = "changed"
+    assert not approval_valid(mutated2, card["review"])          # 绑定变化 → 拒绝

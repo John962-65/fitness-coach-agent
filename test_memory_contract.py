@@ -374,3 +374,60 @@ def test_evidence_quoted_from_user_message_accepted():
              "injuries_evidence": "我最近肩膀疼痛，举不起来"}}})}, "auto")
     assert ag.profile["conditions"]["injuries"] == ["肩膀疼痛"]
     assert ag.profile["conditions"]["injuries_evidence"] == "我最近肩膀疼痛，举不起来"
+
+
+# ---- 评审二轮收口（2026-10-11）：语义确认 / 未知伤病隔离 / 建议生成门 ----
+
+def test_confirm_decline_phrasing_rejected():
+    """对抗：下一轮消息是撤销/搁置表述时，LLM 调 accept=true 必须被语义门拒绝。"""
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "我先不改了，今天练什么？")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "明确确认" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"           # 未被改
+    assert ag.profile["pending_profile_changes"]                 # 变更保留待用户明确答复
+
+
+def test_regenerate_with_unmappable_injury_keeps_fence():
+    """评审二轮：重排成功 ≠ 风险已处理——无法映射关节的伤病保持隔离（降级为未解决）。"""
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.create_plan("s", {"days_per_week": 3, "template": "t", "schedule": [], "notes": []})
+    ag.db.add_message("s", "user", "我肋骨骨裂了")
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": json.dumps({"patch": {"conditions": {
+             "injuries": ["肋骨骨裂"], "injuries_evidence": "我肋骨骨裂了"}}})}, "auto")
+    assert ag.profile.get("plan_fence")
+    ag._offer_regenerate("伤病更新，重排计划")
+    regen = next(s for s in ag.profile["pending_adjustments"]
+                 if s["action"] == "regenerate_plan")
+    ag.db.add_message("s", "user", "确认重排")
+    ag._handle_tool(
+        {"name": "apply_adjustment", "arguments": f'{{"suggestion_id": "{regen["id"]}"}}'},
+        "auto")
+    fence = ag.profile.get("plan_fence")
+    assert fence and fence.get("unresolved") == ["肋骨骨裂"]      # 未解除，降级为未解决
+    assert "相关部位的训练与调整暂停" in fence["reason"]
+    # 隔离未解除 → 建议生成入口同样拦截
+    out = ag._handle_tool({"name": "get_adjustment_suggestions", "arguments": "{}"}, "auto")
+    assert "隔离期不生成普通调整建议" in out
+
+
+def test_adjustment_suggestions_blocked_while_fenced():
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.create_plan("s", {"days_per_week": 3, "template": "t", "schedule": [], "notes": []})
+    ag.profile["plan_fence"] = {"reason": "新增伤病（肩部受伤）", "at": "t",
+                                "added_injuries": ["肩部受伤"]}
+    out = ag._handle_tool({"name": "get_adjustment_suggestions", "arguments": "{}"}, "auto")
+    assert "隔离期不生成普通调整建议" in out
+    assert any(s["action"] == "regenerate_plan"
+               for s in ag.profile.get("pending_adjustments", []))

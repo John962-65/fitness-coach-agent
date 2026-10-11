@@ -489,12 +489,13 @@ def test_regenerate_preserves_prescription_weights():
 def test_profile_injury_change_offers_regenerate():
     """normal 模式新增伤病 → 生成重排建议"""
     agent = _agent_with_plan()
-    agent.db.add_message(agent.user_id, "user", "本轮反馈")
+    # 2026-10-11（评审二轮 P0-3 收口）：依据绑定每一次变更——档案旧依据不再让新变更免检
+    agent.db.add_message(agent.user_id, "user", "我腰受伤了")
     agent.profile["conditions"]["injuries_collected"] = True
-    agent.profile["conditions"]["injuries_evidence"] = "建档时说过没有"
     result = agent._handle_tool({"name": "update_profile",
                                  "arguments": json.dumps({"patch": {
-                                     "conditions": {"injuries": ["腰"]}}})},
+                                     "conditions": {"injuries": ["腰"],
+                                                    "injuries_evidence": "我腰受伤了"}}})},
                                 "normal")
     assert "重排" in result
     assert any(s["action"] == "regenerate_plan"

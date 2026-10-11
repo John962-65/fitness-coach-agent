@@ -1083,9 +1083,9 @@ class CoachAgent:
                         cond_patch.pop(field, None)
                         rejected.append(field.replace("_evidence", "")
                                         + "的依据不是用户原话（未保存，请引用用户真实发言）")
+                # 评审二轮：依据绑定"每一次具体变更"——档案曾有依据不能让新变更免检
                 if "injuries" in cond_patch \
-                        and not (cond_patch.get("injuries_evidence") or "").strip() \
-                        and not (c.get("injuries_evidence") or "").strip():
+                        and not (cond_patch.get("injuries_evidence") or "").strip():
                     if answers_injury_question(last_user):
                         cond_patch["injuries_evidence"] = last_user[:80]
                     else:
@@ -1093,8 +1093,7 @@ class CoachAgent:
                         cond_patch.pop("injuries_evidence", None)
                         rejected.append("伤病史")
                 if "health_screen" in cond_patch \
-                        and not (cond_patch.get("health_screen_evidence") or "").strip() \
-                        and not (c.get("health_screen_evidence") or "").strip():
+                        and not (cond_patch.get("health_screen_evidence") or "").strip():
                     if answers_health_question(last_user):
                         cond_patch["health_screen_evidence"] = last_user[:80]
                     else:
@@ -1208,6 +1207,17 @@ class CoachAgent:
             if self.db.user_messages_after(self.user_id, entry["created_message_id"]) == 0:
                 return ("档案变更必须经用户下一轮确认：本轮刚创建的变更不能由本轮确认"
                         "（不得代用户批准）。请先向用户说明变更内容与取舍。")
+            # 评审二轮：跨轮 ≠ 用户同意——最新用户消息必须表达明确同意，
+            # 且不能是撤销/搁置表述（如"我先不改了，今天练什么？"）。
+            latest_user = next(
+                (m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
+                 if m["role"] == "user"), "")
+            _DECLINE = re.compile(r"不改|先不|取消|算了|暂时不?改|别改|不要改|维持原|保留原")
+            _AFFIRM = re.compile(r"确认|同意|可以|好|对|是的|ok|OK|嗯|按这个|改成|换成|就这么办")
+            if _DECLINE.search(latest_user) or not _AFFIRM.search(latest_user):
+                return ("未能将本轮发言识别为对该变更的明确确认"
+                        "（需有同意表述，且不能是撤销/搁置）。变更仍保留待确认；"
+                        "请用户明确答复后再次提交。")
             try:
                 expired = datetime.fromisoformat(entry["expires_at"]) <= datetime.now(timezone.utc)
             except (KeyError, TypeError, ValueError):
@@ -1339,6 +1349,20 @@ class CoachAgent:
                 return "当前没有生效的计划。"
             if not training_permission(self.profile).allows_prescription:
                 return "训练处方已暂停，不能建议加重或增加训练量；请先确认医疗许可。"
+            # 评审二轮：隔离期在"建议生成"阶段就拦截，而不是等 apply 才拒——
+            # 用户不应看到基于被隔离旧计划的加重/增量建议。
+            fence = self.profile.get("plan_fence")
+            if fence:
+                existing = [s for s in self._live_pending(record)
+                            if s["action"] == "regenerate_plan"]
+                if not existing:
+                    self._offer_regenerate("计划已隔离（伤病更新），需重排后再评估调整")
+                    existing = [s for s in self._live_pending(record)
+                                if s["action"] == "regenerate_plan"]
+                hint = f" [{existing[0]['id']}]" if existing else ""
+                return ("⚠️ 计划已隔离（" + fence["reason"]
+                        + "）。隔离期不生成普通调整建议；请先确认重排建议"
+                        + hint + "，新计划生效后自动恢复。")
             existing = self._live_pending(record)
             if plan.get("medical_status", "allowed") != "allowed" and not any(
                     s["source"] == "regenerate" for s in existing):
@@ -1407,8 +1431,24 @@ class CoachAgent:
                         plan, sug["action"], sug["target"], sug["reason"], last_weight=lw)
                 self._commit_plan(new_plan, record["id"])
                 if sug["action"] == "regenerate_plan" and self.profile.get("plan_fence"):
-                    # 新计划已按最新伤病生成，解除隔离
-                    self.profile.pop("plan_fence", None)
+                    # 评审二轮：重排成功 ≠ 伤病风险已处理——仅当全部伤病可映射到
+                    # 有关节压力数据的关节（新计划已按关节过滤）时才解除隔离；
+                    # 否则降级为"部分未解决"状态：计划可看，相关调整继续暂停。
+                    from .plan import _injured_joints, _joints_without_data
+                    injuries = [i for i in (self.profile.get("conditions", {})
+                                            .get("injuries") or []) if isinstance(i, str)]
+                    joints, unknown = _injured_joints(injuries)
+                    no_data = _joints_without_data(joints)
+                    if not unknown and not no_data:
+                        self.profile.pop("plan_fence", None)
+                    else:
+                        f = self.profile["plan_fence"]
+                        f["unresolved"] = sorted(unknown) + sorted(no_data)
+                        f["reason"] = ("部分伤病无法映射到可校验的关节压力数据（"
+                                       + "、".join(f["unresolved"])
+                                       + "）：计划已按已知部分重排；相关部位的训练与调整"
+                                         "暂停，请提供可执行的限制或按你的反馈逐个避开，"
+                                         "必要时先咨询医生或康复师")
                     self.db.save_profile(self.user_id, self.profile)
             except ValueError as e:
                 return str(e)
