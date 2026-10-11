@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from datetime import datetime
 
 from .medical import screening_positive
 
@@ -95,15 +96,26 @@ _ALIASES = {
 _WRITABLE = {
     "basic": {"name", "age", "gender", "height_cm", "weight_kg"},
     "experience": {"training_years", "big3", "recent_layoff_weeks"},
-    "goal": {"primary", "phase", "target"},
+    "goal": {"primary", "phase", "target", "secondary", "timeline"},
     "conditions": {"injuries", "injuries_evidence",
                    "health_screen", "health_screen_evidence"},
     "resources": {"location", "days_per_week", "session_minutes"},
     "nutrition": {"meals_per_day", "sleep_hours"},
 }
 
+# C1 收尾（26.2/26.4）：这些字段驱动处方与评价标准，已有确认值时被改写
+# 不立即生效——先暂存并向用户澄清，经 confirm_profile_change 才落库。
+HOLD_FIELDS = (
+    "goal.primary", "goal.phase",
+    "experience.training_years",
+    "resources.days_per_week", "resources.session_minutes", "resources.location",
+)
 
-def merge_patch(profile: dict, patch: dict) -> tuple[dict, dict]:
+_HOLD_EMPTY = (None, "", 0, [])
+
+
+def merge_patch(profile: dict, patch: dict,
+                hold_fields: tuple = ()) -> tuple[dict, dict]:
     """把 LLM 提交的 patch 合并进档案。
 
     防线（设计书 17.2）：
@@ -143,6 +155,20 @@ def merge_patch(profile: dict, patch: dict) -> tuple[dict, dict]:
         if kept:
             clean[section] = kept
 
+    # C1 收尾：敏感字段"已有确认值 → 不同新值"时抽出不合并，交由确认流。
+    # 旧值为空（首次采集）或值相同不算冲突，照常生效。
+    held: list[dict] = []
+    for path in hold_fields:
+        section, key = path.split(".", 1)
+        if section in clean and key in clean[section]:
+            old = (profile.get(section) or {}).get(key)
+            new = clean[section][key]
+            if old not in _HOLD_EMPTY and old != new:
+                held.append({"field": path, "old": old, "new": new})
+                del clean[section][key]
+                if not clean[section]:
+                    del clean[section]
+
     def _merge(dst: dict, src: dict) -> None:
         for k, v in src.items():
             if isinstance(v, dict) and isinstance(dst.get(k), dict):
@@ -150,12 +176,20 @@ def merge_patch(profile: dict, patch: dict) -> tuple[dict, dict]:
             else:
                 dst[k] = v
 
+    # C1 记忆契约：字段被改写时留下旧值来历，供冲突澄清与更正追溯（26.2）。
+    # 只记录"原字段存在且值变化"的情况；新字段无需历史。
+    # _history 不在 _WRITABLE 白名单内，LLM 无法伪造或清空。
     for section, value in clean.items():
-        _merge(merged.setdefault(section, {}), value)
+        dst = merged.setdefault(section, {})
+        for k, v in value.items():
+            if k in dst and dst[k] != v:
+                merged.setdefault("_history", {})[f"{section}.{k}"] = {
+                    "old": dst[k], "at": datetime.now().isoformat(timespec="seconds")}
+        _merge(dst, value)
 
     conditions = merged.setdefault("conditions", {})
     if "injuries" in clean.get("conditions", {}):
         conditions["injuries_collected"] = True
     if "health_screen" in clean.get("conditions", {}):
         conditions["health_screen_collected"] = True
-    return merged, {"dropped": dropped, "warnings": warnings}
+    return merged, {"dropped": dropped, "warnings": warnings, "held": held}

@@ -422,6 +422,19 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         schedule.append({"day": names[i], "focus": focus, "exercises": picked,
                          "estimated_minutes": estimate_minutes(picked)})
 
+    # 修复意见第 6 条后半（发起人 2026-10-11 整批授权，取决策清单建议项 B）：
+    # 无伤病时处方域不锁 approved，但选中 draft 动作须在计划里明示其结构化属性未经审核
+    draft_selected = []
+    for day in schedule:
+        for entry in day["exercises"]:
+            ex = exercise_lib.get(_id_of(entry["name"])) or {}
+            if ex.get("status") != "approved" and ex.get("name") not in draft_selected:
+                draft_selected.append(ex.get("name") or entry["name"])
+    if draft_selected:
+        notes.append(
+            "ℹ️ 以下动作的结构化属性（关节压力/替代关系）尚未经审核，"
+            "伤病筛选未依赖其数据：" + "、".join(draft_selected))
+
     # ---- 停训复训 ramp ----
     if layoff >= 2:
         notes.insert(
@@ -438,6 +451,8 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         "days_per_week": days,
         "requested_days_per_week": days,
         "time_budget_minutes": minutes,
+        # C2 目标版本绑定：计划记录它是在哪一版已确认目标下生成的（26.4 步骤⑤）
+        "goal_version": int((g.get("version") or 0)),
         "schedule": schedule,
         "notes": notes,
     }

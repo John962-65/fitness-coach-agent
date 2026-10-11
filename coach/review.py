@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from .goals import goal_label
 from .exercises import library as exercise_lib
 from .validate import _to_number, _to_reps
 
@@ -286,7 +287,20 @@ def review_context_text(db, user_id: str, plan: dict | None) -> str:
     s = build_summary(db, user_id, plan)
     if s["total_checkins"] == 0:
         return "（暂无打卡数据）"
-    lines = [
+    lines = []
+    # C2 联动：复盘按当前已确认目标的评价指标评价（26.4；旧阶段不套新标准）
+    g = (db.get_existing_profile(user_id) or {}).get("goal") or {}
+    if g.get("primary"):
+        line = f"当前目标：{goal_label(g['primary'])}"
+        if g.get("version"):
+            line += f"（目标版本 v{g['version']}，{str(g.get('confirmed_at', ''))[:10]} 确认）"
+        lines.append(line)
+        if g.get("evaluation"):
+            lines.append(f"评价指标：{g['evaluation']}——复盘按当前目标评价，不套用旧目标标准")
+        pgv = (plan or {}).get("goal_version")
+        if g.get("version") and pgv is not None and pgv != g["version"]:
+            lines.append(f"⚠️ 生效计划是目标 v{pgv} 时生成的，目标已是 v{g['version']}：建议确认重排")
+    lines += [
         f"累计打卡 {s['total_checkins']} 次，距上次 {s['days_since_last']} 天",
         f"本周执行率 {s['adherence']['trained_days']}/{s['adherence']['planned_days']}",
     ]

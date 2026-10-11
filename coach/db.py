@@ -69,17 +69,55 @@ CREATE TABLE IF NOT EXISTS coach_notes (
     note        TEXT NOT NULL,
     evidence    TEXT NOT NULL,          -- 依据（用户原话/打卡）
     status      TEXT DEFAULT 'open',    -- open / closed
-    expires_at  TEXT,                   -- 可空
+    expires_at  TEXT,                   -- 适用期限（可空）：到期不再作为当前情况注入
+    note_type   TEXT DEFAULT 'inference', -- 来源性质（C1）：fact/preference/observation/inference
+    review_at   TEXT,                   -- 复核时点（可空）：到期提醒向用户确认仍适用
+    created_at  TEXT,
+    closed_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS personal_trials (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    change_desc TEXT NOT NULL,          -- 改变了什么（单一因素）
+    reason      TEXT NOT NULL,          -- 为什么尝试
+    observe     TEXT NOT NULL,          -- 观察什么
+    stop_rule   TEXT NOT NULL,          -- 何时停止
+    review_at   TEXT,                   -- 何时复盘
+    outcome     TEXT,                   -- 结果（结束填写）：带混杂因素的个人观察
+    decision    TEXT,                   -- keep / stop / adjust
+    status      TEXT DEFAULT 'active',  -- active / ended
+    created_at  TEXT,
+    ended_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS knowledge_discussions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    source      TEXT NOT NULL,          -- 用户原话/来源描述（依据）
+    topic       TEXT NOT NULL,
+    claimed_conditions TEXT,            -- 该观点声称的适用条件
+    verdict     TEXT NOT NULL,          -- consistent/conditional_useful/diverging/insufficient_evidence/not_suitable
+    relation    TEXT,                   -- 与现有知识及个人情况的关系
+    followup    TEXT,                   -- 后续待办
+    related_card TEXT,                  -- 自动比对的已审核卡（可空；C3）
+    status      TEXT DEFAULT 'active',  -- active / closed
     created_at  TEXT,
     closed_at   TEXT
 );
 """
 
+# C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
+NOTE_TYPES = ("fact", "preference", "observation", "inference")
+
+# C3 知识讨论闭环（26.3B）：讨论结论枚举；记录讨论 ≠ 批准知识用于处方
+KD_VERDICTS = ("consistent", "conditional_useful", "diverging",
+               "insufficient_evidence", "not_suitable")
+
 DEFAULT_PROFILE = {
     "basic": {"name": "", "age": 0, "gender": "", "height_cm": 0, "weight_kg": 0},
     "experience": {"training_years": 0, "level": "beginner", "big3": {},
                   "recent_layoff_weeks": 0},
-    "goal": {"primary": "", "phase": "", "target": ""},
+    "goal": {"primary": "", "phase": "", "target": "",
+             "secondary": "", "timeline": ""},
     "conditions": {"injuries": [], "injuries_collected": False,
                    "injuries_evidence": "",
                    "health_screen": {}, "health_screen_collected": False,
@@ -102,6 +140,17 @@ class Database:
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate_note_columns()
+
+    def _migrate_note_columns(self) -> None:
+        """老库增量补列；不动既有数据。"""
+        for table, cols in (("coach_notes", ("note_type", "review_at")),
+                            ("knowledge_discussions", ("related_card",))):
+            have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for col in cols:
+                if col not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        self.conn.commit()
 
     # ---- users ----
     def get_existing_profile(self, user_id: str) -> dict:
@@ -371,15 +420,24 @@ class Database:
 
     # ---- coach_notes ----
     def add_coach_note(self, user_id: str, note: str, evidence: str,
-                       expires_days: int | None = None) -> int:
+                       expires_days: int | None = None,
+                       note_type: str = "inference",
+                       review_days: int | None = None) -> int:
+        if note_type not in NOTE_TYPES:
+            raise ValueError(f"未知笔记性质 {note_type!r}，须为 {NOTE_TYPES} 之一")
         expires = None
         if expires_days:
             expires = (datetime.now() + timedelta(days=expires_days)
                        ).isoformat(timespec="seconds")
+        review = None
+        if review_days:
+            review = (datetime.now() + timedelta(days=review_days)
+                      ).isoformat(timespec="seconds")
         cur = self.conn.execute(
             "INSERT INTO coach_notes(user_id, note, evidence, status,"
-            " expires_at, created_at) VALUES(?,?,?,'open',?,?)",
-            (user_id, note, evidence, expires, _now()))
+            " expires_at, note_type, review_at, created_at)"
+            " VALUES(?,?,?,'open',?,?,?,?)",
+            (user_id, note, evidence, expires, note_type, review, _now()))
         self.conn.commit()
         return cur.lastrowid
 
@@ -398,4 +456,93 @@ class Database:
             " AND (expires_at IS NULL OR expires_at > ?)"
             " ORDER BY id DESC LIMIT ?",
             (user_id, now, limit)).fetchall()
+        notes = [dict(r) for r in rows]
+        for n in notes:
+            n["due_review"] = bool(n.get("review_at") and n["review_at"] <= now)
+        return notes
+
+    def notes_for_reconfirm(self, user_id: str, limit: int = 3) -> list[dict]:
+        """已过适用期但仍 open 的笔记：到期后先向用户确认，不静默当永久（26.2）。"""
+        now = _now()
+        rows = self.conn.execute(
+            "SELECT * FROM coach_notes WHERE user_id=? AND status='open'"
+            " AND expires_at IS NOT NULL AND expires_at <= ?"
+            " ORDER BY id DESC LIMIT ?",
+            (user_id, now, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- knowledge_discussions（C3 知识讨论闭环，26.3B）----
+    def add_knowledge_discussion(self, user_id: str, source: str, topic: str,
+                                 claimed_conditions: str, verdict: str,
+                                 relation: str = "", followup: str = "",
+                                 related_card: str = "") -> int:
+        if verdict not in KD_VERDICTS:
+            raise ValueError(f"未知讨论结论 {verdict!r}，须为 {KD_VERDICTS} 之一")
+        cur = self.conn.execute(
+            "INSERT INTO knowledge_discussions(user_id, source, topic,"
+            " claimed_conditions, verdict, relation, followup, related_card,"
+            " status, created_at) VALUES(?,?,?,?,?,?,?,?,'active',?)",
+            (user_id, source, topic, claimed_conditions, verdict,
+             relation, followup, related_card, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def close_knowledge_discussion(self, user_id: str, item_id: int) -> bool:
+        cur = self.conn.execute(
+            "UPDATE knowledge_discussions SET status='closed', closed_at=?"
+            " WHERE user_id=? AND id=? AND status='active'",
+            (_now(), user_id, item_id))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def open_knowledge_discussions(self, user_id: str, limit: int = 5) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM knowledge_discussions WHERE user_id=? AND status='active'"
+            " ORDER BY id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- personal_trials（C4 有边界的个人尝试，26.3C）----
+    def start_personal_trial(self, user_id: str, change_desc: str, reason: str,
+                             observe: str, stop_rule: str,
+                             review_days: int | None = None) -> int:
+        row = self.conn.execute(
+            "SELECT id, change_desc FROM personal_trials WHERE user_id=? AND status='active'",
+            (user_id,)).fetchone()
+        if row:
+            raise ValueError(
+                f"已有进行中的尝试 #{row['id']}「{row['change_desc']}」——"
+                "每次只改一个因素，先结束它再开新的")
+        review = None
+        if review_days:
+            review = (datetime.now() + timedelta(days=review_days)
+                      ).isoformat(timespec="seconds")
+        cur = self.conn.execute(
+            "INSERT INTO personal_trials(user_id, change_desc, reason, observe,"
+            " stop_rule, review_at, status, created_at) VALUES(?,?,?,?,?,?,'active',?)",
+            (user_id, change_desc, reason, observe, stop_rule, review, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def end_personal_trial(self, user_id: str, trial_id: int,
+                           outcome: str, decision: str) -> bool:
+        if decision not in ("keep", "stop", "adjust"):
+            raise ValueError("decision 必须是 keep/stop/adjust 之一")
+        cur = self.conn.execute(
+            "UPDATE personal_trials SET status='ended', outcome=?, decision=?, ended_at=?"
+            " WHERE user_id=? AND id=? AND status='active'",
+            (outcome, decision, _now(), user_id, trial_id))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def personal_trials(self, user_id: str, limit: int = 4) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM personal_trials WHERE user_id=?"
+            " ORDER BY (status='active') DESC, id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        now = _now()
+        out = [dict(r) for r in rows]
+        for t in out:
+            t["due_review"] = bool(t["status"] == "active" and t.get("review_at")
+                                   and t["review_at"] <= now)
+        return out

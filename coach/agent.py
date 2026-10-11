@@ -26,7 +26,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .db import Database
+from .db import Database, KD_VERDICTS, NOTE_TYPES
+from .goals import SUPPORTED_GOALS, bump_goal_version, goal_label, goal_metrics, goal_transition_preview
 from .budget import BudgetExceeded
 from .claims import claim_store
 from .cards import card_for_exercise, card_for_topic, serve_card
@@ -37,9 +38,9 @@ from .onboarding import (ONBOARDING_PROMPT, answers_health_question,
                          answers_injury_question, can_finish, missing_fields)
 from .plan import generate_plan, plan_to_text, regenerate_plan_preserve
 from .medical import training_permission
-from .profile import ensure_flag_ids, merge_patch, open_pain_flags, profile_summary
+from .profile import HOLD_FIELDS, ensure_flag_ids, merge_patch, open_pain_flags, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
-from .review import e1rm, last_weight, review_context_text
+from .review import build_summary, e1rm, last_weight, review_context_text
 from .safety import SafetyHit, check_red_flags, soft_note
 from .validate import coerce_checkin
 
@@ -64,7 +65,15 @@ UPDATE_PROFILE_TOOL = {
     "type": "function",
     "function": {
         "name": "update_profile",
-        "description": "更新用户档案。用户提供个人信息、目标、伤病史时立即调用。",
+        "description": (
+            "更新用户档案。用户提供个人信息、目标、伤病史时立即调用。"
+            "注意：改写已确认的目标/训练频率/单次时长/场地/训练年限时，"
+            "系统不会立即生效，而是暂存为待确认变更——先向用户澄清"
+            "（是更正还是情况变化），确认后用 confirm_profile_change 落库。"
+            "目标仅支持：减脂/增肌/力量/健康/塑形；用户只是了解其他目标的可能性时"
+            "先讨论、不要提交 goal patch，明确决定变更时才提交"
+            "（系统会给出取舍与过渡预览并要求确认）。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -74,6 +83,28 @@ UPDATE_PROFILE_TOOL = {
                 }
             },
             "required": ["patch"],
+        },
+    },
+}
+
+CONFIRM_PROFILE_CHANGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "confirm_profile_change",
+        "description": (
+            "用户对暂存的档案变更做出答复后调用（change_id 见 update_profile "
+            "返回的【需确认】提示）。accept=true：用户确认改为新值，落库并留档"
+            "原值；accept=false：用户否认，保留原值。目标（goal）变更会同时"
+            "作废旧目标下的待执行调整建议。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "change_id": {"type": "string"},
+                "accept": {"type": "boolean",
+                           "description": "true=用户确认改新值；false=用户否认，保留原值"},
+            },
+            "required": ["change_id", "accept"],
         },
     },
 }
@@ -262,7 +293,10 @@ ADD_COACH_NOTE_TOOL = {
         "name": "add_coach_note",
         "description": (
             "记录值得记住的定性观察（教练笔记），如'周三常加班''硬拉时下背先酸'。"
-            "必须附依据（用户原话或打卡内容）。可设过期天数。"
+            "必须附依据（用户原话或打卡内容），并标注来源性质 note_type："
+            "fact=用户明确说过的自身情况；preference=用户表达的喜好或讨厌；"
+            "observation=你从打卡数据里看出的规律；inference=你的推断。拿不准就选 inference。"
+            "临时情况设 expires_days（到期不再当作当前情况）；长期情况可设 review_days（到期提醒复核）。"
         ),
         "parameters": {
             "type": "object",
@@ -270,8 +304,13 @@ ADD_COACH_NOTE_TOOL = {
                 "note": {"type": "string"},
                 "evidence": {"type": "string",
                              "description": "依据：用户原话或打卡内容（必填）"},
+                "note_type": {"type": "string",
+                              "enum": ["fact", "preference", "observation", "inference"],
+                              "description": "来源性质，拿不准选 inference"},
                 "expires_days": {"type": "integer",
-                                 "description": "可选，过期天数，不设则长期"},
+                                 "description": "可选，适用期限天数，不设则长期"},
+                "review_days": {"type": "integer",
+                                "description": "可选，复核时点天数：到期后先向用户确认仍适用"},
             },
             "required": ["note", "evidence"],
         },
@@ -319,6 +358,111 @@ GET_COACHING_CARD_TOOL = {
     },
 }
 
+RECORD_KNOWLEDGE_DISCUSSION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "record_knowledge_discussion",
+        "description": (
+            "用户分享健身观点/文章/视频结论并讨论后调用：把这次讨论存为私人记录，"
+            "日后可回顾与复盘。必须附用户原话或对来源的描述。"
+            "verdict 为讨论结论：consistent=与现有知识一致；conditional_useful=特定条件下有用；"
+            "diverging=与现有知识有分歧；insufficient_evidence=证据不足待核；not_suitable=不适合此人。"
+            "记录讨论不等于批准该知识用于处方；要据此调整计划须走常规建议-确认流程。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string",
+                           "description": "用户原话或对来源的描述（必填）"},
+                "topic": {"type": "string", "description": "讨论主题（必填）"},
+                "verdict": {"type": "string",
+                            "enum": ["consistent", "conditional_useful", "diverging",
+                                     "insufficient_evidence", "not_suitable"]},
+                "claimed_conditions": {"type": "string",
+                                       "description": "该观点声称的适用条件"},
+                "relation": {"type": "string",
+                             "description": "与现有知识及个人情况的关系"},
+                "followup": {"type": "string", "description": "后续待办"},
+            },
+            "required": ["source", "topic", "verdict"],
+        },
+    },
+}
+
+CLOSE_KNOWLEDGE_DISCUSSION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "close_knowledge_discussion",
+        "description": "某条讨论记录不再需要回顾时关闭（如用户已放弃该想法）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "integer"},
+            },
+            "required": ["item_id"],
+        },
+    },
+}
+
+GET_PRE_TRAINING_BRIEF_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_pre_training_brief",
+        "description": (
+            "训练开始前调用（26.5）：汇总已知约束（安全记录、过期待确认的笔记、"
+            "进行中的尝试、疲劳信号）、本周计划与时间预算，决定照常、临时调整或暂停。"
+            "只问当天必需的问题（当天状态/可用时间/部位感受），不重问建档已确认的信息。"
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+START_PERSONAL_TRIAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "start_personal_trial",
+        "description": (
+            "与用户约定一次小幅、可回退的个人尝试（26.3C）时调用。五要素缺一不可："
+            "改变了什么（单一因素）、为什么尝试、观察什么、何时复盘、何时停止。"
+            "涉及药物/极端手段/疼痛下硬练的内容不属于可自主尝试范围。"
+            "同一时间只允许一个进行中的尝试；结果只作为带混杂因素的个人观察，仅适用于本人。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "change_desc": {"type": "string", "description": "改变了什么（单一因素）"},
+                "reason": {"type": "string", "description": "为什么尝试（附依据）"},
+                "observe": {"type": "string", "description": "观察什么（感受/执行/恢复/进展）"},
+                "review_days": {"type": "integer", "description": "复盘时点（天数）"},
+                "stop_rule": {"type": "string", "description": "何时停止（必填）"},
+            },
+            "required": ["change_desc", "reason", "observe", "stop_rule"],
+        },
+    },
+}
+
+END_PERSONAL_TRIAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "end_personal_trial",
+        "description": (
+            "尝试到复盘时点或提前停止时调用：记录观察结果与决定（keep 保持/stop 停止/"
+            "adjust 调整后继续）。结果为带混杂因素的个人观察，仅适用于本人。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "trial_id": {"type": "integer"},
+                "outcome": {"type": "string", "description": "观察结果（必填）"},
+                "decision": {"type": "string",
+                             "enum": ["keep", "stop", "adjust"],
+                             "description": "保持/停止/调整后继续"},
+            },
+            "required": ["trial_id", "outcome", "decision"],
+        },
+    },
+}
+
 CLOSE_COACH_NOTE_TOOL = {
     "type": "function",
     "function": {
@@ -354,6 +498,9 @@ RESOLVE_PAIN_FLAG_TOOL = {
     },
 }
 
+# C3 知识讨论：记录 ≠ 批准；C4 个人尝试：药物/极端手段不作为自主试验
+_TRIAL_FORBIDDEN = re.compile(r"类固醇|禁药|药物辅助|激素替代|脱水剂|断食")
+
 SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属于每个用户的教练"。
 
 # 教练人格
@@ -369,6 +516,12 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 
 # 教练笔记（你的定性观察，相关时自然使用）
 {coach_notes}
+
+# 用户分享过的观点与讨论结论（私人讨论记录，不是已审核知识；引用时说明性质，不得据此直接改处方）
+{knowledge_discussions}
+
+# 有边界的个人尝试（结果为带混杂因素的个人观察，仅适用于本人，不是公共结论）
+{personal_trials}
 
 # 用户当前计划
 {plan}
@@ -406,7 +559,9 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 9. 用户反馈动作感受（发力感/偏好/不适/想避开）时调用 record_exercise_feedback，
    必须附用户原话
 10. 值得记住的定性观察（如"周三常加班""硬拉时下背先酸"）用 add_coach_note 记录，
-    必须附依据；观察失效时用 close_coach_note 关闭
+    必须附依据并标注来源性质（用户明说=fact、喜好=preference、数据看出=observation、
+    你的推断=inference，拿不准选 inference）；临时情况设 expires_days，长期情况可设
+    review_days 到期复核；观察失效或被用户更正时用 close_coach_note 关闭
 11. 用户问某个动作怎么练、找不到发力感或要做动作技术纠错时，先调用 get_exercise_coaching
     获取该动作的教学要点（返回若含【已审核教练卡】段落，以该段落为该动作的准绳表达，
     可照引并说明出处）；用户问蛋白质、热量减脂、睡眠恢复、进阶加重、计划安排等
@@ -468,6 +623,8 @@ class CoachAgent:
             profile=profile_summary(self.profile),
             exercise_feedback=self._exercise_feedback_text(),
             coach_notes=self._coach_notes_text(),
+            knowledge_discussions=self._knowledge_discussions_text(),
+            personal_trials=self._personal_trials_text(),
             plan=plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）",
             dynamic=dynamic,
             principles=self.kb.l1_principles,
@@ -497,14 +654,59 @@ class CoachAgent:
             lines.append(f"- {name}：{'，'.join(parts)}"[:120])
         return "\n".join(lines)
 
+    _NOTE_TYPE_LABEL = {"fact": "用户明说", "preference": "用户偏好",
+                        "observation": "数据观察", "inference": "教练推测"}
+
     def _coach_notes_text(self) -> str:
         notes = self.db.open_coach_notes(self.user_id)
-        if not notes:
+        lines = []
+        for n in notes:
+            tag = self._NOTE_TYPE_LABEL.get(n.get("note_type") or "inference", "教练推测")
+            due = "；⚠️ 已到复核时点，先向用户确认仍然适用" if n.get("due_review") else ""
+            lines.append(f"- [{n['id']}|{tag}] {n['note']}"
+                         f"（依据：{str(n['evidence'])[:40]}{due}）")
+        stale = self.db.notes_for_reconfirm(self.user_id)
+        if stale:
+            lines.append("以下笔记已过适用期，不要当作当前情况使用；向用户确认后："
+                         "仍适用就重新记录，不适用就 close_coach_note：")
+            lines += [f"- [{n['id']}] {n['note']}（依据：{str(n['evidence'])[:40]}）"
+                      for n in stale]
+        return "\n".join(lines) if lines else "（暂无）"
+
+    def _knowledge_discussions_text(self) -> str:
+        rows = self.db.open_knowledge_discussions(self.user_id)
+        if not rows:
             return "（暂无）"
-        return "\n".join(
-            f"- [{n['id']}] {n['note']}（依据：{str(n['evidence'])[:40]}）"
-            for n in notes
-        )
+        lines = ["以下为私人讨论记录，不是已审核知识；引用时说明性质，"
+                 "要据此调整计划必须走常规建议-确认流程："]
+        for r in rows:
+            v = {"consistent": "与现有知识一致", "conditional_useful": "特定条件下有用",
+                 "diverging": "与现有知识有分歧", "insufficient_evidence": "证据不足待核",
+                 "not_suitable": "不适合此人"}.get(r["verdict"], r["verdict"])
+            lines.append(f"- [{r['id']}|{v}] {r['topic']}：{str(r['source'])[:60]}"
+                         + (f"（声称条件：{str(r['claimed_conditions'])[:40]}）"
+                            if r.get("claimed_conditions") else "")
+                         + (f"（待办：{r['followup']}）" if r.get("followup") else "")
+                         + (f"（关联已审核卡：{r['related_card']}）"
+                            if r.get("related_card") else ""))
+        return "\n".join(lines)
+
+    def _personal_trials_text(self) -> str:
+        trials = self.db.personal_trials(self.user_id)
+        if not trials:
+            return "（暂无）"
+        lines = ["以下为有边界的个人尝试记录（26.3C）：结果为带混杂因素的个人观察，"
+                 "仅适用于本人，不是公共结论："]
+        for t in trials:
+            if t["status"] == "active":
+                due = ("；⚠️ 复盘时点已到：与用户回顾并决定保持/调整/停止"
+                       if t.get("due_review") else "")
+                lines.append(f"- [尝试#{t['id']}|进行中] {t['change_desc']}"
+                             f"（观察：{t['observe']}；停止条件：{t['stop_rule']}{due}）")
+            else:
+                lines.append(f"- [尝试#{t['id']}|已结束] {t['change_desc']} → {t['outcome']}"
+                             f"（决定：{t['decision']}）")
+        return "\n".join(lines)
 
     def _refresh_system_prompt(self) -> None:
         self.messages[0] = {"role": "system", "content": self._build_system_prompt()}
@@ -651,6 +853,20 @@ class CoachAgent:
         return [s for s in self.profile.get("pending_adjustments", [])
                 if isinstance(s, dict) and not self._pending_error(s, record)]
 
+    def _void_suggestions_citing(self, note_text: str) -> list[dict]:
+        """失效传播（C1）：笔记关闭后，理由里引用该笔记的待确认建议一并作废。"""
+        if not note_text:
+            return []
+        pending = self.profile.get("pending_adjustments") or []
+        key = note_text[:12]
+        kept, dropped = [], []
+        for s in pending:
+            (dropped if key in str(s.get("reason", "")) else kept).append(s)
+        if dropped:
+            self.profile["pending_adjustments"] = kept
+            self.db.save_profile(self.user_id, self.profile)
+        return dropped
+
     def _offer_regenerate(self, reason: str) -> str:
         """重排与规则建议共享身份/版本机制，但刷新规则不能覆盖重排。"""
         if not self.profile.get("onboarding_done"):
@@ -715,7 +931,8 @@ class CoachAgent:
             self.db.save_profile(self.user_id, self.profile)
         if mode == "onboarding":
             # 安全跟进不分模式：建档中被拦截的用户带回医生结论时也要能关闭
-            tools = [UPDATE_PROFILE_TOOL, FINISH_ONBOARDING_TOOL,
+            tools = [UPDATE_PROFILE_TOOL, CONFIRM_PROFILE_CHANGE_TOOL,
+                     FINISH_ONBOARDING_TOOL,
                      RESOLVE_PAIN_FLAG_TOOL]
             prompt = ONBOARDING_PROMPT.format(
                 missing="、".join(missing_fields(self.profile)) or "（已齐）"
@@ -739,6 +956,7 @@ class CoachAgent:
                 GET_CHECKINS_TOOL,
                 CORRECT_CHECKIN_TOOL,
                 UPDATE_PROFILE_TOOL,
+                CONFIRM_PROFILE_CHANGE_TOOL,
                 GET_PLAN_TOOL,
                 GET_REVIEW_TOOL,
                 GET_ADJUSTMENTS_TOOL,
@@ -749,6 +967,11 @@ class CoachAgent:
                 CLOSE_COACH_NOTE_TOOL,
                 GET_EXERCISE_COACHING_TOOL,
                 GET_COACHING_CARD_TOOL,
+                RECORD_KNOWLEDGE_DISCUSSION_TOOL,
+                CLOSE_KNOWLEDGE_DISCUSSION_TOOL,
+                GET_PRE_TRAINING_BRIEF_TOOL,
+                START_PERSONAL_TRIAL_TOOL,
+                END_PERSONAL_TRIAL_TOOL,
             ]
             self._refresh_system_prompt()
 
@@ -854,7 +1077,16 @@ class CoachAgent:
                         cond_patch.pop("health_screen", None)
                         cond_patch.pop("health_screen_evidence", None)
                         rejected.append("健康筛查")
-            self.profile, report = merge_patch(self.profile, patch)
+            # C2（26.4）：不支持的目标不接收——不把力量模板换个名字冒充专项计划
+            gpatch = patch.get("goal") if isinstance(patch, dict) else None
+            if isinstance(gpatch, dict) and gpatch.get("primary") not in (None, "") \
+                    and gpatch["primary"] not in SUPPORTED_GOALS:
+                rejected.append(
+                    f"目标「{gpatch['primary']}」暂不在支持范围（减脂/增肌/力量/健康/塑形）——"
+                    "如实告知用户当前能力边界，不要换个名字冒充专项计划")
+                gpatch.pop("primary", None)
+            self.profile, report = merge_patch(self.profile, patch,
+                                               hold_fields=HOLD_FIELDS)
             self.db.save_profile(self.user_id, self.profile)
             notes = []
             if rejected:
@@ -867,6 +1099,29 @@ class CoachAgent:
                 notes.append("已拒绝字段（系统字段或不在档案 Schema）："
                              + "、".join(report["dropped"]))
             notes += report["warnings"]
+            if report.get("held"):
+                # C1 收尾（26.2/26.4）：已确认信息被改写 → 暂存待确认，不静默生效
+                entry = {
+                    "id": "prf-" + uuid.uuid4().hex,
+                    "changes": report["held"],
+                    "created_message_id": self.db.latest_user_message_id(self.user_id),
+                    "expires_at": (datetime.now(timezone.utc)
+                                   + timedelta(days=PENDING_EXPIRE_DAYS)).isoformat(),
+                }
+                self.profile.setdefault("pending_profile_changes", []).append(entry)
+                self.db.save_profile(self.user_id, self.profile)
+                desc = "；".join(f"{h['field']}：{h['old']} → {h['new']}"
+                                 for h in report["held"])
+                notes.append(
+                    f"【需确认，尚未生效】检测到已确认信息被改写：{desc}。"
+                    "先向用户澄清这是更正还是情况变化；用户确认后调用 "
+                    f"confirm_profile_change(change_id=\"{entry['id']}\", accept=true) "
+                    "落库（原值自动留档），用户否认则 accept=false 保留原值。")
+                gp = next((h for h in report["held"] if h["field"] == "goal.primary"), None)
+                if gp:
+                    preview = goal_transition_preview(gp["old"], gp["new"])
+                    if preview:
+                        notes.append(preview + "\n（把以上取舍与过渡预览转述给用户，再请其确认）")
             suffix = ("；" + "；".join(notes)) if notes else ""
             if mode == "onboarding":
                 still = missing_fields(self.profile)
@@ -904,6 +1159,72 @@ class CoachAgent:
                 if extra:
                     result += "\n" + extra
             return result
+
+        if name == "confirm_profile_change":
+            cid = args.get("change_id", "")
+            pending = self.profile.get("pending_profile_changes") or []
+            entry = next((e for e in pending if isinstance(e, dict) and e.get("id") == cid), None)
+            if not entry:
+                return f"没有待确认的档案变更「{cid}」。"
+            try:
+                expired = datetime.fromisoformat(entry["expires_at"]) <= datetime.now(timezone.utc)
+            except (KeyError, TypeError, ValueError):
+                expired = True
+            pending.remove(entry)
+            self.profile["pending_profile_changes"] = pending
+            if expired:
+                self.db.save_profile(self.user_id, self.profile)
+                return "该档案变更已过期，未生效；请与用户重新确认后再次提交。"
+            desc = "；".join(f"{h['field']}：{h['old']} → {h['new']}" for h in entry["changes"])
+            if not args.get("accept"):
+                self.db.save_profile(self.user_id, self.profile)
+                return f"已保留原值（{desc.replace(' → ', ' 维持 ')}）。"
+            patch: dict = {}
+            goal_changed = False
+            plan_affecting = []
+            for h in entry["changes"]:
+                section, key = h["field"].split(".", 1)
+                patch.setdefault(section, {})[key] = h["new"]
+                if section == "goal":
+                    goal_changed = True
+                    plan_affecting.append("目标已变更")
+                elif section == "resources":
+                    plan_affecting.append({"location": "训练场地变了",
+                                           "days_per_week": "每周训练天数变了",
+                                           "session_minutes": "单次训练时间变了"}.get(key, key + "已变更"))
+                elif h["field"] == "experience.training_years":
+                    plan_affecting.append("训练年限已更新")
+            self.profile, _ = merge_patch(self.profile, patch)  # _history 记录旧值
+            ver = None
+            np = next((h["new"] for h in entry["changes"] if h["field"] == "goal.primary"), None)
+            if goal_changed:
+                # 26.4：目标变更后旧目标下的待执行建议失效，计划按新目标重新协商
+                self.profile["pending_adjustments"] = []
+                # C2：目标版本绑定 + 评价指标一致切换
+                ver = bump_goal_version(self.profile)
+                if np:
+                    self.profile.setdefault("goal", {})["evaluation"] = goal_metrics(np)
+                    self.profile["goal"]["confirmed_at"] = datetime.now().isoformat(
+                        timespec="seconds")
+            self.db.save_profile(self.user_id, self.profile)
+            self._refresh_system_prompt()
+            msg = f"档案已更新并留档原值：{desc}。"
+            if goal_changed:
+                msg += (f"目标版本已升级为 v{ver}"
+                        + (f"，评价指标同步切换为「{self.profile['goal'].get('evaluation', '')}」"
+                           if self.profile["goal"].get("evaluation") else "")
+                        + "；旧目标下的待执行调整建议已作废；")
+            if plan_affecting and self.profile.get("onboarding_done"):
+                if ver and np:
+                    extra = self._offer_regenerate(
+                        f"目标已切换为{goal_label(np)}（目标版本 v{ver}），"
+                        "按新目标与评价指标重排计划")
+                else:
+                    extra = self._offer_regenerate(
+                        "、".join(plan_affecting) + "，建议按最新情况重排计划")
+                if extra:
+                    msg += extra
+            return msg
 
         if name == "finish_onboarding":
             ok, why = can_finish(self.profile)
@@ -1096,19 +1417,149 @@ class CoachAgent:
         if name == "add_coach_note":
             note = (args.get("note") or "").strip()
             evidence = (args.get("evidence") or "").strip()
+            note_type = (args.get("note_type") or "inference").strip()
+            if note_type not in NOTE_TYPES:
+                return ("note_type 必须是 fact/preference/observation/inference 之一"
+                        "（用户明说=fact、喜好=preference、数据看出=observation、"
+                        "你的推断=inference），未保存。")
             if not note or not evidence:
                 return "教练笔记必须同时给 note 和 evidence（依据），未保存。"
             note_id = self.db.add_coach_note(
-                self.user_id, note, evidence, args.get("expires_days"))
+                self.user_id, note, evidence, args.get("expires_days"),
+                note_type=note_type, review_days=args.get("review_days"))
             self._refresh_system_prompt()
-            return f"教练笔记已记录（#{note_id}）。"
+            return f"教练笔记已记录（#{note_id}，{note_type}）。"
 
         if name == "close_coach_note":
             note_id = args.get("note_id")
+            target = next((n for n in self.db.open_coach_notes(self.user_id)
+                           if n["id"] == note_id), None)
             if self.db.close_coach_note(self.user_id, note_id):
+                dropped = self._void_suggestions_citing((target or {}).get("note", ""))
                 self._refresh_system_prompt()
-                return f"教练笔记 #{note_id} 已关闭。"
+                msg = f"教练笔记 #{note_id} 已关闭。"
+                if dropped:
+                    msg += ("\n（依赖该笔记依据的待确认建议已一并作废："
+                            + "、".join(s["id"] for s in dropped)
+                            + "；如仍需调整请基于最新情况重新获取建议。）")
+                return msg
             return f"没有找到 open 状态的教练笔记 #{note_id}。"
+
+        if name == "record_knowledge_discussion":
+            source = (args.get("source") or "").strip()
+            topic = (args.get("topic") or "").strip()
+            verdict = (args.get("verdict") or "").strip()
+            if not source or not topic:
+                return "必须附用户原话或来源描述（source）与讨论主题（topic），未保存。"
+            if verdict not in KD_VERDICTS:
+                return ("verdict 必须是 consistent/conditional_useful/diverging/"
+                        "insufficient_evidence/not_suitable 之一，未保存。")
+            # C3 收尾：自动比对已审核卡——只提示身份，不因讨论修改卡片
+            related = card_for_topic(topic)
+            related_card = related["card_id"] if related else ""
+            item_id = self.db.add_knowledge_discussion(
+                self.user_id, source, topic,
+                (args.get("claimed_conditions") or "").strip(), verdict,
+                (args.get("relation") or "").strip(),
+                (args.get("followup") or "").strip(), related_card=related_card)
+            self._refresh_system_prompt()
+            msg = (f"讨论已记录（#{item_id}）。这是私人讨论记录，不代表知识被批准；"
+                   "如用户想据此调整计划，走常规建议-确认流程。")
+            if related:
+                msg += (f"\n（系统比对：该主题与已审核教练卡「{related['card_id']}」相关，"
+                        "卡正文用 get_coaching_card 查询；讨论结论与卡一致与否都如实保留，"
+                        "卡片不因讨论修改。）")
+            return msg
+
+        if name == "close_knowledge_discussion":
+            item_id = args.get("item_id")
+            if self.db.close_knowledge_discussion(self.user_id, item_id):
+                self._refresh_system_prompt()
+                return f"讨论记录 #{item_id} 已关闭。"
+            return f"没有找到 active 状态的讨论记录 #{item_id}。"
+
+        if name == "get_pre_training_brief":
+            plan = self._enforce_medical_permission()
+            permission = training_permission(self.profile)
+            if not permission.allows_prescription:
+                return ("【训练前简报】当前医疗状态：训练处方已暂停（" + permission.reason
+                        + "）。训练前先与用户确认医疗状态；拿到明确许可前不安排训练，"
+                          "恢复训练需走确认流程。")
+            lines = ["【训练前简报】以下为已知约束，不要重问建档已确认的信息："]
+            flags = open_pain_flags(self.profile)
+            if flags:
+                listing = "；".join(f"[{f.get('flag_id', '?')}] {f.get('kw', '?')}"
+                                    for f in flags)
+                lines.append(f"⚠️ 待跟进安全记录：{listing}——训练前先确认这些部位现状；"
+                             "未缓解则避开相关动作或建议暂停")
+            stale = self.db.notes_for_reconfirm(self.user_id)
+            if stale:
+                lines.append("已过适用期的笔记（先向用户确认是否仍适用）："
+                             + "；".join(f"#{n['id']} {n['note']}" for n in stale))
+            for t in self.db.personal_trials(self.user_id):
+                if t["status"] == "active":
+                    due = ("复盘时点已到，训练后与用户回顾"
+                           if t.get("due_review") else "训练中留意")
+                    lines.append(f"进行中的尝试 #{t['id']}：{t['change_desc']}"
+                                 f"（观察：{t['observe']}）——{due}")
+            s = build_summary(self.db, self.user_id, plan)
+            if s["total_checkins"]:
+                if s.get("days_since_last") is not None and s["days_since_last"] >= 7:
+                    lines.append(f"距上次训练已 {s['days_since_last']} 天："
+                                 "按复训处理，第一组次减量")
+                rising = [n for n, d in s.get("rpe_drifts", {}).items() if d == "rising"]
+                if rising:
+                    lines.append(f"⚠️ RPE 漂移上升：{'、'.join(rising)}——"
+                                 "今天不加重，优先动作质量")
+            schedule = (plan or {}).get("schedule") or []
+            if schedule:
+                lines.append("本周计划：" + "；".join(
+                    f"{d.get('day', '?')} {d.get('focus', '')}".strip()
+                    for d in schedule) + "——问用户今天练哪次/什么时间可用")
+            minutes = (self.profile.get("resources") or {}).get("session_minutes")
+            if minutes:
+                lines.append(f"已知时间预算：每次约 {minutes} 分钟；时间不足时按预算给取舍"
+                             "（照常/减组/换重点），不擅自砍掉整个训练")
+            lines.append("只问当天必需的问题（当天状态/可用时间/目标部位感受）；"
+                         "疼痛或红旗按安全流程处理")
+            return "\n".join(lines)
+
+        if name == "start_personal_trial":
+            change = (args.get("change_desc") or "").strip()
+            reason = (args.get("reason") or "").strip()
+            observe = (args.get("observe") or "").strip()
+            stop_rule = (args.get("stop_rule") or "").strip()
+            if not (change and reason and observe and stop_rule):
+                return ("开始尝试必须同时说明：改变了什么、为什么尝试、观察什么、何时停止"
+                        "（26.3C 缺一不可），未保存。")
+            if _TRIAL_FORBIDDEN.search(change + "；" + reason):
+                return ("这不属于可自主尝试的范围（26.3C）：涉及药物或极端手段的内容不做试验，"
+                        "疼痛下也不硬练；如涉及健康问题请建议咨询专业人员。")
+            try:
+                trial_id = self.db.start_personal_trial(
+                    self.user_id, change, reason, observe, stop_rule,
+                    args.get("review_days"))
+            except ValueError as e:
+                return str(e)
+            self._refresh_system_prompt()
+            return (f"尝试已登记（#{trial_id}）：{change}。到复盘时点与用户回顾「{observe}」；"
+                    "结果只作为带混杂因素的个人观察，仅适用于本人，不推广为公共结论。")
+
+        if name == "end_personal_trial":
+            trial_id = args.get("trial_id")
+            outcome = (args.get("outcome") or "").strip()
+            decision = (args.get("decision") or "adjust").strip()
+            if not outcome:
+                return "结束尝试必须记录观察结果（outcome）。"
+            try:
+                ok = self.db.end_personal_trial(self.user_id, trial_id, outcome, decision)
+            except ValueError as e:
+                return str(e)
+            if not ok:
+                return f"没有找到 active 状态的尝试 #{trial_id}。"
+            self._refresh_system_prompt()
+            return (f"尝试 #{trial_id} 已结束：{outcome}（决定：{decision}）。"
+                    "这是带混杂因素的个人观察，仅适用于本人。")
 
         if name == "resolve_pain_flag":
             if ensure_flag_ids(self.profile):
