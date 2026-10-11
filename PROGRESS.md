@@ -1103,3 +1103,12 @@ P1（槽位模板默认动作）共 17 个动作，其中 12 个已有批准卡�
 - 全量回归 **342 passed**（341＋draft 披露测试）。
 
 - **真实 LLM 验收预检（同日补记）**：`eval/runner.py --set pilot --fake --tag preflight` 零成本跑通——重建的 4 轮场景被完整解析，断言键（tools/no_tools/db 含 `confirm_profile_change`）全部生效，失败均为 FAKE 未调工具的预期项；报告绑定 83be0aa（dirty: false）。额度到位即跑：`python3 eval/runner.py --set pilot --tag c1c4_real --budget-ledger eval/runs/pilot_c1c4_budget.json --max-calls <N>`（N 由发起人授予时定）。
+
+## 三十一、真实 LLM 多轮验收 3/3 通过（2026-10-11，额度 25 次授权）
+
+- **授权**：发起人「授权25次」。运行：`eval/runner.py --set pilot --tag c1c4_real --budget-ledger eval/runs/pilot_c1c4_budget.json --max-calls 25`。
+- **结果：3/3 PASS**（`eval/runs/20261011_135752_416747_c1c4_real/report.json`，版本锚定 **293294c、dirty: False**；账本 22/25，失败请求 1 已计数，226,869 tokens，剩余 3 次按 §5 不挪用）。
+- **pilot_time_preference（重建的 C1 确认流场景，4 轮）真实通过**：时长改写被暂存未静默生效（第 2 轮无 apply/confirm 违规）→ 真实模型调用 confirm_profile_change 落库 → 重排执行，最终计划 time_budget=30 且不含被讨厌的杠铃平板卧推。**C1 冲突确认流在真实模型行为下成立**——此前仅离线脚本验证的部分补上了真实行为证据。
+- pilot_correction（纠错留痕＋派生重算）、pilot_coaching_boundary（已审核卡出处＋当前红旗"现在胸闷"正确走安全路径）同轮通过。
+- **验收边界不变**：pilot 集是开发验收集，通过≠冻结 holdout 结论、≠临床有效性；2–4 周受控试用仍需发起人实际执行（TRIAL.md 工具链就绪）。
+- 项目当前状态：C0–C5 全部要件中，**唯一剩余 = 2–4 周受控试用（发起人执行）＋两项事实判断（组7/阿亮，维持待定）**。
