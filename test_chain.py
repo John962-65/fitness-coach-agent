@@ -73,8 +73,9 @@ def test_agent_resolve_pain_flag():
     agent = _agent()
     agent.profile["onboarding_done"] = True
     agent.chat("我训练时胸闷心慌")
+    agent.db.add_message(agent.user_id, "user", "胸闷心慌的症状已经消失")
     result = agent._handle_tool(
-        {"name": "resolve_pain_flag", "arguments": '{"note": "去医院检查了没事"}'},
+        {"name": "resolve_pain_flag", "arguments": '{"note": "胸闷心慌的症状已经消失"}'},
         "normal")
     assert "已关闭" in result
     flags = agent.profile["conditions"]["pain_flags"]

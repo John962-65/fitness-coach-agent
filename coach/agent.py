@@ -764,9 +764,9 @@ class CoachAgent:
         # ① 安全前置（确定性规则，先于一切）
         hit = check_red_flags(user_input)
         if hit is not None and hit.mode == "block":
+            self.db.add_message(self.user_id, "user", user_input)
             self._record_pain_flag(user_input, hit)
             reply = hit.response
-            self.db.add_message(self.user_id, "user", user_input)
             self.db.add_message(self.user_id, "assistant", reply)
             self.messages.append({"role": "user", "content": user_input})
             self.messages.append({"role": "assistant", "content": reply})
@@ -807,6 +807,7 @@ class CoachAgent:
         flags.append({
             "flag_id": "flag-" + uuid.uuid4().hex,
             "at": datetime.now().isoformat(timespec="seconds"),
+            "created_message_id": self.db.latest_user_message_id(self.user_id),
             "text": text[:50],
             "kw": hit.keyword,
             "tier": hit.tier,
@@ -1690,6 +1691,22 @@ class CoachAgent:
 
         if name == "get_pre_training_brief":
             plan = self._enforce_medical_permission()
+            fence = self.profile.get("plan_fence")
+            open_flags = open_pain_flags(self.profile)
+            if fence or open_flags:
+                if open_flags:
+                    listing = "；".join(
+                        (f"[{f.get('flag_id', '?')}] {f.get('kw', '?')}"
+                         if isinstance(f, dict) else str(f)[:30])
+                        for f in open_flags)
+                    next_step = "先确认对应安全事件近况；确认处理前不提供训练安排。"
+                    prefix = "当前计划已隔离；" if fence else ""
+                    details = f"{prefix}待跟进：{listing}"
+                else:
+                    next_step = "需按隔离原因重新评估并确认重排；旧计划安排暂不提供。"
+                    details = "当前计划已隔离"
+                reason = (fence or {}).get("reason") or "存在尚未处理的安全记录"
+                return (f"【训练前简报】{details}：{reason}。" + next_step)
             permission = training_permission(self.profile)
             if not permission.allows_prescription:
                 return ("【训练前简报】当前医疗状态：训练处方已暂停（" + permission.reason
@@ -1796,18 +1813,26 @@ class CoachAgent:
             if target is None:
                 return "指定的 ID/序号不是待跟进的安全记录，未做任何修改。"
             fence = self.profile.get("plan_fence") or {}
-            if target.get("flag_id") in set(fence.get("safety_flag_ids") or []):
-                latest_user = next(
-                    (m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
-                     if m["role"] == "user"), "")
-                if classify_safety_resolution(latest_user) != "accept":
-                    return ("本轮用户发言未明确表示症状/安全事件已处理，记录仍保持待跟进，"
-                            "计划继续隔离。")
+            latest_user = next(
+                (m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
+                 if m["role"] == "user"), "")
+            event_message_id = target.get("created_message_id")
+            same_turn = (isinstance(event_message_id, int)
+                         and self.db.user_messages_after(self.user_id, event_message_id) == 0)
+            if event_message_id is None:
+                source_text = str(target.get("text") or "")
+                same_turn = not source_text or latest_user.startswith(source_text)
+            if same_turn:
+                return ("安全事件记录后尚无用户的后续答复；记录仍保持待跟进，"
+                        "请先在下一轮确认具体近况。")
+            if classify_safety_resolution(latest_user, target, open_list) != "accept":
+                suffix = "计划继续隔离。" if target.get("flag_id") in set(
+                    fence.get("safety_flag_ids") or []) else ""
+                return ("本轮发言未明确确认该安全事件已处理，或未能对应到这条记录；"
+                        "记录仍保持待跟进。" + suffix)
             target["status"] = "resolved"
             target["resolved_at"] = datetime.now().isoformat(timespec="seconds")
-            target["note"] = (latest_user[:200] if target.get("flag_id")
-                              in set(fence.get("safety_flag_ids") or [])
-                              else args.get("note", ""))
+            target["note"] = latest_user[:200]
             self.db.save_profile(self.user_id, self.profile)
             self._refresh_system_prompt()
             return f"已关闭 1 条安全跟进记录（{target.get('kw', '?')}）。"

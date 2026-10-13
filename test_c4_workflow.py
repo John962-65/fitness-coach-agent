@@ -17,7 +17,7 @@ def _plan(a):
                                  "notes": []})
 
 
-def test_pre_training_brief_lists_constraints_and_avoids_reasking():
+def test_pre_training_brief_blocks_open_safety_flags():
     ag = _agent()
     ag.profile["conditions"]["pain_flags"] = [
         {"flag_id": "flag-x", "kw": "肩膀疼", "status": "open", "at": "2026-10-10"}]
@@ -25,9 +25,9 @@ def test_pre_training_brief_lists_constraints_and_avoids_reasking():
     _plan(ag)
     out = ag._handle_tool({"name": "get_pre_training_brief", "arguments": "{}"}, "auto")
     assert "训练前简报" in out
-    assert "flag-x" in out and "肩膀疼" in out and "先确认" in out
-    assert "周一 推" in out and "今天练哪次" in out
-    assert "不要重问建档已确认的信息" in out
+    assert "flag-x" in out and "肩膀疼" in out and "先确认对应安全事件近况" in out
+    assert "训练安排" in out
+    assert "本周计划" not in out and "周一 推" not in out
 
 
 def test_pre_training_brief_medical_pause_first():
@@ -39,6 +39,21 @@ def test_pre_training_brief_medical_pause_first():
     out = ag._handle_tool({"name": "get_pre_training_brief", "arguments": "{}"}, "auto")
     assert "训练处方已暂停" in out and "不安排训练" in out
     assert "本周计划" not in out
+
+
+def test_pre_training_brief_hides_fenced_plan_schedule():
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.save_profile(ag.user_id, ag.profile)
+    _plan(ag)
+
+    ag.chat("我训练时胸闷")
+
+    brief = ag._handle_tool({"name": "get_pre_training_brief", "arguments": "{}"}, "auto")
+    assert "当前计划已隔离" in brief
+    assert "确认处理前不提供训练安排" in brief
+    assert "本周计划" not in brief
+    assert "周一 推" not in brief
 
 
 def test_trial_lifecycle_single_factor_rule():

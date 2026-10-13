@@ -52,6 +52,28 @@ _SAFETY_RESOLUTION_POSITIVE = re.compile(
     r"(?:没事|没问题|无碍|正常|无异常|允许|可以)|"
     r"(?:确认|证明|检查结果).{0,6}(?:没事|没问题|无碍|正常|无异常)"
 )
+_SAFETY_IDENTITY_GROUPS = {
+    "chest": ("胸闷", "胸痛", "胸口", "胸部", "胸"),
+    "chest_tightness": ("胸闷", "胸口闷", "胸部闷"),
+    "chest_pain": ("胸痛", "胸口痛", "胸口疼", "心口痛"),
+    "knee": ("膝关节", "膝盖", "膝"),
+    "lower_back": ("下背", "腰部", "腰"),
+    "shoulder": ("肩关节", "肩膀", "肩部", "肩"),
+    "neck": ("颈椎", "颈部", "脖子", "颈"),
+    "elbow": ("肘关节", "手肘", "肘部", "肘"),
+    "wrist": ("腕关节", "手腕", "腕"),
+    "ankle": ("踝关节", "脚踝", "踝"),
+    "hip": ("髋关节", "髋部", "髋"),
+    "head": ("头晕", "眩晕", "眼前发黑", "头昏", "头疼", "头痛"),
+    "breathing": ("呼吸困难", "喘不过气", "气短", "气促", "喘"),
+    "palpitation": ("心悸", "心慌", "心跳"),
+    "urine": ("酱油色尿", "尿色", "尿"),
+    "sharp_pain": ("刺痛", "剧痛", "撕裂感", "锐痛"),
+    "joint_pain": ("关节疼痛", "关节疼", "关节痛"),
+    "nausea": ("恶心", "呕吐"),
+    "injury": ("骨折", "受伤", "损伤"),
+    "general_pain": ("疼痛", "疼", "痛"),
+}
 
 _CHINESE_NUMBERS = {
     0: ("零", "〇"), 1: ("一",), 2: ("二", "两"),
@@ -82,14 +104,44 @@ def classify_decision(text: str) -> Decision:
     return "unclear"
 
 
-def classify_safety_resolution(text: str) -> Decision:
-    """Require explicit, current resolution before releasing a safety fence."""
+def _safety_identity_tags(text: str) -> set[str]:
+    return {tag for tag, aliases in _SAFETY_IDENTITY_GROUPS.items()
+            if any(alias in text for alias in aliases)}
+
+
+def classify_safety_resolution(text: str, target: dict | None = None,
+                               open_flags: list[dict] | None = None) -> Decision:
+    """Require a clear resolution tied to the selected safety event."""
     value = str(text or "").strip()
     if not value or "?" in value or "？" in value:
         return "unclear"
     if _SAFETY_RESOLUTION_NEGATIVE.search(value):
         return "reject"
-    if _SAFETY_RESOLUTION_POSITIVE.search(value):
+    if not _SAFETY_RESOLUTION_POSITIVE.search(value):
+        return "unclear"
+    if not isinstance(target, dict):
+        return "accept"
+
+    open_flags = [f for f in (open_flags or [target])
+                  if isinstance(f, dict) and f.get("status") == "open"]
+    source = " ".join(str(target.get(key) or "") for key in ("text", "kw"))
+    target_tags = _safety_identity_tags(source)
+    if len(open_flags) <= 1 and not target_tags:
+        return "accept"
+    mentioned_tags = _safety_identity_tags(value)
+    other_tags = set().union(*(
+        _safety_identity_tags(" ".join(str(f.get(key) or "")
+                                       for key in ("text", "kw")))
+        for f in open_flags if f.get("flag_id") != target.get("flag_id")
+    ))
+    if (target_tags - other_tags) & mentioned_tags:
+        return "accept"
+    # For duplicate symptom categories, require the exact trigger keyword if it
+    # distinguishes this event from the other open records.
+    keyword = str(target.get("kw") or "").strip()
+    other_keywords = {str(f.get("kw") or "").strip() for f in open_flags
+                      if f.get("flag_id") != target.get("flag_id")}
+    if keyword and keyword not in other_keywords and keyword in value:
         return "accept"
     return "unclear"
 

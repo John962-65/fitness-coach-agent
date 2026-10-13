@@ -267,15 +267,46 @@ def test_history_records_noted_not_open():
 def test_resolve_single_open_flag_without_index():
     a = _agent()
     a.chat("我练的时候胸口痛")
+    a.db.add_message(a.user_id, "user", "胸口痛已经检查，医生说没事")
     result = a._handle_tool(
-        {"name": "resolve_pain_flag", "arguments": '{"note": "去医院检查了没事"}'},
+        {"name": "resolve_pain_flag", "arguments": '{"note": "胸口痛已经检查，医生说没事"}'},
         "normal")
     assert "已关闭 1 条" in result
     assert _flags(a)[0]["status"] == "resolved"
 
 
+def test_resolution_requires_followup_even_without_an_active_plan():
+    a = _agent()
+    a.chat("我现在胸闷")
+    flag = _flags(a)[0]
+    assert not a.profile.get("plan_fence")
+
+    premature = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + flag["flag_id"] + '"}',
+    }, "normal")
+    assert "尚无用户的后续答复" in premature
+    assert _flags(a)[0]["status"] == "open"
+
+    a.db.add_message(a.user_id, "user", "膝盖症状已经消失")
+    unrelated = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + flag["flag_id"] + '"}',
+    }, "normal")
+    assert "未能对应到这条记录" in unrelated
+    assert _flags(a)[0]["status"] == "open"
+
+    a.db.add_message(a.user_id, "user", "胸闷已经消失")
+    resolved = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + flag["flag_id"] + '"}',
+    }, "normal")
+    assert "已关闭 1 条" in resolved
+    assert _flags(a)[0]["status"] == "resolved"
+
+
 def test_resolve_multiple_flags_requires_index():
-    """多条待跟进时不给 index → 拒绝全关，要求指明对应那一条"""
+    """多条待跟进时不给 ID → 拒绝全关；解除依据必须对应具体记录。"""
     a = _agent()
     a.chat("我练的时候胸口痛")
     a.chat("硬拉时腰突然剧痛")
@@ -283,10 +314,26 @@ def test_resolve_multiple_flags_requires_index():
     result = a._handle_tool(
         {"name": "resolve_pain_flag", "arguments": '{"note": "看过了"}'}, "normal")
     assert "已关闭" not in result and "哪一条" in result
-    # 指定 index 后只关对应那条
-    result = a._handle_tool(
-        {"name": "resolve_pain_flag",
-         "arguments": '{"index": 1, "note": "腰看过医生了"}'}, "normal")
+
+    chest, back = _flags(a)
+    a.db.add_message(a.user_id, "user", "腰部剧痛已经消失")
+    result = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + chest["flag_id"] + '"}',
+    }, "normal")
+    assert "未能对应到这条记录" in result
+    assert _flags(a)[0]["status"] == "open" and _flags(a)[1]["status"] == "open"
+
+    result = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + back["flag_id"] + '"}',
+    }, "normal")
     assert "已关闭 1 条" in result
-    flags = _flags(a)
-    assert flags[0]["status"] == "open" and flags[1]["status"] == "resolved"
+    assert _flags(a)[0]["status"] == "open" and _flags(a)[1]["status"] == "resolved"
+
+    a.db.add_message(a.user_id, "user", "胸闷已经消失")
+    result = a._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": '{"flag_id": "' + chest["flag_id"] + '"}',
+    }, "normal")
+    assert "已关闭 1 条" in result
