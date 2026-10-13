@@ -193,7 +193,7 @@ def test_confirm_accept_applies_and_invalidates_old_goal():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
-    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
+    ag.db.add_message("s", "user", "确认把目标改成增肌")  # 跨轮且绑定拟改值
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
@@ -215,7 +215,7 @@ def test_confirm_decline_keeps_old_value():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
-    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
+    ag.db.add_message("s", "user", "不改增肌，保留减脂目标")  # 明确拒绝本项变更
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": false}}'}, "auto")
@@ -230,7 +230,7 @@ def test_confirm_expired_change_rejected():
     ag.profile["pending_profile_changes"] = [
         {"id": "prf-x", "changes": [{"field": "goal.primary", "old": "a", "new": "b"}],
          "created_message_id": 0, "expires_at": "2020-01-01T00:00:00+00:00"}]
-    ag.db.add_message("s", "user", "确认")  # 过跨轮门，命中过期分支
+    ag.db.add_message("s", "user", "确认改为b")  # 过跨轮门，命中过期分支
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": '{"change_id": "prf-x", "accept": true}'}, "auto")
@@ -284,7 +284,7 @@ def test_confirm_rejected_when_old_value_drifted():
         {"name": "update_profile",
          "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
     entry = ag.profile["pending_profile_changes"][0]
-    ag.db.add_message("s", "user", "确认")  # 模拟下一轮（跨轮强制）
+    ag.db.add_message("s", "user", "确认目标改成增肌")  # 模拟下一轮（跨轮强制）
     # 暂存后档案被其他路径改写（模拟漂移）
     ag.profile["goal"]["primary"] = "strength"
     out = ag._handle_tool(
@@ -318,7 +318,7 @@ def test_injury_update_fences_plan_until_regenerate():
          "created_message_id": 0, "expires_at": "2099-01-01T00:00:00+00:00"}]
     out2 = ag._handle_tool(
         {"name": "apply_adjustment", "arguments": '{"suggestion_id": "adj-f"}'}, "auto")
-    assert "被隔离" in out2 and "不接受对旧计划的增量调整" in out2
+    assert "已隔离" in out2 and "不接受对旧计划的增量调整" in out2
     # 重排确认执行 → 解除隔离
     ag._offer_regenerate("伤病更新，重排计划")
     regen = next(s for s in ag.profile["pending_adjustments"]
@@ -329,6 +329,97 @@ def test_injury_update_fences_plan_until_regenerate():
         "auto")
     assert ag.profile.get("plan_fence") is None               # 已解除
     assert "隔离" not in ag._handle_tool({"name": "get_plan", "arguments": "{}"}, "auto")
+
+
+def test_block_red_flag_fences_old_plan_and_prevents_use():
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.save_profile(ag.user_id, ag.profile)
+    ag.db.create_plan(ag.user_id, {
+        "template": "旧训练计划", "level": "intermediate", "days_per_week": 3,
+        "schedule": [{"day": "周一", "focus": "腿", "exercises": [
+            {"name": "杠铃深蹲", "sets": 3, "reps": 5},
+        ]}], "notes": [],
+    })
+
+    ag.chat("深蹲时膝盖刺痛")
+
+    fence = ag.profile.get("plan_fence")
+    assert fence and fence["safety_flag_ids"]
+    plan_text = ag._handle_tool({"name": "get_plan", "arguments": "{}"}, "auto")
+    assert "【计划已隔离】" in plan_text
+    assert "旧计划动作列表暂不显示" in plan_text
+    assert "杠铃深蹲" not in plan_text
+    ag._refresh_system_prompt()
+    plan_section = ag.messages[0]["content"].split("# 用户当前计划\n", 1)[1].split(
+        "\n# 近期动态", 1)[0]
+    assert "杠铃深蹲" not in plan_section
+    flag = ag.profile["conditions"]["pain_flags"][0]
+    ag.db.add_message(ag.user_id, "user", "膝盖还在疼")
+    unresolved = ag._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": json.dumps({"flag_id": flag["flag_id"], "note": "膝盖还在疼"}),
+    }, "auto")
+    assert "仍保持待跟进" in unresolved
+    assert flag["status"] == "open"
+    result = ag._handle_tool(
+        {"name": "get_adjustment_suggestions", "arguments": "{}"}, "auto")
+    assert "安全记录仍待跟进" in result
+    assert not ag.profile.get("pending_adjustments")
+
+    # 即使有预先生成的重排建议，开放的红旗记录也不能被绕过。
+    ag._offer_regenerate("测试：安全事件后重排")
+    suggestion = next(s for s in ag.profile["pending_adjustments"]
+                      if s["action"] == "regenerate_plan")
+    ag.db.add_message(ag.user_id, "user", "确认重排")
+    blocked = ag._handle_tool({
+        "name": "apply_adjustment",
+        "arguments": json.dumps({"suggestion_id": suggestion["id"]}),
+    }, "auto")
+    assert "安全记录尚未关闭" in blocked
+    assert ag.profile.get("plan_fence")
+
+
+def test_red_flag_fence_releases_only_after_resolution_and_replan():
+    ag = _agent()
+    ag.profile["onboarding_done"] = True
+    ag.db.save_profile(ag.user_id, ag.profile)
+    ag.db.create_plan(ag.user_id, {
+        "template": "旧训练计划", "level": "intermediate", "days_per_week": 3,
+        "schedule": [{"day": "周一", "focus": "腿", "exercises": []}], "notes": [],
+    })
+    ag.chat("深蹲时膝盖刺痛")
+    flag = ag.profile["conditions"]["pain_flags"][0]
+
+    ag.db.add_message(ag.user_id, "user", "膝盖好了点")
+    partial = ag._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": json.dumps({"flag_id": flag["flag_id"], "note": "膝盖好了点"}),
+    }, "auto")
+    assert "仍保持待跟进" in partial
+    assert flag["status"] == "open"
+
+    ag.db.add_message(ag.user_id, "user", "膝盖症状已经消失")
+    resolved = ag._handle_tool({
+        "name": "resolve_pain_flag",
+        "arguments": json.dumps({
+            "flag_id": flag["flag_id"], "note": "膝盖症状已经消失"}),
+    }, "auto")
+    assert "已关闭 1 条" in resolved
+    assert ag.profile.get("plan_fence")  # 关闭记录不会自动启用旧处方
+    assert "旧计划动作列表暂不显示" in ag._handle_tool(
+        {"name": "get_plan", "arguments": "{}"}, "auto")
+
+    ag._handle_tool({"name": "get_adjustment_suggestions", "arguments": "{}"}, "auto")
+    suggestion = next(s for s in ag.profile["pending_adjustments"]
+                      if s["action"] == "regenerate_plan")
+    ag.db.add_message(ag.user_id, "user", "确认重新评估训练计划")
+    result = ag._handle_tool({
+        "name": "apply_adjustment",
+        "arguments": json.dumps({"suggestion_id": suggestion["id"]}),
+    }, "auto")
+    assert "计划已更新" in result
+    assert ag.profile.get("plan_fence") is None
 
 
 def test_injury_removal_does_not_fence():
@@ -390,9 +481,123 @@ def test_confirm_decline_phrasing_rejected():
     out = ag._handle_tool(
         {"name": "confirm_profile_change",
          "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
-    assert "明确确认" in out
+    assert "明确同意" in out
     assert ag.profile["goal"]["primary"] == "fat_loss"           # 未被改
     assert ag.profile["pending_profile_changes"]                 # 变更保留待用户明确答复
+
+
+@pytest.mark.parametrize("reply", [
+    "我不同意改成增肌",
+    "不可以改成增肌",
+    "这个方案不好，别改成增肌",
+    "我不确认改成增肌",
+    "我没有同意换成增肌",
+    "你觉得改成增肌可以吗？",
+    "我考虑改成增肌",
+    "我不大好改成增肌",
+    "我不怎么好改成增肌",
+    "增肌行不行",
+])
+def test_negative_confirmation_phrases_never_accept(reply):
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", reply)
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "明确同意" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"
+    assert ag.profile["pending_profile_changes"]
+
+
+def test_generic_yes_does_not_confirm_unbound_change():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "好")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "没有明确指向" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"
+    assert ag.profile["pending_profile_changes"]
+
+
+def test_accept_false_requires_an_explicit_refusal():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "确认把目标改成增肌")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": false}}'}, "auto")
+    assert "明确拒绝" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"
+    assert ag.profile["pending_profile_changes"]
+
+
+def test_question_about_change_does_not_cancel_pending_change():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "增肌行不行")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": false}}'}, "auto")
+    assert "明确拒绝" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"
+    assert ag.profile["pending_profile_changes"]
+
+
+def test_unrelated_constraint_does_not_override_explicit_acceptance():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "周三不能训练，不过我确认改成增肌")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{entry["id"]}", "accept": true}}'}, "auto")
+    assert "档案已更新" in out
+    assert ag.profile["goal"]["primary"] == "muscle_gain"
+
+
+def test_acceptance_for_another_pending_change_does_not_confirm_this_one():
+    ag = _agent()
+    ag.profile["goal"] = {"primary": "fat_loss", "phase": "", "target": ""}
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"goal": {"primary": "muscle_gain"}}}'}, "auto")
+    goal_entry = ag.profile["pending_profile_changes"][0]
+    ag.db.add_message("s", "user", "以后每次只有30分钟")
+    ag._handle_tool(
+        {"name": "update_profile",
+         "arguments": '{"patch": {"resources": {"session_minutes": 30}}}'}, "auto")
+    time_entry = next(e for e in ag.profile["pending_profile_changes"]
+                      if e["id"] != goal_entry["id"])
+    ag.db.add_message("s", "user", "确认改成增肌")
+    out = ag._handle_tool(
+        {"name": "confirm_profile_change",
+         "arguments": f'{{"change_id": "{time_entry["id"]}", "accept": true}}'}, "auto")
+    assert "没有明确指向" in out
+    assert ag.profile["goal"]["primary"] == "fat_loss"
+    assert ag.profile["resources"]["session_minutes"] == 60
+    assert len(ag.profile["pending_profile_changes"]) == 2
 
 
 def test_regenerate_with_unmappable_injury_keeps_fence():
@@ -415,7 +620,7 @@ def test_regenerate_with_unmappable_injury_keeps_fence():
         "auto")
     fence = ag.profile.get("plan_fence")
     assert fence and fence.get("unresolved") == ["肋骨骨裂"]      # 未解除，降级为未解决
-    assert "相关部位的训练与调整暂停" in fence["reason"]
+    assert "相关部位训练与调整继续暂停" in fence["reason"]
     # 隔离未解除 → 建议生成入口同样拦截
     out = ag._handle_tool({"name": "get_adjustment_suggestions", "arguments": "{}"}, "auto")
     assert "隔离期不生成普通调整建议" in out

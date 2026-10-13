@@ -31,6 +31,8 @@ from .goals import SUPPORTED_GOALS, bump_goal_version, goal_label, goal_metrics,
 from .budget import BudgetExceeded
 from .claims import claim_store
 from .cards import card_for_exercise, card_for_topic, serve_card
+from .confirmation import (change_is_referenced, classify_decision,
+                           classify_safety_resolution)
 from .exercises import library as exercise_lib
 from .knowledge import LOAD_KNOWLEDGE_TOOL, KnowledgeBase
 from .llm import LLMClient
@@ -95,7 +97,8 @@ CONFIRM_PROFILE_CHANGE_TOOL = {
             "用户对暂存的档案变更做出答复后调用（change_id 见 update_profile "
             "返回的【需确认】提示）。accept=true：用户确认改为新值，落库并留档"
             "原值；accept=false：用户否认，保留原值。目标（goal）变更会同时"
-            "作废旧目标下的待执行调整建议。"
+            "作废旧目标下的待执行调整建议。最新用户发言必须明确接受或拒绝，并指向"
+            "这项变更/拟改值；单独说‘好’或‘确认’不够，态度不明时不要调用。"
         ),
         "parameters": {
             "type": "object",
@@ -606,6 +609,7 @@ class CoachAgent:
         self.profile = self.db.get_profile(user_id)
         if ensure_flag_ids(self.profile):
             self.db.save_profile(user_id, self.profile)
+        self._fence_open_safety_flags()
         self._turn_tools: set[str] = set()
         self._turn_tool_results: list[str] = []
         self._turn_no: int = 0  # 仅供本地诊断；确认/过期使用持久化用户消息
@@ -615,21 +619,35 @@ class CoachAgent:
 
     def _build_system_prompt(self) -> str:
         plan = self._enforce_medical_permission()
+        fence = self.profile.get("plan_fence") or {}
+        fenced_flags = self._open_fenced_safety_flags(fence)
         try:
             dynamic = review_context_text(self.db, self.user_id, plan)
         except Exception:
             _log.exception("复盘上下文构建失败，降级为空动态")
             dynamic = "（打卡数据读取异常，复盘暂缺）"
+        if fence.get("safety_flag_ids"):
+            # 高风险红旗未解除重评前，不把旧动作列表继续作为可执行上下文。
+            plan_text = "（当前计划因安全红旗已隔离；旧动作安排暂不提供）"
+        else:
+            plan_text = plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）"
+        if fenced_flags:
+            followup = "先向用户确认对应症状/安全事件的近况；只有用户明确确认已处理后" \
+                       "才关闭记录，之后再提议并确认重新编排计划。"
+        elif fence.get("safety_flag_ids"):
+            followup = "安全记录已处理，但旧计划仍隔离；需要用户确认重排后才恢复展示。"
+        else:
+            followup = "不要按旧计划指导训练；先解释并取得重排确认。"
         return SYSTEM_TEMPLATE.format(
             profile=profile_summary(self.profile),
             exercise_feedback=self._exercise_feedback_text(),
             coach_notes=self._coach_notes_text(),
             knowledge_discussions=self._knowledge_discussions_text(),
             personal_trials=self._personal_trials_text(),
-            plan=plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）",
+            plan=plan_text,
             plan_fence=(
                 "⚠️ 当前计划已隔离：" + self.profile["plan_fence"]["reason"]
-                + "。不要按旧计划指导训练；先解释并取得重排确认。" if self.profile.get("plan_fence")
+                + "。" + followup if self.profile.get("plan_fence")
                 else ""),
             dynamic=dynamic,
             principles=self.kb.l1_principles,
@@ -730,7 +748,11 @@ class CoachAgent:
         self.profile.setdefault("experience", {})["level"] = plan["level"]
         self.db.save_profile(self.user_id, self.profile)
         self.db.create_plan(self.user_id, plan)
+        self._fence_open_safety_flags()
         self._refresh_system_prompt()
+        if (self.profile.get("plan_fence") or {}).get("safety_flag_ids"):
+            return ("建档完成，但有待跟进的安全记录。训练安排暂不展示或作为可执行计划；"
+                    "先确认症状/事件已经处理并关闭对应记录，再共同确认重新编排。")
         return "建档完成！已生成首份计划：\n" + plan_to_text(plan)
 
     # ---- 主入口 ----
@@ -792,6 +814,46 @@ class CoachAgent:
             "status": status,
         })
         self.db.save_profile(self.user_id, self.profile)
+        if status == "open":
+            self._fence_open_safety_flags()
+
+    def _open_fenced_safety_flags(self, fence: dict | None = None) -> list[dict]:
+        fence = fence if isinstance(fence, dict) else (self.profile.get("plan_fence") or {})
+        flag_ids = set(fence.get("safety_flag_ids") or [])
+        if not flag_ids:
+            return []
+        return [f for f in open_pain_flags(self.profile)
+                if isinstance(f, dict) and f.get("flag_id") in flag_ids]
+
+    def _fence_open_safety_flags(self) -> bool:
+        """Fence a live plan while a deterministic block-level safety event is open."""
+        flags = [f for f in open_pain_flags(self.profile) if isinstance(f, dict)]
+        if not flags or not self.db.get_active_plan_record(self.user_id):
+            return False
+        flag_ids = sorted({f.get("flag_id") for f in flags if f.get("flag_id")})
+        if not flag_ids:
+            return False
+
+        fence = self.profile.get("plan_fence")
+        if not isinstance(fence, dict):
+            fence = {"at": datetime.now().isoformat(timespec="seconds")}
+        old_ids = set(fence.get("safety_flag_ids") or [])
+        merged_ids = sorted(old_ids | set(flag_ids))
+        keywords = sorted({str(f.get("kw") or "安全红旗") for f in flags})
+        safety_reason = (
+            "未处理的安全红旗（" + "、".join(keywords)
+            + "）：旧计划暂停使用；安全记录确认处理后仍需重新评估"
+        )
+        old_reason = str(fence.get("reason") or "").strip()
+        if safety_reason not in old_reason:
+            fence["reason"] = (old_reason + "；" + safety_reason) if old_reason else safety_reason
+        fence["safety_flag_ids"] = merged_ids
+        fence.setdefault("at", datetime.now().isoformat(timespec="seconds"))
+        self.profile["plan_fence"] = fence
+        # Suggestions are attached to the plan that is now fenced; discard them.
+        self.profile["pending_adjustments"] = []
+        self.db.save_profile(self.user_id, self.profile)
+        return True
 
     def _plan_snapshot(self) -> str:
         plan = self.db.get_active_plan(self.user_id)
@@ -1177,12 +1239,18 @@ class CoachAgent:
                     new_inj = set(cond.get("injuries") or [])
                     added = sorted(new_inj - prev_inj)
                     if added:
-                        self.profile["plan_fence"] = {
-                            "reason": "新增伤病（" + "、".join(added)
-                                      + "）：旧计划可能对相关部位施压，重排确认前暂停使用",
-                            "at": datetime.now().isoformat(timespec="seconds"),
-                            "added_injuries": added,
-                        }
+                        fence = self.profile.get("plan_fence")
+                        if not isinstance(fence, dict):
+                            fence = {}
+                        injury_reason = ("新增伤病（" + "、".join(added)
+                                         + "）：旧计划可能对相关部位施压，重排确认前暂停使用")
+                        old_reason = str(fence.get("reason") or "").strip()
+                        if injury_reason not in old_reason:
+                            fence["reason"] = ((old_reason + "；") if old_reason else "") + injury_reason
+                        fence["at"] = fence.get("at") or datetime.now().isoformat(timespec="seconds")
+                        fence["added_injuries"] = sorted(
+                            set(fence.get("added_injuries") or []) | set(added))
+                        self.profile["plan_fence"] = fence
                     plan_affecting.append("伤病有更新")
                 current_resources = self.profile.get("resources", {})
                 for key, label in (("location", "训练场地变了"), ("days_per_week", "每周训练天数变了"),
@@ -1202,6 +1270,9 @@ class CoachAgent:
             entry = next((e for e in pending if isinstance(e, dict) and e.get("id") == cid), None)
             if not entry:
                 return f"没有待确认的档案变更「{cid}」。"
+            accept = args.get("accept")
+            if not isinstance(accept, bool):
+                return "确认操作缺少有效的 accept 布尔值；变更仍保持待确认。"
             # 评审 P0-2（跨轮强制，对齐 apply_adjustment 的语义）：
             # 本轮创建的变更本轮不能确认——防止 LLM 同轮自建自批。
             if self.db.user_messages_after(self.user_id, entry["created_message_id"]) == 0:
@@ -1212,12 +1283,17 @@ class CoachAgent:
             latest_user = next(
                 (m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
                  if m["role"] == "user"), "")
-            _DECLINE = re.compile(r"不改|先不|取消|算了|暂时不?改|别改|不要改|维持原|保留原")
-            _AFFIRM = re.compile(r"确认|同意|可以|好|对|是的|ok|OK|嗯|按这个|改成|换成|就这么办")
-            if _DECLINE.search(latest_user) or not _AFFIRM.search(latest_user):
-                return ("未能将本轮发言识别为对该变更的明确确认"
-                        "（需有同意表述，且不能是撤销/搁置）。变更仍保留待确认；"
-                        "请用户明确答复后再次提交。")
+            decision = classify_decision(latest_user)
+            expected = "accept" if accept else "reject"
+            if decision != expected:
+                if accept:
+                    return ("本轮发言不是明确同意（或包含否定/犹豫表述）；变更仍保持待确认，"
+                            "请用户明确接受或拒绝该变更。")
+                return ("本轮发言不是明确拒绝；变更仍保持待确认，"
+                        "请用户明确表示保留原值或取消该变更。")
+            if not change_is_referenced(latest_user, entry, pending, decision):
+                return ("本轮发言没有明确指向这项待确认变更及其拟改值；变更仍保持待确认。"
+                        "请用户说明具体接受或拒绝哪项变更，并复述拟改值。")
             try:
                 expired = datetime.fromisoformat(entry["expires_at"]) <= datetime.now(timezone.utc)
             except (KeyError, TypeError, ValueError):
@@ -1334,8 +1410,17 @@ class CoachAgent:
             text = plan_to_text(plan) if plan else "当前没有生效的计划。"
             fence = self.profile.get("plan_fence")
             if fence and plan:
-                text = ("⚠️【计划已隔离】" + fence["reason"]
-                        + "。请勿按下列旧计划训练；先确认重排建议，新计划确认后自动解除。\n\n" + text)
+                if fence.get("safety_flag_ids"):
+                    open_flags = self._open_fenced_safety_flags(fence)
+                    if open_flags:
+                        status = "先跟进并确认对应安全记录已处理，之后再确认重排。"
+                    else:
+                        status = "安全记录已处理；仍需确认重排后才恢复计划。"
+                    text = ("⚠️【计划已隔离】" + fence["reason"] + "。" + status
+                            + "旧计划动作列表暂不显示，也不可作为训练安排。")
+                else:
+                    text = ("⚠️【计划已隔离】" + fence["reason"]
+                            + "。请勿按下列旧计划训练；先确认重排建议，新计划确认后自动解除。\n\n" + text)
             return text
 
         if name == "get_review":
@@ -1353,10 +1438,17 @@ class CoachAgent:
             # 用户不应看到基于被隔离旧计划的加重/增量建议。
             fence = self.profile.get("plan_fence")
             if fence:
+                open_flags = self._open_fenced_safety_flags(fence)
+                if open_flags:
+                    listing = "、".join(
+                        f"{f.get('flag_id')}:{f.get('kw', '安全红旗')}" for f in open_flags)
+                    return ("⚠️ 计划已隔离，且安全记录仍待跟进（" + listing + "）。"
+                            "先向用户确认症状/事件近况；仅在用户明确确认已处理后关闭对应记录，"
+                            "之后再提出重排，不生成基于旧计划的训练调整建议。")
                 existing = [s for s in self._live_pending(record)
                             if s["action"] == "regenerate_plan"]
                 if not existing:
-                    self._offer_regenerate("计划已隔离（伤病更新），需重排后再评估调整")
+                    self._offer_regenerate("计划已隔离，需重新评估后再重排")
                     existing = [s for s in self._live_pending(record)
                                 if s["action"] == "regenerate_plan"]
                 hint = f" [{existing[0]['id']}]" if existing else ""
@@ -1401,9 +1493,13 @@ class CoachAgent:
             # 评审 P0-1：隔离期只放行重排本身（解除隔离的唯一路径），拒绝旧计划增量调整
             fence = self.profile.get("plan_fence")
             if fence and sug["action"] != "regenerate_plan":
-                return ("⚠️ 当前计划已因伤病更新被隔离（" + fence["reason"]
+                return ("⚠️ 当前计划已隔离（" + fence["reason"]
                         + "），暂不接受对旧计划的增量调整；请先确认重排建议"
                           "，新计划生效后自动解除。")
+            if fence and sug["action"] == "regenerate_plan" \
+                    and self._open_fenced_safety_flags(fence):
+                return ("⚠️ 待跟进安全记录尚未关闭，不能据此生成或启用新计划；"
+                        "先确认症状/事件已处理并关闭对应记录，再重新获取重排建议。")
             error = self._pending_error(sug, record)
             if error:
                 pending.remove(sug)
@@ -1431,24 +1527,33 @@ class CoachAgent:
                         plan, sug["action"], sug["target"], sug["reason"], last_weight=lw)
                 self._commit_plan(new_plan, record["id"])
                 if sug["action"] == "regenerate_plan" and self.profile.get("plan_fence"):
-                    # 评审二轮：重排成功 ≠ 伤病风险已处理——仅当全部伤病可映射到
-                    # 有关节压力数据的关节（新计划已按关节过滤）时才解除隔离；
-                    # 否则降级为"部分未解决"状态：计划可看，相关调整继续暂停。
+                    # 重排成功本身不代表安全风险已处理：伤病必须可映射，
+                    # 与此隔离关联的红旗记录也必须先由用户明确确认处理。
                     from .plan import _injured_joints, _joints_without_data
                     injuries = [i for i in (self.profile.get("conditions", {})
                                             .get("injuries") or []) if isinstance(i, str)]
                     joints, unknown = _injured_joints(injuries)
                     no_data = _joints_without_data(joints)
-                    if not unknown and not no_data:
+                    f = self.profile["plan_fence"]
+                    unresolved_flags = self._open_fenced_safety_flags(f)
+                    if not unknown and not no_data and not unresolved_flags:
                         self.profile.pop("plan_fence", None)
                     else:
-                        f = self.profile["plan_fence"]
                         f["unresolved"] = sorted(unknown) + sorted(no_data)
-                        f["reason"] = ("部分伤病无法映射到可校验的关节压力数据（"
-                                       + "、".join(f["unresolved"])
-                                       + "）：计划已按已知部分重排；相关部位的训练与调整"
-                                         "暂停，请提供可执行的限制或按你的反馈逐个避开，"
-                                         "必要时先咨询医生或康复师")
+                        reason_parts = []
+                        if f["unresolved"]:
+                            reason_parts.append(
+                                "部分伤病无法映射到可校验的关节压力数据（"
+                                + "、".join(f["unresolved"])
+                                + "）：相关部位训练与调整继续暂停，请提供可执行的限制，"
+                                  "或按你的反馈逐个避开；必要时先咨询医生或康复师")
+                        if unresolved_flags:
+                            reason_parts.append(
+                                "安全记录仍待跟进（" + "、".join(
+                                    str(flag.get("kw", "安全红旗"))
+                                    for flag in unresolved_flags)
+                                + "），对应风险处理前不恢复计划")
+                        f["reason"] = "；".join(reason_parts)
                     self.db.save_profile(self.user_id, self.profile)
             except ValueError as e:
                 return str(e)
@@ -1690,9 +1795,19 @@ class CoachAgent:
                         "请确认具体哪一条，再传 flag_id（不得批量关闭，也不要用显示 index）。")
             if target is None:
                 return "指定的 ID/序号不是待跟进的安全记录，未做任何修改。"
+            fence = self.profile.get("plan_fence") or {}
+            if target.get("flag_id") in set(fence.get("safety_flag_ids") or []):
+                latest_user = next(
+                    (m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
+                     if m["role"] == "user"), "")
+                if classify_safety_resolution(latest_user) != "accept":
+                    return ("本轮用户发言未明确表示症状/安全事件已处理，记录仍保持待跟进，"
+                            "计划继续隔离。")
             target["status"] = "resolved"
             target["resolved_at"] = datetime.now().isoformat(timespec="seconds")
-            target["note"] = args.get("note", "")
+            target["note"] = (latest_user[:200] if target.get("flag_id")
+                              in set(fence.get("safety_flag_ids") or [])
+                              else args.get("note", ""))
             self.db.save_profile(self.user_id, self.profile)
             self._refresh_system_prompt()
             return f"已关闭 1 条安全跟进记录（{target.get('kw', '?')}）。"
