@@ -1163,3 +1163,9 @@ P1（槽位模板默认动作）共 17 个动作，其中 12 个已有批准卡�
 - 验证：全量 **439 passed in 48.38s**（新增68个场景）；70个动作结构校验通过；91个Python文件语法检查通过。冻结评测 YAML 未改，少数旧测试仅按设计原有契约纠正错误夹具/旧行为。
 - 当前卡片：60张自身审批有效，59张运行时可用；cable_crunch 卡的一条引用版本已变化，按新门槛回退，未修改审批或素材。
 - 详细证据、覆盖矩阵、未完整交付能力和验收边界见 `DESIGN_AUDIT_2026-10-22.md`。本轮没有真实LLM调用，不把旧报告当作新版本证据；未触碰真实用户库或密钥，改动尚未提交。
+
+## 三十六、运行环境修复：无效代理变量导致启动崩溃（2026-10-24）
+
+- **现象**：交互 shell 带代理软件导出的 `ALL_PROXY=socks://127.0.0.1:7897` 时，`python3 main.py` 在 `LLMClient` 构造 OpenAI 客户端即抛 `ValueError: Unknown scheme for proxy URL`——httpx2 只接受 `http/https/socks5/socks5h`，且本机未装 `socksio`（socks5 到请求时同样会挂）。与 §18.2 评测初始化失败同源，当时只在验收子进程移除了该变量，交互入口无防护。
+- **修复**：`coach/llm.py` 新增 `_drop_unusable_proxy_env()`，构造客户端前剔除用不了的代理变量（未知 scheme；未装 socksio 时的 socks5/socks5h），http/https 代理原样保留。
+- **验证**：新增 `test_llm_env.py` 4 项（含带 `socks://` 变量直接构造客户端的复现用例）；带故障变量真实调用 DeepSeek 通过；全量离线回归 443 passed。另将环境内过旧的 Brotli 1.0.9 升级到 1.2.1（httpx2 解压需要 `output_buffer_limit` 参数，属机器环境不属于仓库）。

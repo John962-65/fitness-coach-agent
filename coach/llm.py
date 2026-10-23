@@ -13,6 +13,33 @@ from typing import Any
 
 from .budget import RequestBudget
 
+_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
+
+
+def _drop_unusable_proxy_env() -> list[str]:
+    """剔除 SDK 的 HTTP 客户端无法使用的代理变量，返回被移除的名字。
+
+    代理软件常导出 ALL_PROXY=socks://…，httpx2 对未知 scheme 在构造
+    客户端时即抛 ValueError；socks5/socks5h 还要求安装 socksio。
+    只移除用不了的项，http/https 代理原样保留。
+    """
+    allowed = set(_PROXY_SCHEMES)
+    try:
+        import socksio  # noqa: F401
+    except ImportError:
+        allowed -= {"socks5", "socks5h"}
+    removed: list[str] = []
+    for var in ("ALL_PROXY", "all_proxy",
+                "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        url = os.environ.get(var)
+        if url is None:
+            continue
+        scheme = url.split("://", 1)[0].lower() if "://" in url else ""
+        if scheme not in allowed:
+            del os.environ[var]
+            removed.append(var)
+    return removed
+
 
 class LLMClient:
     def __init__(self) -> None:
@@ -33,6 +60,7 @@ class LLMClient:
             if os.getenv("LLM_BUDGET_PATH"):
                 self.budget = RequestBudget(Path(os.environ["LLM_BUDGET_PATH"]),
                                             int(os.environ["LLM_MAX_REQUESTS"]))
+            _drop_unusable_proxy_env()
             self._client = OpenAI(base_url=self.base_url, api_key=self.api_key,
                                   max_retries=0, timeout=60.0)
 
