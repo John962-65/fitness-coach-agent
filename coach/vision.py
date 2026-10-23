@@ -36,7 +36,8 @@ def _detect_legacy(video_path: str, sample_every: int) -> list[list[dict]]:
             res = pose.process(frame)
             if res.pose_landmarks:
                 frames.append([
-                    {"x": lm.x, "y": lm.y, "visibility": lm.visibility}
+                    {"x": lm.x, "y": lm.y, "visibility": lm.visibility,
+                     "aspect_ratio": frame.shape[1] / frame.shape[0]}
                     for lm in res.pose_landmarks.landmark
                 ])
         i += 1
@@ -77,7 +78,8 @@ def _detect_tasks(video_path: str, sample_every: int) -> list[list[dict]]:
             if res.pose_landmarks:
                 lm0 = res.pose_landmarks[0]
                 frames.append([{"x": lm.x, "y": lm.y,
-                                "visibility": getattr(lm, "visibility", 1.0) or 1.0}
+                                "visibility": getattr(lm, "visibility", 0.0),
+                                "aspect_ratio": frame.shape[1] / frame.shape[0]}
                                for lm in lm0])
         i += 1
     cap.release()
@@ -135,7 +137,10 @@ def main() -> int:
     print(f"动作：{result['exercise']}（{result.get('view', 'side')}），"
           f"分析 {result['frames']} 帧")
     if not result["faults"]:
-        print("未命中故障码：从规则引擎看没有明显问题（不构成医学/技术保证）。")
+        if result.get("note"):
+            print(result["note"])
+        else:
+            print("未命中当前覆盖的可见项目；这不代表未评估的动作细节正常。")
     for f in result["faults"]:
         print(f"  ⚠️ {f['code']}（{f.get('label', '')}）值={f.get('value')}"
               + (f"——{f['hint']}" if f.get("hint") else ""))

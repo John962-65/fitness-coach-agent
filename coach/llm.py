@@ -115,6 +115,18 @@ class LLMClient:
                 no_injury = "伤" in last_user and any(
                     neg in last_user for neg in ["没有", "无", "没"]
                 )
+                # 模拟器也不能把“没有伤病”扩写成全部健康筛查阴性。
+                screen = {}
+                if re.search(r"(?:没有|无)(?:任何)?(?:心血管|心脏|高血压)", last_user):
+                    screen["heart"] = "无"
+                if re.search(r"(?:没有|无|未)(?:怀孕|备孕)", last_user):
+                    screen["pregnancy"] = "无"
+                if "不适用怀孕" in last_user:
+                    screen["pregnancy"] = "不适用"
+                if re.search(r"(?:没有|无|没)(?:长期)?(?:用药|吃药|服药)", last_user):
+                    screen["medication"] = "无"
+                if re.search(r"医生(?:没有|没)(?:嘱咐过)?限制运动", last_user):
+                    screen["clearance"] = "无"
                 if no_injury:
                     calls = [{
                         "id": "fake_1",
@@ -123,9 +135,8 @@ class LLMClient:
                             {"patch": {"conditions": {
                                 "injuries": [],
                                 "injuries_evidence": last_user[:80],
-                                "health_screen": {"heart": "无", "pregnancy": "无",
-                                                  "medication": "无", "clearance": "无"},
-                                "health_screen_evidence": last_user[:80],
+                                **({"health_screen": screen, "health_screen_evidence": last_user}
+                                   if screen else {}),
                             }}}
                         ),
                     }]
@@ -136,6 +147,9 @@ class LLMClient:
                             "arguments": "{}",
                         })
                     return {"content": "", "tool_calls": calls}
+                if screen:
+                    return self._call("update_profile", {"patch": {"conditions": {
+                        "health_screen": screen, "health_screen_evidence": last_user}}})
                 if "finish_onboarding" in names:
                     return {"content": "好的，请告诉我你的年龄、身高、体重？", "tool_calls": []}
 

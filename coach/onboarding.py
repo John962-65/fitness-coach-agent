@@ -11,7 +11,7 @@ import re
 # LLM 没附 *_evidence 时，只能用"真的在回答该问题"的用户原话回填；
 # "别问了直接开始"这类话不能充当依据（否则伤病门槛形同虚设）。
 _INJURY_TOPIC = re.compile(
-    r"(伤|痛|疼|拉伤|扭伤|劳损|旧伤|骨折|手术|关节|麻木|不适)")
+    r"(伤|痛|疼|拉伤|扭伤|劳损|旧伤|骨折|骨裂|手术|关节|麻木|不适)")
 _HEALTH_TOPIC = re.compile(
     r"(心脏|心血管|血压|怀孕|备孕|长期用药|吃药|降压药|医生|医嘱|"
     r"限制运动|身体|体检|健康)")
@@ -113,6 +113,13 @@ def missing_fields(profile: dict) -> list[str]:
         missing.append("健康筛查（心血管/高血压/怀孕/用药/医嘱）")
     elif not (c.get("health_screen_evidence") or "").strip():
         missing.append("健康筛查的用户原话（health_screen_evidence）")
+    else:
+        hs = c.get("health_screen")
+        for key, label in (("heart", "心血管/血压"), ("pregnancy", "怀孕/备孕或不适用"),
+                           ("medication", "长期用药"), ("clearance", "医生运动限制")):
+            value = hs.get(key) if isinstance(hs, dict) else None
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing.append(f"健康筛查：{label}")
     return missing
 
 

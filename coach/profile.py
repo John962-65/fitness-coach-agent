@@ -106,7 +106,7 @@ _WRITABLE = {
 # C1 收尾（26.2/26.4）：这些字段驱动处方与评价标准，已有确认值时被改写
 # 不立即生效——先暂存并向用户澄清，经 confirm_profile_change 才落库。
 HOLD_FIELDS = (
-    "goal.primary", "goal.phase",
+    "goal.primary", "goal.phase", "goal.target", "goal.secondary", "goal.timeline",
     "experience.training_years",
     "resources.days_per_week", "resources.session_minutes", "resources.location",
 )
@@ -129,14 +129,14 @@ def merge_patch(profile: dict, patch: dict,
     from .validate import coerce_profile_patch
 
     merged = copy.deepcopy(profile)
-    patch, warnings = coerce_profile_patch(patch)
-    patch = copy.deepcopy(patch)
-
+    patch = copy.deepcopy(patch) if isinstance(patch, dict) else patch
     for section, alias_map in _ALIASES.items():
-        if isinstance(patch.get(section), dict):
+        if isinstance(patch, dict) and isinstance(patch.get(section), dict):
             for old, new in alias_map.items():
                 if old in patch[section]:
-                    patch[section][new] = patch[section].pop(old)
+                    value = patch[section].pop(old)
+                    patch[section].setdefault(new, value)
+    patch, warnings = coerce_profile_patch(patch)
 
     dropped: list[str] = []
     clean: dict[str, dict] = {}
@@ -163,7 +163,8 @@ def merge_patch(profile: dict, patch: dict,
         if section in clean and key in clean[section]:
             old = (profile.get(section) or {}).get(key)
             new = clean[section][key]
-            if old not in _HOLD_EMPTY and old != new:
+            goal_established = section == "goal" and bool((profile.get("goal") or {}).get("primary"))
+            if (goal_established or old not in _HOLD_EMPTY) and old != new:
                 held.append({"field": path, "old": old, "new": new})
                 del clean[section][key]
                 if not clean[section]:
@@ -183,8 +184,15 @@ def merge_patch(profile: dict, patch: dict,
         dst = merged.setdefault(section, {})
         for k, v in value.items():
             if k in dst and dst[k] != v:
-                merged.setdefault("_history", {})[f"{section}.{k}"] = {
-                    "old": dst[k], "at": datetime.now().isoformat(timespec="seconds")}
+                history = merged.setdefault("_history", {})
+                previous = history.get(f"{section}.{k}") or {}
+                revisions = list(previous.get("revisions") or [])
+                if previous and not revisions:
+                    revisions.append({key: value for key, value in previous.items()
+                                      if key != "revisions"})
+                event = {"old": copy.deepcopy(dst[k]), "new": copy.deepcopy(v),
+                         "at": datetime.now().isoformat(timespec="seconds")}
+                history[f"{section}.{k}"] = {**event, "revisions": revisions + [event]}
         _merge(dst, value)
 
     conditions = merged.setdefault("conditions", {})

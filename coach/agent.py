@@ -31,7 +31,7 @@ from .goals import SUPPORTED_GOALS, bump_goal_version, goal_label, goal_metrics,
 from .budget import BudgetExceeded
 from .claims import claim_store
 from .cards import card_for_exercise, card_for_topic, serve_card
-from .confirmation import (change_is_referenced, classify_decision,
+from .confirmation import (adjustment_is_referenced, change_is_referenced, classify_decision,
                            classify_safety_resolution)
 from .exercises import library as exercise_lib
 from .knowledge import LOAD_KNOWLEDGE_TOOL, KnowledgeBase
@@ -39,7 +39,7 @@ from .llm import LLMClient
 from .onboarding import (ONBOARDING_PROMPT, answers_health_question,
                          answers_injury_question, can_finish, missing_fields)
 from .plan import generate_plan, plan_to_text, regenerate_plan_preserve
-from .medical import training_permission
+from .medical import reported_current_restriction, training_permission
 from .profile import HOLD_FIELDS, ensure_flag_ids, merge_patch, open_pain_flags, profile_summary
 from .adjust import apply_adjustment, suggest_adjustments
 from .review import build_summary, e1rm, last_weight, review_context_text
@@ -439,7 +439,7 @@ START_PERSONAL_TRIAL_TOOL = {
                 "review_days": {"type": "integer", "description": "复盘时点（天数）"},
                 "stop_rule": {"type": "string", "description": "何时停止（必填）"},
             },
-            "required": ["change_desc", "reason", "observe", "stop_rule"],
+            "required": ["change_desc", "reason", "observe", "stop_rule", "review_days"],
         },
     },
 }
@@ -502,7 +502,11 @@ RESOLVE_PAIN_FLAG_TOOL = {
 }
 
 # C3 知识讨论：记录 ≠ 批准；C4 个人尝试：药物/极端手段不作为自主试验
-_TRIAL_FORBIDDEN = re.compile(r"类固醇|禁药|药物辅助|激素替代|脱水剂|断食")
+_TRIAL_FORBIDDEN = re.compile(r"类固醇|禁药|药物辅助|激素替代|脱水剂|断食|带痛|忍痛|疼痛下|硬扛|催吐")
+_TRIAL_OPT_IN = re.compile(
+    r"(?:我|我们)(?:想|愿意|同意|决定|准备)?(?:试试|试一下|尝试)|"
+    r"(?:确认|同意|接受|就按).{0,12}(?:尝试|试验|试试)|^(?:好|可以)[，,。\s]*(?:就)?试试")
+_TRIAL_OPT_OUT = re.compile(r"不(?:想|要|愿意|同意)?(?:试|尝试)|先不|暂不|取消|算了|不要记录")
 
 SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属于每个用户的教练"。
 
@@ -626,9 +630,9 @@ class CoachAgent:
         except Exception:
             _log.exception("复盘上下文构建失败，降级为空动态")
             dynamic = "（打卡数据读取异常，复盘暂缺）"
-        if fence.get("safety_flag_ids"):
+        if fence:
             # 高风险红旗未解除重评前，不把旧动作列表继续作为可执行上下文。
-            plan_text = "（当前计划因安全红旗已隔离；旧动作安排暂不提供）"
+            plan_text = "（当前计划已隔离；旧动作安排暂不提供）"
         else:
             plan_text = plan_to_text(plan) if plan else "（尚未生成，完成建档后生成）"
         if fenced_flags:
@@ -740,14 +744,16 @@ class CoachAgent:
         if self.profile.get("onboarding_done"):
             plan = self.db.get_active_plan(self.user_id)
             if plan:
-                return "建档已完成，当前计划：\n" + plan_to_text(plan)
-        self.profile["onboarding_done"] = True
-        plan = generate_plan(self.profile,
+                return "建档已完成，当前计划：\n" + self._handle_tool(
+                    {"name": "get_plan", "arguments": "{}"}, "normal")
+        candidate = copy.deepcopy(self.profile)
+        candidate["onboarding_done"] = True
+        plan = generate_plan(candidate,
                              exercise_states=self.db.all_exercise_states(self.user_id))
         # G3：定级是系统字段，由代码回写，保证档案与计划一致
-        self.profile.setdefault("experience", {})["level"] = plan["level"]
-        self.db.save_profile(self.user_id, self.profile)
-        self.db.create_plan(self.user_id, plan)
+        candidate.setdefault("experience", {})["level"] = plan["level"]
+        self.db.create_plan(self.user_id, plan, profile=candidate)
+        self.profile = candidate
         self._fence_open_safety_flags()
         self._refresh_system_prompt()
         if (self.profile.get("plan_fence") or {}).get("safety_flag_ids"):
@@ -761,10 +767,11 @@ class CoachAgent:
         self._turn_tools = set()
         self._turn_tool_results = []
         self._plan_before = self._plan_snapshot()
+        self.db.add_message(self.user_id, "user", user_input)
+        self._capture_medical_restriction(user_input)
         # ① 安全前置（确定性规则，先于一切）
         hit = check_red_flags(user_input)
         if hit is not None and hit.mode == "block":
-            self.db.add_message(self.user_id, "user", user_input)
             self._record_pain_flag(user_input, hit)
             reply = hit.response
             self.db.add_message(self.user_id, "assistant", reply)
@@ -773,7 +780,6 @@ class CoachAgent:
             return reply
 
         self.messages.append({"role": "user", "content": user_input})
-        self.db.add_message(self.user_id, "user", user_input)
 
         if hit is not None:  # soft：按语境分级留痕 + 注入安全提示
             # 否定语境（"我没有胸闷"）不留记录——建档问答里必然出现，
@@ -798,6 +804,16 @@ class CoachAgent:
         self.messages.append({"role": "assistant", "content": reply})
         self.db.add_message(self.user_id, "assistant", reply)
         return reply
+
+    def _capture_medical_restriction(self, user_input: str) -> None:
+        evidence = reported_current_restriction(user_input)
+        if evidence is None:
+            return
+        self.profile, _ = merge_patch(self.profile, {"conditions": {
+            "health_screen": {"clearance": evidence}, "health_screen_evidence": user_input}})
+        self.profile["pending_adjustments"] = []
+        self.db.save_profile(self.user_id, self.profile)
+        self._enforce_medical_permission()
 
     def _record_pain_flag(self, text: str, hit: SafetyHit) -> None:
         flags = self.profile.setdefault("conditions", {}).setdefault(
@@ -862,6 +878,8 @@ class CoachAgent:
 
     def _commit_plan(self, plan: dict, expected_plan_id: int) -> None:
         updated = copy.deepcopy(self.profile)
+        if plan.get("level"):
+            updated.setdefault("experience", {})["level"] = plan["level"]
         # 每条建议都属于旧计划版本，计划改变后不得继续执行。
         updated["pending_adjustments"] = []
         self.db.create_plan(self.user_id, plan, profile=updated,
@@ -1051,12 +1069,20 @@ class CoachAgent:
                 tools=tools if round_i < MAX_TOOL_ROUNDS - 1 else None)
             if not result["tool_calls"]:
                 reply = result["content"]
-                self.messages.append({"role": "assistant", "content": reply})
                 return reply
             for tc in result["tool_calls"]:
                 self._turn_tools.add(tc["name"])
-                tool_result = self._handle_tool(tc, mode)
+                if tc["name"] not in {t["function"]["name"] for t in tools}:
+                    tool_result = "当前阶段没有开放该工具，未执行。"
+                else:
+                    try:
+                        tool_result = self._handle_tool(tc, mode)
+                    except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                        tool_result = f"工具未完成：{exc}。请核对参数和当前状态后重试。"
                 self._append_tool_exchange(tc, tool_result)
+            # 自动收尾建档后，本轮也应使用正常工具和用户上下文。
+            if mode == "onboarding" and self.profile.get("onboarding_done"):
+                return tool_result
 
         return "（刚才那轮处理卡住了，换个说法再说一次？）"
 
@@ -1084,13 +1110,43 @@ class CoachAgent:
             del msgs[1:1 + drop]
 
     # ---- 工具处理 ----
+    def _user_evidence_exists(self, evidence: str) -> bool:
+        if not evidence.strip():
+            return False
+        messages = self.messages + self.db.recent_messages(self.user_id, 40)
+        return any(m.get("role") == "user" and evidence in str(m.get("content") or "")
+                   for m in messages)
+
+    def _profile_change_live(self, entry: dict) -> bool:
+        try:
+            return (datetime.fromisoformat(entry["expires_at"]) > datetime.now(timezone.utc)
+                    and self.db.user_messages_after(self.user_id, entry["created_message_id"])
+                    <= PENDING_EXPIRE_TURNS)
+        except (KeyError, TypeError, ValueError):
+            return False
+
     def _handle_tool(self, tc: dict, mode: str) -> str:
         name = tc["name"]
         try:
             args = json.loads(tc["arguments"] or "{}")
-        except json.JSONDecodeError:
-            _log.warning("工具参数 JSON 解析失败: %s %s", name, tc["arguments"][:100])
+        except (json.JSONDecodeError, TypeError):
+            _log.warning("工具参数 JSON 解析失败: %s", name)
             return "工具参数解析失败（JSON 格式错误），请重新组织参数再调用一次。"
+        if not isinstance(args, dict):
+            return "工具参数必须是 JSON 对象，未执行。"
+        # SDK 的 Schema 是提示，仍须在执行边界检查顶层类型。
+        schema = next((t["function"]["parameters"] for t in globals().values()
+                       if isinstance(t, dict) and t.get("type") == "function"
+                       and t.get("function", {}).get("name") == name), {})
+        types = {"object": dict, "array": list, "string": str, "boolean": bool,
+                 "integer": int, "number": (int, float)}
+        for key, spec in schema.get("properties", {}).items():
+            kind = spec.get("type")
+            if key not in args or key == "accept" or kind not in types:
+                continue
+            if (not isinstance(args[key], types[kind])
+                    or (kind in ("number", "integer") and isinstance(args[key], bool))):
+                return f"工具参数 {key} 类型无效（应为 {kind}），未执行。"
 
         if name == "load_knowledge":
             result = self.kb.load(args.get("path", ""))
@@ -1114,6 +1170,7 @@ class CoachAgent:
         if name == "update_profile":
             previous_health = copy.deepcopy(self.profile.get("conditions", {}).get("health_screen"))
             previous_resources = copy.deepcopy(self.profile.get("resources", {}))
+            previous_layoff = (self.profile.get("experience") or {}).get("recent_layoff_weeks", 0)
             previous_conditions_injuries = copy.deepcopy(
                 self.profile.get("conditions", {}).get("injuries"))
             patch = args.get("patch", {})
@@ -1141,11 +1198,16 @@ class CoachAgent:
                     return any(text in m for m in sources)
 
                 for field in ("injuries_evidence", "health_screen_evidence"):
-                    ev = (cond_patch.get(field) or "").strip()
-                    if ev and not _evidence_trusted(ev):
+                    ev = cond_patch.get(field) or ""
+                    relevant = answers_injury_question if field == "injuries_evidence" else answers_health_question
+                    if (not isinstance(ev, str)
+                            or (ev and (not _evidence_trusted(ev) or not relevant(ev)))):
                         cond_patch.pop(field, None)
                         rejected.append(field.replace("_evidence", "")
                                         + "的依据不是用户原话（未保存，请引用用户真实发言）")
+                restriction = reported_current_restriction(last_user)
+                if restriction and isinstance(cond_patch.get("health_screen"), dict):
+                    cond_patch["health_screen"]["clearance"] = restriction
                 # 评审二轮：依据绑定"每一次具体变更"——档案曾有依据不能让新变更免检
                 if "injuries" in cond_patch \
                         and not (cond_patch.get("injuries_evidence") or "").strip():
@@ -1194,7 +1256,14 @@ class CoachAgent:
                     "expires_at": (datetime.now(timezone.utc)
                                    + timedelta(days=PENDING_EXPIRE_DAYS)).isoformat(),
                 }
-                self.profile.setdefault("pending_profile_changes", []).append(entry)
+                live = [e for e in self.profile.get("pending_profile_changes", [])
+                        if isinstance(e, dict) and self._profile_change_live(e)]
+                existing = next((e for e in live if e.get("changes") == entry["changes"]), None)
+                if existing:
+                    entry = existing
+                else:
+                    live.append(entry)
+                self.profile["pending_profile_changes"] = live
                 self.db.save_profile(self.user_id, self.profile)
                 desc = "；".join(f"{h['field']}：{h['old']} → {h['new']}"
                                  for h in report["held"])
@@ -1220,6 +1289,15 @@ class CoachAgent:
             # 医疗约束收紧立即停用旧处方；放行恢复仍需用户确认重排。
             health_changed = self.profile.get("conditions", {}).get("health_screen") != previous_health
             plan_affecting = []
+            layoff = (self.profile.get("experience") or {}).get("recent_layoff_weeks", 0)
+            if layoff != previous_layoff:
+                plan_affecting.append("停训/复训状态已更新")
+                if layoff >= 2:
+                    fence = self.profile.setdefault("plan_fence", {})
+                    fence["reason"] = (fence.get("reason", "") + "；" if fence.get("reason") else "") + \
+                        "停训后需要复训重评，确认过渡计划前暂停旧重量安排"
+                    fence.setdefault("at", datetime.now().isoformat(timespec="seconds"))
+                    self.db.save_profile(self.user_id, self.profile)
             if health_changed:
                 self.profile["pending_adjustments"] = []
                 self.db.save_profile(self.user_id, self.profile)
@@ -1230,14 +1308,13 @@ class CoachAgent:
                     return "档案已更新" + suffix + "。原训练处方已暂停：" + permission.reason
                 plan_affecting.append("健康筛查或医嘱已更新，请确认新的训练计划")
             if isinstance(patch, dict):
-                cond = patch.get("conditions") or {}
-                res = patch.get("resources") or {}
-                if "injuries" in cond and "伤病史" not in rejected:
+                current_injuries = self.profile.get("conditions", {}).get("injuries") or []
+                if current_injuries != previous_conditions_injuries:
                     # 评审 P0-1（DESIGN 26.4：安全限制收紧不等协商）：
                     # 新增伤病时立即隔离现役计划（不兼容处方停止使用），
                     # 重排仍走两步确认；重排成功后解除隔离。
                     prev_inj = set(previous_conditions_injuries or [])
-                    new_inj = set(cond.get("injuries") or [])
+                    new_inj = set(current_injuries)
                     added = sorted(new_inj - prev_inj)
                     if added:
                         fence = self.profile.get("plan_fence")
@@ -1267,10 +1344,15 @@ class CoachAgent:
 
         if name == "confirm_profile_change":
             cid = args.get("change_id", "")
-            pending = self.profile.get("pending_profile_changes") or []
+            pending = list(self.profile.get("pending_profile_changes") or [])
             entry = next((e for e in pending if isinstance(e, dict) and e.get("id") == cid), None)
             if not entry:
                 return f"没有待确认的档案变更「{cid}」。"
+            if not self._profile_change_live(entry):
+                pending.remove(entry)
+                self.profile["pending_profile_changes"] = pending
+                self.db.save_profile(self.user_id, self.profile)
+                return "该档案变更已过期，未生效；请与用户重新确认后再次提交。"
             accept = args.get("accept")
             if not isinstance(accept, bool):
                 return "确认操作缺少有效的 accept 布尔值；变更仍保持待确认。"
@@ -1292,7 +1374,8 @@ class CoachAgent:
                             "请用户明确接受或拒绝该变更。")
                 return ("本轮发言不是明确拒绝；变更仍保持待确认，"
                         "请用户明确表示保留原值或取消该变更。")
-            if not change_is_referenced(latest_user, entry, pending, decision):
+            live_pending = [e for e in pending if isinstance(e, dict) and self._profile_change_live(e)]
+            if not change_is_referenced(latest_user, entry, live_pending, decision):
                 return ("本轮发言没有明确指向这项待确认变更及其拟改值；变更仍保持待确认。"
                         "请用户说明具体接受或拒绝哪项变更，并复述拟改值。")
             try:
@@ -1300,8 +1383,8 @@ class CoachAgent:
             except (KeyError, TypeError, ValueError):
                 expired = True
             pending.remove(entry)
-            self.profile["pending_profile_changes"] = pending
             if expired:
+                self.profile["pending_profile_changes"] = pending
                 self.db.save_profile(self.user_id, self.profile)
                 return "该档案变更已过期，未生效；请与用户重新确认后再次提交。"
             # 旧值校验：暂存后档案若已被其他变更改写，预期旧值不符则拒绝执行
@@ -1309,11 +1392,13 @@ class CoachAgent:
                        if (self.profile.get(h["field"].split(".", 1)[0]) or {}
                            ).get(h["field"].split(".", 1)[1]) != h["old"]]
             if drifted:
+                self.profile["pending_profile_changes"] = pending
                 self.db.save_profile(self.user_id, self.profile)
                 return ("档案在此期间已被修改（" + "、".join(drifted)
                         + "），与确认时依据的旧值不符，本次确认未执行；请重新核对后再提交。")
             desc = "；".join(f"{h['field']}：{h['old']} → {h['new']}" for h in entry["changes"])
             if not args.get("accept"):
+                self.profile["pending_profile_changes"] = pending
                 self.db.save_profile(self.user_id, self.profile)
                 return f"已保留原值（{desc.replace(' → ', ' 维持 ')}）。"
             patch: dict = {}
@@ -1331,19 +1416,37 @@ class CoachAgent:
                                            "session_minutes": "单次训练时间变了"}.get(key, key + "已变更"))
                 elif h["field"] == "experience.training_years":
                     plan_affecting.append("训练年限已更新")
-            self.profile, _ = merge_patch(self.profile, patch)  # _history 记录旧值
+            candidate, _ = merge_patch(self.profile, patch)  # 先构建候选，失败不改当前画像
+            candidate["pending_profile_changes"] = pending
             ver = None
             np = next((h["new"] for h in entry["changes"] if h["field"] == "goal.primary"), None)
             if goal_changed:
                 # 26.4：目标变更后旧目标下的待执行建议失效，计划按新目标重新协商
-                self.profile["pending_adjustments"] = []
+                candidate["pending_adjustments"] = []
                 # C2：目标版本绑定 + 评价指标一致切换
-                ver = bump_goal_version(self.profile)
-                if np:
-                    self.profile.setdefault("goal", {})["evaluation"] = goal_metrics(np)
-                    self.profile["goal"]["confirmed_at"] = datetime.now().isoformat(
-                        timespec="seconds")
-            self.db.save_profile(self.user_id, self.profile)
+                ver = bump_goal_version(candidate)
+                np = candidate["goal"]["primary"]
+                candidate["goal"]["evaluation"] = goal_metrics(np)
+                candidate["goal"]["confirmed_at"] = datetime.now().isoformat(timespec="seconds")
+            if goal_changed and candidate.get("onboarding_done"):
+                record = self.db.get_active_plan_record(self.user_id)
+                previous = (record or {}).get("content")
+                if previous and previous.get("resume_plan_id"):
+                    previous = self.db.get_plan_content(self.user_id, previous["resume_plan_id"]) or previous
+                try:
+                    new_plan = regenerate_plan_preserve(
+                        candidate, self.db.all_exercise_states(self.user_id), previous,
+                        reason=f"目标已切换为{goal_label(np)}（目标版本 v{ver}），确认后同步重排")
+                    if new_plan.get("medical_status", "allowed") != "allowed" and record:
+                        new_plan["resume_plan_id"] = record["content"].get("resume_plan_id", record["id"])
+                    candidate.setdefault("experience", {})["level"] = new_plan["level"]
+                    self.db.create_plan(self.user_id, new_plan, profile=candidate,
+                                        expected_plan_id=record["id"] if record else None)
+                except ValueError as exc:
+                    return f"目标与计划均未修改，变更仍待确认：{exc}"
+            else:
+                self.db.save_profile(self.user_id, candidate)
+            self.profile = candidate
             self._refresh_system_prompt()
             msg = f"档案已更新并留档原值：{desc}。"
             if goal_changed:
@@ -1351,14 +1454,11 @@ class CoachAgent:
                         + (f"，评价指标同步切换为「{self.profile['goal'].get('evaluation', '')}」"
                            if self.profile["goal"].get("evaluation") else "")
                         + "；旧目标下的待执行调整建议已作废；")
-            if plan_affecting and self.profile.get("onboarding_done"):
-                if ver and np:
-                    extra = self._offer_regenerate(
-                        f"目标已切换为{goal_label(np)}（目标版本 v{ver}），"
-                        "按新目标与评价指标重排计划")
-                else:
-                    extra = self._offer_regenerate(
-                        "、".join(plan_affecting) + "，建议按最新情况重排计划")
+            if goal_changed and self.profile.get("onboarding_done"):
+                msg += "目标、评价指标与重排计划已在同一事务中生效；原有安全隔离继续有效。"
+            elif plan_affecting and self.profile.get("onboarding_done"):
+                extra = self._offer_regenerate(
+                    "、".join(plan_affecting) + "，建议按最新情况重排计划")
                 if extra:
                     msg += extra
             return msg
@@ -1371,6 +1471,8 @@ class CoachAgent:
 
         if name == "save_checkin":
             ctype = args.get("type", "training")
+            if ctype not in ("training", "body", "diet"):
+                return "打卡类型必须是 training/body/diet，未保存。"
             data, warnings = coerce_checkin(ctype, args.get("data", {}))
             notes = list(warnings)
             if ctype == "training":
@@ -1384,15 +1486,12 @@ class CoachAgent:
                         if official != raw_name:
                             ex["name_raw"] = raw_name
                         ex["name"] = official
-                        self.db.update_exercise_state(
-                            self.user_id, ex_id,
-                            ex.get("weight_kg"), ex.get("rpe"),
-                            e1rm(ex.get("weight_kg"), ex.get("reps")))
                     else:
                         self._log_unmatched_exercise(raw_name)
                         notes.append(
                             f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
-            self.db.add_checkin(self.user_id, ctype, data)
+            self.db.record_checkin(self.user_id, ctype, data)
+            self.profile = self.db.get_profile(self.user_id)
             suffix = ("；" + "；".join(notes)) if notes else ""
             return "打卡已记录" + suffix + "。"
 
@@ -1421,7 +1520,7 @@ class CoachAgent:
                             + "旧计划动作列表暂不显示，也不可作为训练安排。")
                 else:
                     text = ("⚠️【计划已隔离】" + fence["reason"]
-                            + "。请勿按下列旧计划训练；先确认重排建议，新计划确认后自动解除。\n\n" + text)
+                            + "。旧动作安排暂不提供；先确认重排并复核隔离原因。")
             return text
 
         if name == "get_review":
@@ -1508,6 +1607,10 @@ class CoachAgent:
                 return error
             if self.db.latest_user_message_id(self.user_id) <= sug["created_message_id"]:
                 return "建议是本轮刚生成的，现在不能执行；请等用户下一轮明确确认。"
+            latest_user = next((m["content"] for m in reversed(
+                self.db.recent_messages(self.user_id, 10)) if m["role"] == "user"), "")
+            if not adjustment_is_referenced(latest_user, sug, self._live_pending(record)):
+                return "本轮用户没有明确同意这项调整；计划未修改，建议仍待确认。"
             if sug["action"] != "regenerate_plan" and (
                     plan.get("medical_status", "allowed") != "allowed"
                     or any(s["action"] == "regenerate_plan" for s in self._live_pending(record))):
@@ -1573,6 +1676,8 @@ class CoachAgent:
             evidence = (args.get("evidence") or "").strip()
             if not evidence:
                 return "缺 evidence：动作反馈必须附用户原话作依据，未保存。"
+            if not self._user_evidence_exists(evidence):
+                return "evidence 不是用户真实发言，动作反馈未保存。"
             self.db.record_exercise_feedback(
                 self.user_id, ex_id,
                 preference=args.get("preference"),
@@ -1635,6 +1740,8 @@ class CoachAgent:
                         "你的推断=inference），未保存。")
             if not note or not evidence:
                 return "教练笔记必须同时给 note 和 evidence（依据），未保存。"
+            if note_type in ("fact", "preference") and not self._user_evidence_exists(evidence):
+                return "用户事实或偏好的 evidence 必须来自真实用户发言，笔记未保存。"
             note_id = self.db.add_coach_note(
                 self.user_id, note, evidence, args.get("expires_days"),
                 note_type=note_type, review_days=args.get("review_days"))
@@ -1643,8 +1750,7 @@ class CoachAgent:
 
         if name == "close_coach_note":
             note_id = args.get("note_id")
-            target = next((n for n in self.db.open_coach_notes(self.user_id)
-                           if n["id"] == note_id), None)
+            target = self.db.get_coach_note(self.user_id, note_id)
             if self.db.close_coach_note(self.user_id, note_id):
                 dropped = self._void_suggestions_citing((target or {}).get("note", ""))
                 self._refresh_system_prompt()
@@ -1713,6 +1819,12 @@ class CoachAgent:
                         + "）。训练前先与用户确认医疗状态；拿到明确许可前不安排训练，"
                           "恢复训练需走确认流程。")
             lines = ["【训练前简报】以下为已知约束，不要重问建档已确认的信息："]
+            returning = (plan or {}).get("return_to_training")
+            if returning:
+                due = str(returning.get("review_at") or "")
+                lines.append("当前处于复训过渡，暂不加重或加量；"
+                             + ("复盘时点已到，先确认恢复与最新状态。" if due <= datetime.now().date().isoformat()
+                                else f"复盘日期：{due}，根据执行与恢复再决定后续安排。"))
             flags = open_pain_flags(self.profile)
             if flags:
                 listing = "；".join(f"[{f.get('flag_id', '?')}] {f.get('kw', '?')}"
@@ -1731,8 +1843,8 @@ class CoachAgent:
                                  f"（观察：{t['observe']}）——{due}")
             s = build_summary(self.db, self.user_id, plan)
             if s["total_checkins"]:
-                if s.get("days_since_last") is not None and s["days_since_last"] >= 7:
-                    lines.append(f"距上次训练已 {s['days_since_last']} 天："
+                if s.get("days_since_last_training") is not None and s["days_since_last_training"] >= 7:
+                    lines.append(f"距上次训练已 {s['days_since_last_training']} 天："
                                  "按复训处理，第一组次减量")
                 rising = [n for n, d in s.get("rpe_drifts", {}).items() if d == "rising"]
                 if rising:
@@ -1752,6 +1864,10 @@ class CoachAgent:
             return "\n".join(lines)
 
         if name == "start_personal_trial":
+            if self.profile.get("plan_fence") or open_pain_flags(self.profile):
+                return "存在安全记录或计划隔离，先处理并重新评估，不开始新的训练尝试。"
+            if not training_permission(self.profile).allows_prescription:
+                return "医疗许可不足，先确认允许的活动范围，不开始新的训练尝试。"
             change = (args.get("change_desc") or "").strip()
             reason = (args.get("reason") or "").strip()
             observe = (args.get("observe") or "").strip()
@@ -1762,6 +1878,13 @@ class CoachAgent:
             if _TRIAL_FORBIDDEN.search(change + "；" + reason):
                 return ("这不属于可自主尝试的范围（26.3C）：涉及药物或极端手段的内容不做试验，"
                         "疼痛下也不硬练；如涉及健康问题请建议咨询专业人员。")
+            review_days = args.get("review_days")
+            if not isinstance(review_days, int) or isinstance(review_days, bool) or review_days <= 0:
+                return "何时复盘（review_days）必须是正整数天数，五要素缺一不可，未保存。"
+            latest_user = next((m["content"] for m in reversed(self.db.recent_messages(self.user_id, 10))
+                                if m["role"] == "user"), "")
+            if _TRIAL_OPT_OUT.search(latest_user) or not _TRIAL_OPT_IN.search(latest_user):
+                return "尚无用户明确同意开始这项个人尝试的发言，未保存；先与用户约定。"
             try:
                 trial_id = self.db.start_personal_trial(
                     self.user_id, change, reason, observe, stop_rule,

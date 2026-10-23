@@ -265,7 +265,8 @@ def _finishable_profile():
         "conditions": {
             "injuries": [], "injuries_collected": True,
             "injuries_evidence": "我没有任何伤病",
-            "health_screen": {"heart": "无"}, "health_screen_collected": True,
+            "health_screen": {"heart": "无", "pregnancy": "不适用",
+                              "medication": "无", "clearance": "无"}, "health_screen_collected": True,
             "health_screen_evidence": "身体都正常",
         },
     }
@@ -290,7 +291,7 @@ def test_can_finish_requires_evidence():
 def test_level_written_back_on_finish():
     agent = _agent()
     for msg in ("你好", "男，28岁，178cm，85kg", "我想减脂，每周能练3天",
-                "我没有任何伤病"):
+                "我没有任何伤病，没有心血管疾病，不适用怀孕，没有长期用药，医生没有限制运动"):
         agent.chat(msg)
     assert agent.profile["onboarding_done"] is True
     assert agent.profile["experience"]["level"] == "beginner"

@@ -60,10 +60,10 @@ def test_confirm_binds_version_and_evaluation():
     assert g["version"] == 1                                     # 版本绑定
     assert "力量渐进" in g["evaluation"]                          # 评价指标一致切换
     assert g["confirmed_at"]
-    assert "v1" in out and "重排" in out                          # 重排建议绑定目标版本
-    regen = next(s for s in ag.profile["pending_adjustments"]
-                 if s["action"] == "regenerate_plan")
-    assert "v1" in regen["reason"]
+    # DESIGN 26.4⑤：确认后计划与目标一起生效，不留下旧目标的现役计划。
+    assert "v1" in out and "重排" in out
+    assert not ag.profile["pending_adjustments"]
+    assert ag.db.get_active_plan("s")["goal_version"] == 1
 
 
 def test_plan_stamped_with_goal_version():

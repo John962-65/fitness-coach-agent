@@ -17,11 +17,13 @@ default 是模板默认动作。填槽三步（全部确定性代码，LLM 只�
 from __future__ import annotations
 
 import copy
+from datetime import date, timedelta
 
 from .exercises import library as exercise_lib
 from .programming import estimate_minutes, fit_time_budget
 from .medical import training_permission
 from .profile import _is_positive, open_pain_flags
+from .validate import round_half
 
 LEVEL_ORDER = {"beginner": 0, "intermediate": 1, "advanced": 2}
 PATTERN_LABEL = {
@@ -183,6 +185,8 @@ def _hard_exclude(ex: dict, profile: dict, states: dict,
     st = states.get(ex["id"]) or {}
     if st.get("status") == "avoid":
         return "你说过先不练它"
+    if st.get("discomfort"):
+        return "你反馈过该动作不适，先确认当前情况后再安排"
     # 2026-09-29：有伤病时只用已审核动作——draft 的 joint_stress 是 LLM 估的、
     # 未经发起人审核，不能拿它决定伤病用户练什么
     if approved_only and ex.get("status") != "approved":
@@ -194,7 +198,10 @@ def _hard_exclude(ex: dict, profile: dict, states: dict,
     if loc not in (ex.get("location") or []):
         return f"场地不匹配（需要 {'/'.join(ex.get('location') or [])}）"
     for joint in joints:
-        if (ex.get("joint_stress") or {}).get(joint, 0) >= INJURY_STRESS_THRESHOLD:
+        stress = ex.get("joint_stress") or {}
+        if joint not in stress:
+            return f"缺少 {joint} 压力数据，不能据此判断适用"
+        if stress[joint] >= INJURY_STRESS_THRESHOLD:
             return f"{joint} 压力高（{joint} 有伤）"
     return None
 
@@ -310,6 +317,8 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         return {
             "template": "（医疗暂停）等待明确训练许可",
             "level": level, "days_per_week": days, "schedule": [],
+            "goal_version": int(g.get("version") or 0),
+            "requested_days_per_week": days, "time_budget_minutes": minutes,
             "medical_status": permission.status,
             "medical_evidence": permission.evidence,
             "notes": [f"健康筛查：{permission.reason}；"
@@ -437,14 +446,22 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
 
     # ---- 停训复训 ramp ----
     if layoff >= 2:
+        notes = [n for n in notes if not any(word in n for word in
+                 ("RPE 8", "RPE 9", "递减组", "按周加重", "质量必须拉满"))]
         notes.insert(
             0,
             f"⚠️ 停训 {layoff} 周：第 1-2 周强度降为停训前的 70%，"
-            "动作模式优先于重量，第 3 周恢复正常进阶",
+            "动作模式优先于重量，过渡后先复盘确认，再恢复正常进阶",
         )
-        template = "（复训 ramp）" + template
+        template = "（复训 ramp）动作模式与渐进恢复"
+        for day in schedule:
+            for entry in day["exercises"]:
+                entry["note"] = "复训过渡：优先动作控制，不力竭；复盘确认后再进阶"
+                last = (states.get(entry["exercise_id"]) or {}).get("last_weight")
+                if isinstance(last, (int, float)) and last > 0:
+                    entry["weight_kg"] = round_half(last * 0.7)
 
-    return {
+    plan = {
         "template": template,
         "medical_status": "allowed",
         "level": level,
@@ -456,6 +473,14 @@ def generate_plan(profile: dict, exercise_states=None) -> dict:
         "schedule": schedule,
         "notes": notes,
     }
+    if layoff >= 2:
+        plan["return_to_training"] = {
+            "factor": 0.7, "layoff_weeks": layoff,
+            "profile_change_at": ((profile.get("_history") or {})
+                                  .get("experience.recent_layoff_weeks") or {}).get("at", ""),
+            "review_at": (date.today() + timedelta(days=14)).isoformat(),
+        }
+    return plan
 
 
 def regenerate_plan_preserve(profile: dict, exercise_states,
@@ -474,6 +499,11 @@ def regenerate_plan_preserve(profile: dict, exercise_states,
     if actual_days and requested_days == prior_requested:
         effective.setdefault("resources", {})["days_per_week"] = actual_days
     new = generate_plan(effective, exercise_states=exercise_states)
+    old_return, new_return = old_plan.get("return_to_training"), new.get("return_to_training")
+    same_return = bool(old_return and new_return and all(
+        old_return.get(k) == new_return.get(k) for k in ("layoff_weeks", "profile_change_at")))
+    if same_return:
+        new["return_to_training"] = copy.deepcopy(old_return)
     new["requested_days_per_week"] = requested_days
     previous: dict[str, list[dict]] = {}
     for day in old_plan.get("schedule", []):
@@ -498,6 +528,8 @@ def regenerate_plan_preserve(profile: dict, exercise_states,
             for field in fields:
                 if saved.get(field) is not None:
                     ex[field] = saved[field]
+            if new_return and not same_return and saved.get("weight_kg") is not None:
+                ex["weight_kg"] = round_half(saved["weight_kg"] * new_return["factor"])
         day["exercises"], changes = fit_time_budget(day["exercises"], new.get("time_budget_minutes", 60))
         day["estimated_minutes"] = estimate_minutes(day["exercises"])
         if changes:

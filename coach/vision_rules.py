@@ -15,14 +15,14 @@ import math
 
 
 FAULT_LABELS = {
-    "SQUAT_SHALLOW": "蹲得不够深（髋未低于膝）",
-    "SQUAT_KNEE_FORWARD": "膝盖过度前移（膝主导，臀参与不足）",
-    "SQUAT_HEEL_LIFT": "脚跟离地/重心前移",
+    "SQUAT_SHALLOW": "画面内髋点未低于膝点，需结合目标幅度复核",
+    "SQUAT_KNEE_DISPLACEMENT": "画面内膝点水平位移较大",
+    "SQUAT_ANKLE_MOVEMENT": "画面内踝点有明显竖直位移",
     "SQUAT_VALGUS": "膝盖内扣（正面视角）",
-    "HINGE_ROUND_BACK": "下背弯曲（腰椎反弓风险）",
+    "HINGE_TRUNK_ANGLE": "画面内肩髋膝夹角较小",
     "HINGE_SHALLOW_HIP": "髋没往后坐（像深蹲不像硬拉）",
-    "BENCH_BOUNCE": "触胸弹起（利用反弹借力）",
-    "BENCH_HALF_ROM": "幅度不足（未触胸或未伸直）",
+    "BENCH_ELBOW_FRAME_CHANGE": "相邻采样帧肘角变化较大",
+    "BENCH_HALF_ROM": "采样中最小肘角大于参考区间，需人工复核",
 }
 # 15.7 局限声明：以下只能作为「提示」而非诊断；数值阈值可由发起人校准
 
@@ -38,18 +38,25 @@ def _angle(a: tuple, b: tuple, c: tuple) -> float:
     return math.degrees(math.acos(cos))
 
 
+def _point(points, index):
+    try:
+        p = points[index]
+        x, y, visibility = float(p["x"]), float(p["y"]), float(p.get("visibility", 0))
+        aspect = float(p.get("aspect_ratio", 1))
+        if visibility <= 0.5 or aspect <= 0 or not all(math.isfinite(v) for v in (x, y, visibility, aspect)):
+            return None
+        # 坐标原本分别按宽/高归一，计算角度前统一为画面高度单位。
+        return x * aspect, y
+    except (IndexError, KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+
 def _side(points) -> dict:
-    """取单侧关键点（画面朝向的一侧）：优先左，异常用右"""
-    idx = {"shoulder": 11, "hip": 23, "knee": 25, "ankle": 27}
-    out = {}
-    for name, i in idx.items():
-        p = points[i] if i < len(points) else None
-        out[name] = (p["x"], p["y"]) if p and p.get("visibility", 1) > 0.5 else None
-    if out["knee"] is None:  # 左侧不可见 → 右侧
-        for name, i in {"shoulder": 12, "hip": 24, "knee": 26, "ankle": 28}.items():
-            p = points[i]
-            out[name] = (p["x"], p["y"]) if p and p.get("visibility", 1) > 0.5 else None
-    return out
+    """整侧选择更完整的关键点，不拼接左右关节。"""
+    names = ("shoulder", "hip", "knee", "ankle")
+    sides = [dict(zip(names, (_point(points, i) for i in indices)))
+             for indices in ((11, 23, 25, 27), (12, 24, 26, 28))]
+    return max(sides, key=lambda side: sum(p is not None for p in side.values()))
 
 
 def check_squat(frames: list, view: str = "side") -> list[dict]:
@@ -57,45 +64,55 @@ def check_squat(frames: list, view: str = "side") -> list[dict]:
     faults: list[dict] = []
     if not frames:
         return faults
+    if view == "front":
+        valid, inward = 0, 0
+        for f in frames:
+            lh, rh = _point(f, 23), _point(f, 24)
+            if lh is None or rh is None or abs(lh[0] - rh[0]) < 0.01:
+                continue
+            center = (lh[0] + rh[0]) / 2
+            for hi, ki, ai in ((23, 25, 27), (24, 26, 28)):
+                h, k, a = (_point(f, i) for i in (hi, ki, ai))
+                if h is None or k is None or a is None:
+                    continue
+                valid += 1
+                direction = 1 if center > h[0] else -1
+                if direction * (k[0] - (h[0] + a[0]) / 2) > 0.03:
+                    inward += 1
+        if inward >= max(1, valid // 3):
+            faults.append({"code": "SQUAT_VALGUS", "value": inward})
+        return faults
+    if view != "side":
+        return faults
     sides = [_side(f) for f in frames]
-    hip_y = [s["hip"][1] for s in sides if s["hip"]]
-    knee_y = [s["knee"][1] for s in sides if s["knee"]]
     ankle_y = [s["ankle"][1] for s in sides if s["ankle"]]
 
     # 1) 深度：最低点髋应低于膝（y 更大）
-    if hip_y and knee_y:
-        ratios = [h - k for h, k in zip(hip_y, knee_y)]
+    ratios = [s["hip"][1] - s["knee"][1] for s in sides if s["hip"] and s["knee"]]
+    if ratios:
         best = max(ratios)
         if best < 0.0:
             faults.append({"code": "SQUAT_SHALLOW", "value": round(best, 3),
                            "hint": f"髋-膝相对高度峰值 {best:.2f}（应为正）"})
-    # 2) 膝盖前移：下蹲到底时膝水平位移相对脚踝过大
+    # 2) 只观察膝点位移，不以此判断肌肉参与或动作有害。
     if all(s["knee"] and s["ankle"] for s in sides):
         x_start = sides[0]["knee"][0]
         x_low = max(sides, key=lambda s: (s["hip"][1] if s["hip"] else 0))["knee"][0]
         shift = abs(x_low - x_start)
         if shift > 0.25:  # 归一化坐标，约等于肩宽的一半
-            faults.append({"code": "SQUAT_KNEE_FORWARD", "value": round(shift, 3),
-                           "hint": f"膝水平位移 {shift:.2f}（画面宽度比例）"})
-    # 3) 脚跟离地：蹲底时踝明显上升
-    if ankle_y and knee_y:
+            faults.append({"code": "SQUAT_KNEE_DISPLACEMENT", "value": round(shift, 3),
+                           "hint": f"膝水平位移 {shift:.2f}（画面高度比例）；不能据此推断肌肉参与或动作有害"})
+    # 3) 踝点位移；没有脚跟接地信息，不能推断脚跟离地。
+    if ankle_y:
         lift = max(ankle_y) - min(ankle_y)
         if lift > 0.05:
-            faults.append({"code": "SQUAT_HEEL_LIFT", "value": round(lift, 3)})
-    # 4) 正面：膝内扣（膝 x 向对侧偏移超过踝-髋连线）
-    if view == "front":
-        valgus = 0
-        for s in sides:
-            if s["hip"] and s["knee"] and s["ankle"]:
-                if s["knee"][0] > (s["hip"][0] + s["ankle"][0]) / 2 + 0.03:
-                    valgus += 1
-        if valgus >= max(1, len(sides) // 3):
-            faults.append({"code": "SQUAT_VALGUS", "value": valgus})
+            faults.append({"code": "SQUAT_ANKLE_MOVEMENT", "value": round(lift, 3),
+                           "hint": "踝点位移不能证明脚跟离地或重心位置，需检查脚部画面与机位"})
     return faults
 
 
 def check_hinge(frames: list, view: str = "side") -> list[dict]:
-    """硬拉/罗马尼亚硬拉（侧面）：腰背中立 + 髋后坐"""
+    """硬拉/罗马尼亚硬拉侧面的可见夹角和位移，不推断腰椎曲度。"""
     faults: list[dict] = []
     if not frames:
         return faults
@@ -103,14 +120,14 @@ def check_hinge(frames: list, view: str = "side") -> list[dict]:
     pairs = [s for s in sides if all(s[k] for k in ("shoulder", "hip", "knee"))]
     if not pairs:
         return faults
-    # 1) 腰背：肩-髋连线与髋-膝连线夹角过小（躯干过度前屈且塌腰）提示
+    # 1) 肩髋膝夹角是投影几何量，并不是脊柱曲线。
     angles = [_angle(s["shoulder"], s["hip"], s["knee"]) for s in pairs]
     min_angle = min(angles)
-    # 躯干角 < 60° 且 <95 分位过小 → 提示圆背风险（粗粒度，待发起人校准）
+    # 原型阈值只用于选择待人工复核的几何观察。
     deep = [a for a in angles if a < 70]
     if len(deep) >= max(2, len(angles) // 4) and min_angle < 60:
-        faults.append({"code": "HINGE_ROUND_BACK", "value": round(min_angle, 1),
-                       "hint": "躯干角过小说明俯身过深，注意脊柱中立"})
+        faults.append({"code": "HINGE_TRUNK_ANGLE", "value": round(min_angle, 1),
+                       "hint": "肩髋膝夹角不反映腰椎曲度，无法判断圆背、组织损伤或疼痛原因"})
     # 2) 髋后坐：髋的水平位移应明显大于膝
     hip_x = [s["hip"][0] for s in pairs]
     knee_x = [s["knee"][0] for s in pairs]
@@ -119,38 +136,34 @@ def check_hinge(frames: list, view: str = "side") -> list[dict]:
     if hip_shift < knee_shift * 1.2:
         faults.append({"code": "HINGE_SHALLOW_HIP",
                        "value": round(hip_shift / max(knee_shift, 1e-9), 2),
-                       "hint": "髋位移不足——做成了蹲，不是髋铰链"})
+                       "hint": "仅为画面内位移比，需要结合动作变式与拍摄质量复核"})
     return faults
 
 
 def check_bench(frames: list, view: str = "side") -> list[dict]:
-    """卧推（侧面）：幅度与弹起借力"""
+    """卧推侧面的可见肘角范围与相邻采样帧变化。"""
     faults: list[dict] = []
     if not frames:
         return faults
-    sides = [_side(f) for f in frames]
-    shoulder_y = [s["shoulder"][1] for s in sides if s["shoulder"]]
     elbow_angles = []
     for f in frames:
-        p = f
-        try:
-            sh, el, wr = p[11], p[13], p[15]
-            a = _angle((sh["x"], sh["y"]), (el["x"], el["y"]), (wr["x"], wr["y"]))
-            elbow_angles.append(a)
-        except (KeyError, IndexError, TypeError):
-            continue
+        for indices in ((11, 13, 15), (12, 14, 16)):
+            pts = [_point(f, i) for i in indices]
+            if all(p is not None for p in pts):
+                elbow_angles.append(_angle(*pts))
+                break
     if elbow_angles:
-        # 幅度：最弯肘角过小 = 没到底（卧推底端肘角约 45-90°）
+        # 可见肘角范围，不据此判断杠铃是否触胸。
         if min(elbow_angles) > 100:
             faults.append({"code": "BENCH_HALF_ROM",
                            "value": round(min(elbow_angles), 1),
-                           "hint": "肘角从未进入深度区间，可能幅度不足"})
-        # 弹起：底端停留时间过短（连续帧肘角变化率过高）
+                           "hint": "仅描述可见肘角范围；没有杠铃与胸部接触信息，无法判断是否触胸"})
+        # 缺少时间戳，不称为角速度，也不推断触胸反弹。
         fast = sum(1 for a, b in zip(elbow_angles, elbow_angles[1:])
                    if b - a > 25)
         if fast >= 2 and min(elbow_angles) < 95:
-            faults.append({"code": "BENCH_BOUNCE", "value": fast,
-                           "hint": "底端到推起的角速度过快，疑似触胸弹起"})
+            faults.append({"code": "BENCH_ELBOW_FRAME_CHANGE", "value": fast,
+                           "hint": "相邻采样帧变化受抽帧率影响；不能据此判断触胸弹起或借力"})
     return faults
 
 
@@ -164,7 +177,15 @@ def analyze(exercise: str, frames: list, view: str = "side") -> list[dict]:
     if fn is None:
         return [{"code": "UNSUPPORTED", "value": exercise,
                  "hint": "MVP 只支持深蹲/硬拉/罗马尼亚硬拉/卧推（侧面）"}]
-    faults = fn(frames, view)
+    if view != "side" and not (exercise == "squat" and view == "front"):
+        return [{"code": "UNSUPPORTED_VIEW", "hint": "该动作当前只支持侧面，请按拍摄规范重新录制"}]
+    required = ((11, 13, 15), (12, 14, 16)) if exercise == "bench" else ((11, 23, 25, 27), (12, 24, 26, 28))
+    if exercise == "squat" and view == "front":
+        required = ((23, 24, 25, 26, 27, 28),)
+    valid = [f for f in (frames or []) if any(all(_point(f, i) is not None for i in group) for group in required)]
+    if len(valid) < 2:
+        return [{"code": "INSUFFICIENT_DATA", "hint": "可见关键点不足，不能将未命中规则当作动作正常"}]
+    faults = fn(valid, view)
     for f in faults:
         f["label"] = FAULT_LABELS.get(f["code"], f["code"])
     return faults

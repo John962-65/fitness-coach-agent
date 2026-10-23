@@ -48,7 +48,7 @@ def test_squat_shallow():
 def test_squat_knee_forward():
     faults = vr.check_squat(_squat_frames(0.75, 0.62, knee_x_shift=0.30))
     codes = [f["code"] for f in faults]
-    assert "SQUAT_KNEE_FORWARD" in codes
+    assert "SQUAT_KNEE_DISPLACEMENT" in codes
 
 
 def test_squat_valgus_front_view():
@@ -56,7 +56,8 @@ def test_squat_valgus_front_view():
     frames = []
     for _ in range(4):
         frames.append(_frame((0.50, 0.30), (0.44, 0.55), (0.47, 0.68),
-                             (0.40, 0.85), side="left"))
+                             (0.40, 0.85), side="left",
+                             extra={24: (0.56, 0.55), 26: (0.56, 0.68), 28: (0.60, 0.85)}))
     faults = vr.check_squat(frames, view="front")
     assert any(f["code"] == "SQUAT_VALGUS" for f in faults)
 
@@ -134,7 +135,7 @@ def test_bench_half_rom():
 
 def test_bench_bounce():
     faults = vr.check_bench(_bench_frames("bounce"))
-    assert any(f["code"] == "BENCH_BOUNCE" for f in faults)
+    assert any(f["code"] == "BENCH_ELBOW_FRAME_CHANGE" for f in faults)
 
 
 # ---- 入口与边界 ----

@@ -17,7 +17,8 @@ ONBOARD_PATCH = {
     "goal": {"primary": "fat_loss"},
     "resources": {"location": "gym", "days_per_week": 3, "session_minutes": 60},
     "conditions": {"injuries": [], "injuries_evidence": "没有伤病",
-                   "health_screen": {"heart": "无", "pregnancy": "不适用"},
+                   "health_screen": {"heart": "无", "pregnancy": "不适用",
+                                     "medication": "无", "clearance": "无"},
                    "health_screen_evidence": "没有心血管疾病，医生没有限制运动"},
 }
 
@@ -91,10 +92,7 @@ def test_nine_step_continuous_scenario(tmp_path):
     assert g["primary"] == "muscle_gain" and g["version"] == 1
     assert "力量渐进" in g["evaluation"]                              # 评价指标同步切换
     assert a.profile["_history"]["goal.primary"]["old"] == "fat_loss"  # 保留来历
-    regen = pending(a, "regenerate_plan")
-    assert "v1" in regen["reason"]                                    # 版本化重排
-    chat_tools(a, "确认按增肌重排",
-               ("apply_adjustment", {"suggestion_id": regen["id"]}))
+    assert not a.profile.get("pending_adjustments")                  # 确认目标时已同步重排
     plan = a.db.get_active_plan("chen")
     assert plan["goal_version"] == 1                                  # 计划绑定新目标版本
     assert len(a.db.list_checkins("chen")) == n_ck                    # 历史不清空

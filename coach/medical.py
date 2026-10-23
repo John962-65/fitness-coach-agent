@@ -82,3 +82,24 @@ def training_permission(profile: dict) -> TrainingPermission:
         return TrainingPermission("pending", evidence,
                                   "健康筛查有需关注项，医生尚未明确放行训练，暂不生成训练处方")
     return TrainingPermission("allowed", evidence, "未报告需限制训练的健康事项")
+
+
+def reported_current_restriction(text: str) -> str | None:
+    """明确的个人医嘱自述只能收紧，不能据此自动授予训练许可。"""
+    if re.search(r"如果|假如|要是|比如|别人|朋友|学员|患者", text):
+        return None
+    clauses = [c.strip() for c in _SPLIT.split(text) if c.strip()]
+    selected, current = [], False
+    for clause in clauses:
+        if re.search(r"(?:我|刚|今天|现在).{0,6}医生|医生.{0,6}(?:我|刚|今天|现在)|我的医嘱", clause):
+            if re.search(r"以前|之前|去年|曾经|过去", clause) and not re.search(r"刚|今天|现在", clause):
+                continue
+            current = True
+            selected.append(clause)
+        elif current and (_DENY.search(clause) or _UNCONFIRMED.search(clause) or _LIMIT.search(clause)):
+            selected.append(clause)
+    evidence = "；".join(selected)
+    if not evidence or not any(_DENY.search(c) or _UNCONFIRMED.search(c) or _LIMIT.search(c) for c in selected):
+        return None
+    permission = training_permission({"conditions": {"health_screen": {"clearance": evidence}}})
+    return evidence if not permission.allows_prescription else None

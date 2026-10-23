@@ -38,8 +38,8 @@ def test_onboarding_flow_with_health_screen():
     assert agent.profile["goal"]["primary"] == "fat_loss"
     assert agent.profile["resources"]["days_per_week"] == 3
 
-    # FAKE 模式：无伤病回答同时落伤病史 + 健康筛查
-    agent.chat("我没有任何伤病")
+    # 各项都有明确回答后，才允许完成健康筛查。
+    agent.chat("我没有任何伤病，没有心血管疾病或高血压，不适用怀孕，没有长期用药，医生没有限制运动")
     assert agent.profile["conditions"]["injuries_collected"]
     assert agent.profile["conditions"]["health_screen_collected"]
     assert agent.profile.get("onboarding_done") is True
@@ -61,7 +61,7 @@ def test_onboarding_blocked_without_health_screen():
 def test_plan_generated_after_onboarding():
     agent, _ = _mk()
     for msg in ("你好", "我叫阿明，男，28岁，178cm，85kg",
-                "我想减脂，每周能练3天", "我没有任何伤病"):
+                "我想减脂，每周能练3天", "我没有任何伤病，没有心血管疾病或高血压，不适用怀孕，没有长期用药，医生没有限制运动"):
         agent.chat(msg)
     plan = agent.db.get_active_plan("p1_test")
     assert plan is not None
@@ -72,7 +72,7 @@ def test_plan_generated_after_onboarding():
 def test_checkin_persisted():
     agent, _ = _mk()
     for msg in ("你好", "男，28岁，178cm，85kg", "我想减脂，每周能练3天",
-                "我没有任何伤病"):
+                "我没有任何伤病，没有心血管疾病或高血压，不适用怀孕，没有长期用药，医生没有限制运动"):
         agent.chat(msg)
     agent.chat("今天深蹲80kg做了5组5次，最后一组很吃力")
     checkins = agent.db.list_checkins("p1_test")
@@ -84,7 +84,7 @@ def test_checkin_persisted():
 def test_red_flag_and_message_persistence():
     agent, _ = _mk()
     for msg in ("你好", "男，28岁，178cm，85kg", "我想减脂，每周能练3天",
-                "我没有任何伤病"):
+                "我没有任何伤病，没有心血管疾病或高血压，不适用怀孕，没有长期用药，医生没有限制运动"):
         agent.chat(msg)
     r = agent.chat("我练的时候突然胸闷")
     assert "就医" in r and "120" in r
@@ -98,7 +98,7 @@ def test_restart_restores_state():
     _, tmp_db = _mk()
     agent = CoachAgent(user_id="p1_test", db_path=tmp_db)
     for msg in ("你好", "男，28岁，178cm，85kg", "我想减脂，每周能练3天",
-                "我没有任何伤病"):
+                "我没有任何伤病，没有心血管疾病或高血压，不适用怀孕，没有长期用药，医生没有限制运动"):
         agent.chat(msg)
 
     agent2 = CoachAgent(user_id="p1_test", db_path=tmp_db)

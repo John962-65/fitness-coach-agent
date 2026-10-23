@@ -173,13 +173,13 @@ def test_evidence_backfill_from_user_message():
 def test_evidence_backfill_keeps_explicit():
     """2026-10-11 规格变更（评审 P0-3）：LLM 自附 evidence 必须出现在真实用户消息中。"""
     agent = _agent()
-    agent.messages.append({"role": "user", "content": "我膝盖有伤，明确的原话"})
+    agent.messages.append({"role": "user", "content": "我膝盖有伤，这是用户的明确原话"})
     agent._handle_tool({"name": "update_profile",
                         "arguments": json.dumps({"patch": {
                             "conditions": {"injuries": ["膝伤"],
-                                           "injuries_evidence": "明确的原话"}}})},
+                                           "injuries_evidence": "我膝盖有伤"}}})},
                        "onboarding")
-    assert agent.profile["conditions"]["injuries_evidence"] == "明确的原话"
+    assert agent.profile["conditions"]["injuries_evidence"] == "我膝盖有伤"
 
 
 def test_auto_finalize_when_profile_complete():
@@ -193,7 +193,8 @@ def test_auto_finalize_when_profile_complete():
         "goal": {"primary": "fat_loss"},
         "resources": {"days_per_week": 3},
         "conditions": {"injuries": [], "injuries_evidence": "没有伤病",
-                       "health_screen": {"heart": "无"},
+                       "health_screen": {"heart": "无", "pregnancy": "不适用",
+                                         "medication": "无", "clearance": "无"},
                        "health_screen_evidence": "没事"},
     }}
     result = agent._handle_tool({"name": "update_profile",
@@ -369,6 +370,7 @@ def test_record_feedback_requires_evidence_and_known_exercise():
                             "arguments": '{"exercise": "不知道啥动作", "evidence": "x"}'},
                            "normal")
     assert "未识别动作" in r
+    agent.db.add_message("s", "user", "保加利亚分腿蹲找不到臀的感觉")
     r = agent._handle_tool({"name": "record_exercise_feedback",
                             "arguments": json.dumps({
                                 "exercise": "保加利亚分腿蹲", "feel": 1,
@@ -380,6 +382,7 @@ def test_record_feedback_requires_evidence_and_known_exercise():
 
 def test_feedback_surfaces_in_system_prompt():
     agent = _agent()
+    agent.db.add_message("s", "user", "杠铃卧推推完肩膀不舒服")
     agent._handle_tool({"name": "record_exercise_feedback",
                         "arguments": json.dumps({
                             "exercise": "杠铃卧推", "discomfort": "肩前侧不适",
@@ -443,7 +446,7 @@ def _agent_with_plan(uid="s"):
 def test_avoid_feedback_offers_regenerate():
     """用户说"先不练它"（avoid）→ 生成重排建议（pending），走两步确认"""
     agent = _agent_with_plan()
-    agent.db.add_message(agent.user_id, "user", "本轮反馈")
+    agent.db.add_message(agent.user_id, "user", "杠铃卧推先不练它")
     result = agent._handle_tool({"name": "record_exercise_feedback",
                                  "arguments": json.dumps({
                                      "exercise": "杠铃卧推", "status": "avoid",
@@ -469,7 +472,7 @@ def test_regenerate_preserves_prescription_weights():
     plan = agent.db.get_active_plan("s")
     plan["schedule"][2]["exercises"][0]["weight_kg"] = 100.0  # 周五杠铃深蹲
     agent.db.create_plan("s", plan)
-    agent.db.add_message(agent.user_id, "user", "本轮反馈")
+    agent.db.add_message(agent.user_id, "user", "杠铃卧推肩膀不舒服，先不练")
     agent._handle_tool({"name": "record_exercise_feedback",
                         "arguments": json.dumps({
                             "exercise": "杠铃卧推", "status": "avoid",
@@ -505,7 +508,7 @@ def test_profile_injury_change_offers_regenerate():
 def test_regenerate_not_duplicated():
     """已有一条待确认的重排建议时不重复生成"""
     agent = _agent_with_plan()
-    agent.db.add_message(agent.user_id, "user", "本轮反馈")
+    agent.db.add_message(agent.user_id, "user", "杠铃卧推先不练它")
     for _ in range(2):
         agent._handle_tool({"name": "record_exercise_feedback",
                             "arguments": json.dumps({

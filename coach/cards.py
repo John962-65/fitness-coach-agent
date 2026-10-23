@@ -138,8 +138,26 @@ def build_review_queue(cards: list[dict], questions: list[dict], at: str) -> dic
 
 def approved_cards() -> dict[str, dict]:
     """只返回审批对当前内容仍然有效的卡片（正文/绑定/用途/版本任一变化即不再服务）。"""
+    quarantined = {e.get("id") for e in load_quarantined()}
     return {cid: c for cid, c in load_cards().items()
-            if approval_valid(c, c.get("review"))}
+            if runtime_usable(c, quarantined)}
+
+
+def runtime_usable(card: dict, quarantined: set | None = None) -> bool:
+    """审批不连带批准后来改写的引用，也不覆盖当前的高风险隔离。"""
+    if validate_card(card) or not approval_valid(card, card.get("review")):
+        return False
+    from .claims import claim_store
+    from .claim_review import content_fingerprint
+    if quarantined is None:
+        quarantined = {e.get("id") for e in load_quarantined()}
+    for binding in card["bindings"]:
+        claim_id = binding["claim_id"]
+        claim = claim_store.get(claim_id)
+        if (claim_id in quarantined or not claim
+                or content_fingerprint(claim) != binding["claim_fingerprint"]):
+            return False
+    return True
 
 
 def card_for_exercise(exercise_id: str) -> dict | None:
@@ -175,8 +193,9 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 def card_for_topic(text: str) -> dict | None:
     t = (text or "").lower()
+    cards = approved_cards()
     for cid, kws in TOPIC_KEYWORDS.items():
-        c = approved_cards().get(cid)
+        c = cards.get(cid)
         if c and any(k in t for k in kws):
             return c
     return None
@@ -184,6 +203,8 @@ def card_for_topic(text: str) -> dict | None:
 
 def serve_card(card: dict) -> str:
     """渲染已批卡片的运行时输出：正文 + 限制 + 出处节选，用途受限（仅供解释/经审教学）。"""
+    if not runtime_usable(card):
+        raise CardError("卡片审批、引用版本或隔离状态已失效，不能作为已审核内容输出")
     check_use_permission(card, USE_EXPLAIN)
     links = "；".join(f"{b['claim_id']} {b['url']}" for b in card["bindings"][:3])
     return ("\n".join([

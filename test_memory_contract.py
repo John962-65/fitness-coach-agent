@@ -201,10 +201,9 @@ def test_confirm_accept_applies_and_invalidates_old_goal():
     assert ag.profile["goal"]["primary"] == "muscle_gain"
     assert ag.profile["_history"]["goal.primary"]["old"] == "fat_loss"
     assert ag.profile["pending_profile_changes"] == []
-    # 旧目标建议失效，且按设计生成一条新的重排建议（不是空列表）
-    assert ag.profile["pending_adjustments"]
-    assert all(s["action"] == "regenerate_plan"
-               for s in ag.profile["pending_adjustments"])
+    # 2026-10-22 对齐 DESIGN 26.4⑤：确认时已原子重排，不再等待第二次确认。
+    assert not ag.profile["pending_adjustments"]
+    assert ag.db.get_active_plan("s")["goal_version"] == ag.profile["goal"]["version"]
     assert "regenerate_plan" in out or "重排" in out
 
 

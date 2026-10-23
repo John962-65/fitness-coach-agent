@@ -220,6 +220,27 @@ class Database:
         return json.loads(row["content"]) if row else None
 
     # ---- checkins ----
+    def record_checkin(self, user_id: str, type_: str, data: dict) -> int:
+        """运行时打卡、派生指标和旧规则建议失效一起提交，失败时一起回滚。"""
+        from .exercises import library
+        with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            cur = self.conn.execute(
+                "INSERT INTO checkins(user_id,type,data,created_at) VALUES(?,?,?,?)",
+                (user_id, type_, json.dumps(data, ensure_ascii=False), _now()))
+            if type_ == "training":
+                ids = {ex["exercise_id"] for ex in data.get("exercises", [])
+                       if ex.get("exercise_id") and library.get(ex["exercise_id"])}
+                self._recompute_exercise_states(user_id, ids)
+            if type_ in ("training", "body"):
+                profile = self.get_existing_profile(user_id)
+                if profile.get("pending_adjustments"):
+                    profile["pending_adjustments"] = [s for s in profile["pending_adjustments"]
+                                                       if s.get("source") == "regenerate"]
+                    self._write_profile(user_id, profile)
+        return cur.lastrowid
+
     def add_checkin(self, user_id: str, type_: str, data: dict) -> int:
         cur = self.conn.execute(
             "INSERT INTO checkins(user_id, type, data, created_at) VALUES(?,?,?,?)",
@@ -448,6 +469,11 @@ class Database:
             (_now(), user_id, note_id))
         self.conn.commit()
         return cur.rowcount > 0
+
+    def get_coach_note(self, user_id: str, note_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM coach_notes WHERE user_id=? AND id=?",
+                                (user_id, note_id)).fetchone()
+        return dict(row) if row else None
 
     def open_coach_notes(self, user_id: str, limit: int = 8) -> list[dict]:
         now = _now()

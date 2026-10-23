@@ -66,7 +66,12 @@ def suggest_adjustments(db, user_id: str, plan: dict | None) -> list[dict]:
     sleep = (profile.get("nutrition") or {}).get("sleep_hours")
     sleep_low = isinstance(sleep, (int, float)) and not isinstance(sleep, bool) and 0 < sleep < 6
     rising = [ex for ex in tracked if rpe_drift(checkins, ex) == "rising"]
-    recovery_limited = bool(rising) or sleep_low or is_deload_active(plan)
+    returning = bool(plan.get("return_to_training"))
+    recovery_limited = bool(rising) or sleep_low or is_deload_active(plan) or returning
+    if returning and tracked and not rising and not is_deload_active(plan):
+        out.append({"action": "hold_weight", "target": tracked[0],
+                    "reason": "当前处于复训过渡，先复盘确认恢复状态，再增加刺激",
+                    "evidence": "return_to_training"})
     if sleep_low and tracked and not rising and not is_deload_active(plan):
         out.append({"action": "hold_weight", "target": tracked[0],
                     "reason": "已记录的睡眠偏少，先确认近期恢复与记录是否仍准确，暂不增加刺激",
@@ -141,6 +146,8 @@ def apply_adjustment(plan: dict, action: str, target: str, reason: str,
         raise ValueError(f"非法调整动作: {action}")
     if plan.get("medical_status", "allowed") != "allowed":
         raise ValueError("训练处方已因医疗限制暂停，不能执行训练调整")
+    if plan.get("return_to_training") and action in ("increase_weight", "add_volume"):
+        raise ValueError("复训过渡尚未复盘确认，不能直接加重或加量；请先更新复训状态并确认重排")
 
     new = copy.deepcopy(plan)
     new["adjust_reason"] = reason

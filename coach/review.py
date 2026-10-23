@@ -23,7 +23,8 @@ from .validate import _to_number, _to_reps
 
 def e1rm(weight_kg: float, reps: int | None) -> float | None:
     """估算单次极限（Epley 公式）。无次数数据时退化为重量本身。"""
-    if not weight_kg:
+    weight_kg = _to_number(weight_kg)
+    if weight_kg is None or weight_kg <= 0:
         return None
     if not reps or reps <= 1:
         return float(weight_kg)
@@ -35,7 +36,21 @@ def _day(checkin: dict) -> str:
 
 
 def _parse(at: str) -> datetime:
-    return datetime.fromisoformat(at)
+    value = datetime.fromisoformat(at)
+    return value.astimezone().replace(tzinfo=None) if value.tzinfo else value
+
+
+def _valid_checkins(checkins: list[dict]) -> list[dict]:
+    valid = []
+    for row in checkins:
+        if not isinstance(row, dict) or not isinstance(row.get("data"), dict):
+            continue
+        try:
+            _parse(row["at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        valid.append(row)
+    return valid
 
 
 def _same_exercise(a: str | dict, b: str | dict) -> bool:
@@ -60,10 +75,13 @@ def _same_exercise(a: str | dict, b: str | dict) -> bool:
 
 def _iter_exercise_rows(checkins: list[dict]):
     """逐条产出 (日期, ex dict)，坏行跳过（D1 读侧容错）"""
-    for c in checkins:
+    for c in sorted(_valid_checkins(checkins), key=lambda c: (_parse(c["at"]), c.get("id", 0))):
         if c["type"] != "training" or not isinstance(c.get("data"), dict):
             continue
-        for ex in (c["data"].get("exercises") or []):
+        exercises = c["data"].get("exercises") or []
+        if not isinstance(exercises, list):
+            continue
+        for ex in exercises:
             if isinstance(ex, dict) and ex.get("name"):
                 yield _day(c), ex
 
@@ -87,11 +105,11 @@ def strength_trend(checkins: list[dict], exercise: str) -> list[tuple[str, float
 def weekly_weight(checkins: list[dict], weeks: int = 4) -> list[tuple[str, float]]:
     """按 ISO 周聚合体重均值，返回最近 N 周"""
     by_week: dict[str, list[float]] = {}
-    for c in checkins:
+    for c in _valid_checkins(checkins):
         if c["type"] != "body" or not isinstance(c.get("data"), dict):
             continue
         w = _to_number(c["data"].get("weight_kg"))
-        if not w:
+        if w is None or w <= 0:
             continue
         try:
             iso = _parse(c["at"]).isocalendar()
@@ -106,9 +124,10 @@ def weekly_weight(checkins: list[dict], weeks: int = 4) -> list[tuple[str, float
 def adherence(checkins: list[dict], planned_days: int, window_days: int = 7) -> dict:
     """执行率：最近 window_days 内训练打卡天数 / 计划天数"""
     cutoff = datetime.now() - timedelta(days=window_days)
+    now = datetime.now()
     trained = {
-        _day(c) for c in checkins
-        if c["type"] == "training" and _parse(c["at"]) >= cutoff
+        _day(c) for c in _valid_checkins(checkins)
+        if c.get("type") == "training" and cutoff <= _parse(c["at"]) <= now
     }
     return {
         "trained_days": len(trained),
@@ -119,6 +138,7 @@ def adherence(checkins: list[dict], planned_days: int, window_days: int = 7) -> 
 
 def days_since_last(checkins: list[dict]) -> int | None:
     """距上次打卡天数"""
+    checkins = _valid_checkins(checkins)
     if not checkins:
         return None
     last = max(_parse(c["at"]) for c in checkins)
@@ -180,7 +200,7 @@ def _tracked_exercises(plan: dict | None) -> list[str]:
 
 def build_summary(db, user_id: str, plan: dict | None) -> dict:
     """聚合所有指标（确定性计算，供 LLM 引用）"""
-    checkins = db.list_checkins(user_id, limit=200)
+    checkins = _valid_checkins(db.list_checkins(user_id, limit=200))
     # 分母用计划实际排的天数（不是用户声称的天数）
     planned = len((plan or {}).get("schedule") or []) \
         or (plan or {}).get("days_per_week", 3)
@@ -199,6 +219,7 @@ def build_summary(db, user_id: str, plan: dict | None) -> dict:
     return {
         "total_checkins": len(checkins),
         "days_since_last": days_since_last(checkins),
+        "days_since_last_training": days_since_last([c for c in checkins if c.get("type") == "training"]),
         "adherence": adherence(checkins, planned),
         "weight_trend": weekly_weight(checkins),
         "main_exercise": main_ex,
@@ -215,6 +236,8 @@ def _brief(c: dict) -> str:
     d, data = _day(c), c["data"]
     if c["type"] == "training":
         exs = data.get("exercises") or []
+        if not isinstance(exs, list):
+            exs = []
         parts = []
         for ex in exs[:3]:
             if not isinstance(ex, dict):
@@ -224,7 +247,7 @@ def _brief(c: dict) -> str:
             if ex.get("sets") and ex.get("reps"):
                 sr = f" {ex['sets']}×{ex['reps']}"
             parts.append(f"{ex.get('name', '?')}{w}{sr}".strip())
-        note = data.get("note") or data.get("raw") or ""
+        note = str(data.get("note") or data.get("raw") or "")
         return f"{d} 训练：{'、'.join(parts)}" + (f"（{note[:20]}）" if note else "")
     if c["type"] == "body":
         return f"{d} 体测：{data.get('weight_kg', '?')}kg"
