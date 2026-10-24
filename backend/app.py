@@ -34,6 +34,13 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
     app.state.db_path = Path(db_path) if db_path is not None else None
     app.state.db = Database(app.state.db_path) if db_path is not None else Database()
     app.state.agents: dict[str, object] = {}
+    # M5.1 P0-2：服务重启恢复——进程内不再有处理线程，processing 一律如实标记失败
+    for table in ("media_assets", "motion_analyses"):
+        app.state.db.conn.execute(
+            f"UPDATE {table} SET status='failed',"
+            " error=COALESCE(error || '；', '') || '服务重启：任务中断，请重新上传'"
+            " WHERE status='processing'")
+        app.state.db.conn.commit()
     token = access_token if access_token is not None else (os.getenv("API_ACCESS_TOKEN") or "")
     app.state.access_token = token
 
@@ -45,9 +52,9 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
             # /api/media/* 只读媒体额外接受 ?access_token=（<img>/<video> 带不了头）
             path = request.url.path
             if path.startswith("/api") and path != "/api/health":
-                ok = request.headers.get("X-Access-Token") == token or (
-                    path.startswith("/api/media/")
-                    and request.query_params.get("access_token") == token)
+                # /api/media/* 由媒体路由自行校验（令牌头或短时签名，P1-5）
+                ok = (request.headers.get("X-Access-Token") == token
+                      or path.startswith("/api/media/"))
                 if not ok:
                     return JSONResponse(
                         status_code=401,

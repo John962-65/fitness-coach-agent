@@ -77,12 +77,15 @@ def segment_reps(exercise: str, indexed: list[tuple[int, list[dict]]],
     reps = []
     inside = False
     start = peak_t = peak_v = None
+    # 下位相方向（M5.1 P1-3 修正）：蹲类=髋 y 变大（更低）；
+    # 铰链=躯干-髋-膝角变小（俯身）；卧推=肘角变小（下放）
+    lowers = exercise in ("deadlift", "romanian_deadlift", "bench")
     for t, v in pts:
-        deep = v > mid if exercise != "bench" else v < mid
+        deep = (v < mid) if lowers else (v > mid)
         if deep and not inside:
             inside, start, peak_t, peak_v = True, t, t, v
         elif deep and inside:
-            better = v > peak_v if exercise != "bench" else v < peak_v
+            better = (v < peak_v) if lowers else (v > peak_v)
             if better:
                 peak_t, peak_v = t, v
         elif not deep and inside:
@@ -131,16 +134,41 @@ def process_analysis(exercise_id: str, video_path: str, view: str,
                 "note": "没有检测到人体关键点——检查拍摄规范（全身入镜/光线/固定机位），"
                         "此视频不可判断，不代表动作正常"}
     frames = [kp for _i, kp in indexed]
+    # 质量门：有效帧比例（所需关键点可见）过低 → 如实降级，不把规则结果当结论
+    valid_ratio = _valid_ratio(name, frames, view)
     faults = rules_analyze(name, frames, view)
     reps = segment_reps(name, indexed, fps, sample_every)
+    quality_note = None
+    if any(f["code"] == "INSUFFICIENT_DATA" for f in faults):
+        quality_note = "可见关键点不足：此视频不可判断，不代表动作正常"
+    elif valid_ratio < 0.5:
+        quality_note = (f"有效帧比例仅 {int(valid_ratio * 100)}%（遮挡/半身出镜？），"
+                        "以下结果仅供参考，建议按拍摄规范重拍")
     return {
         "supported": True, "view": view, "frames": len(indexed),
+        "valid_ratio": round(valid_ratio, 2),
         "faults": faults, "reps": reps,
         "summary": summary_metric(name, indexed),
-        "note": ("故障码为整段聚合的可见几何量提示，不推断三维生物力学；"
-                 "次数为画面内估计值" if faults or reps else
-                 "未命中当前覆盖的可见项目；这不代表未评估的动作细节正常"),
+        "note": quality_note or ("故障码为整段聚合的可见几何量提示，不推断三维生物力学；"
+                                 "次数为画面内估计值" if faults or reps else
+                                 "未命中当前覆盖的可见项目；这不代表未评估的动作细节正常"),
     }
+
+
+def _valid_ratio(exercise: str, frames: list, view: str) -> float:
+    """具备该动作所需关键点的帧占比（遮挡/出镜质量的确定性代理）。"""
+    from .vision_rules import _point
+    if not frames:
+        return 0.0
+    if exercise == "bench":
+        groups = ((11, 13, 15), (12, 14, 16))
+    elif exercise == "squat" and view == "front":
+        groups = ((23, 24, 25, 26, 27, 28),)
+    else:
+        groups = ((11, 23, 25, 27), (12, 24, 26, 28))
+    valid = sum(1 for f in frames
+                if any(all(_point(f, i) is not None for i in g) for g in groups))
+    return valid / len(frames)
 
 
 def compare_results(a: dict, b: dict) -> dict:

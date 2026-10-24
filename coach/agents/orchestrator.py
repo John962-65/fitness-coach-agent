@@ -71,16 +71,47 @@ def combine(advices: list[dict]) -> dict:
     return {"advices": advices, "conflicts": conflicts}
 
 
+def _knowledge_context(db, user_id: str, question: str) -> tuple[str, list[dict]]:
+    """M5.1 P1-4：专家建议前必经统一知识检索——命中(带来源与状态)注入
+    专家提示，并作为 knowledge_refs 随建议留痕（可追溯）。"""
+    from ..knowledge_search import search
+    try:
+        result = search(db, user_id, question)
+    except Exception:
+        return "", []
+    refs, lines = [], []
+    for engine, payload in (result.get("engines") or {}).items():
+        for hit in payload.get("hits") or []:
+            refs.append({"engine": engine, "ref": hit.get("ref"),
+                         "provenance": hit.get("provenance"),
+                         "title": hit.get("title")})
+            lines.append(f"[{engine}] {hit.get('title')}（来源:{hit.get('provenance')}）："
+                         f"{hit.get('snippet')}")
+    draft = (payload or {}).get("draft_matches")
+    if draft:
+        lines.append(f"[blogger_claims] 另有 {draft} 条草稿素材命中，审核通过前不得引用内容")
+    return "\n".join(lines[:12]), refs[:12]
+
+
 def consult_specialists(db, llm, user_id: str, question: str) -> dict:
-    """主教练咨询入口：路由 → 咨询 → 汇总 → 留痕（agent_consultations）。"""
+    """主教练咨询入口：路由 → 统一知识检索 → 咨询 → 汇总 → 留痕。
+
+    每位专家的提示都附带检索命中的知识上下文（含出处与可信状态）；
+    knowledge_refs 随建议落库 agent_consultations——建议可追溯到知识来源。
+    """
     keys = route_question(question)
     if not keys:
-        return {"consulted": [], "advices": [], "conflicts": [],
+        return {"consulted": [], "advices": [], "conflicts": [], "knowledge_refs": [],
                 "note": "简单或非专业问题：未咨询专家，由主教练直接回答"}
     context = _context_for(db, user_id, question)
+    knowledge_text, knowledge_refs = _knowledge_context(db, user_id, question)
+    if knowledge_text:
+        context += "\n\n# 相关知识检索命中（引用时保留出处；草稿来源不得当结论）\n" + knowledge_text
     advices = []
-    for key in keys:  # 串行调用（单用户本地服务，避免并发写库竞争）
-        advices.append(consult_one(llm, key, question, context))
+    for key in keys:  # 串行调用（单用户本地服务；并行化属后续优化）
+        advice = consult_one(llm, key, question, context)
+        advice["knowledge_refs"] = knowledge_refs
+        advices.append(advice)
     combined = combine(advices)
     db.add_consultation(user_id, question, keys, combined["advices"])
-    return {"consulted": keys, **combined}
+    return {"consulted": keys, "knowledge_refs": knowledge_refs, **combined}

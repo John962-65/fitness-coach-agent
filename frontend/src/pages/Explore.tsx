@@ -212,10 +212,15 @@ export default function Explore() {
                               </>}
                           <div className="flex gap-2">
                             <button className="text-accent underline"
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const file = m.video_path?.match(/media\/[^/]+\/([^/]+)$/)?.[1] || ''
-                                      const tk = localStorage.getItem('fc-access-token')
-                                      setAnalysisVideo(`/api/media/${uid}/${file}${tk ? `?access_token=${encodeURIComponent(tk)}` : ''}`)
+                                      if (!file) return
+                                      try {
+                                        const sgn = await api.mediaSign(uid, file)
+                                        setAnalysisVideo(`/api/media/${uid}/${file}?sig=${sgn.sig}&exp=${sgn.exp}`)
+                                      } catch {
+                                        setAnalysisVideo(`/api/media/${uid}/${file}`) // 本机无令牌模式
+                                      }
                                     }}>
                               查看视频
                             </button>
@@ -252,15 +257,9 @@ export default function Explore() {
                     {media.map((m, i) => (
                       <div key={i} className="rounded-lg bg-neutral-800/60 p-2">
                         {m.clip_path ? (
-                          <video controls preload="metadata" className="max-h-48 w-full rounded"
-                                 src={`/api/media/${m.clip_path.match(/media\/([^/]+\/[^/]+)$/)?.[1] || ''
-                                   }${localStorage.getItem('fc-access-token')
-                                     ? `?access_token=${encodeURIComponent(localStorage.getItem('fc-access-token') || '')}` : ''}`} />
+                          <SignedMedia uid={uid} path={m.clip_path} kind="video" />
                         ) : m.cover_path ? (
-                          <img alt="封面" className="max-h-40 rounded"
-                               src={`/api/media/${m.cover_path.match(/media\/([^/]+\/[^/]+)$/)?.[1] || ''
-                                 }${localStorage.getItem('fc-access-token')
-                                   ? `?access_token=${encodeURIComponent(localStorage.getItem('fc-access-token') || '')}` : ''}`} />
+                          <SignedMedia uid={uid} path={m.cover_path} kind="img" />
                         ) : null}
                         <p className="mt-1 text-xs text-neutral-500">依据：{m.sentence}</p>
                       </div>
@@ -305,4 +304,21 @@ export default function Explore() {
       )}
     </div>
   )
+}
+
+
+// M5.1 P1-5：签名媒体（10 分钟短时 sig 替代长期令牌入 URL）
+function SignedMedia({ uid, path, kind }: { uid: string; path: string; kind: 'video' | 'img' }) {
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    const file = path.match(/media\/[^/]+\/([^/]+)$/)?.[1] || ''
+    if (!file) return
+    api.mediaSign(uid, file)
+      .then((s) => setSrc(`/api/media/${uid}/${file}?sig=${s.sig}&exp=${s.exp}`))
+      .catch(() => setSrc(`/api/media/${uid}/${file}`))  // 本机无令牌模式
+  }, [uid, path])
+  if (!src) return null
+  return kind === 'video'
+    ? <video controls preload="metadata" className="max-h-48 w-full rounded" src={src} />
+    : <img alt="封面" className="max-h-40 rounded" src={src} />
 }

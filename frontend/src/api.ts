@@ -153,6 +153,10 @@ export const api = {
   motionCompare: (uid: string, a: number, b: number) =>
     req<unknown>(`/users/${uid}/motion-analyses/compare?a=${a}&b=${b}`),
 
+  mediaSign: (uid: string, name: string) =>
+    req<{ sig: string; exp: number; ttl: number }>(
+      `/users/${uid}/media-sign?name=${encodeURIComponent(name)}`),
+
   knowledgeSearch: (uid: string, q: string) =>
     req<unknown>(`/knowledge/search?uid=${encodeURIComponent(uid)}&q=${encodeURIComponent(q)}`),
   knowledgeImport: (uid: string, payload: { title: string; kind: string; content: string }) =>

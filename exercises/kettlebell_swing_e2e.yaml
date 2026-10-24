@@ -1,0 +1,22 @@
+id: kettlebell_swing_e2e
+name: 壶铃摆铃
+aliases:
+- 壶铃摆铃
+- 摆铃
+pattern: squat
+primary: []
+secondary: []
+equipment:
+- bodyweight
+location:
+- gym
+- home
+level_min: beginner
+joint_stress: {}
+track_e1rm: false
+substitutes: []
+status: draft
+_provenance:
+  source: user_video_proposal
+  proposal_id: 1
+  sentence: 这个动作叫壶铃摆铃，注意髋部发力而不是用手臂甩。

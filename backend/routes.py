@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import hmac
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -51,6 +52,74 @@ def _log_unmatched(request: Request, uid: str, raw_name: str) -> None:
         f.write(json.dumps({"user": uid, "name": raw_name,
                             "at": datetime.now().isoformat(timespec="seconds")},
                            ensure_ascii=False) + "\n")
+
+
+# ---- M5.1 P0-2：上传资源限制 ----
+MAX_VIDEO_BYTES = 200 * 1024 * 1024          # 单文件 200MB（测试可 monkeypatch）
+MAX_USER_MEDIA_BYTES = 2 * 1024 * 1024 * 1024  # 每用户媒体总量 2GB
+MAX_USER_MEDIA_FILES = 200                   # 每用户文件数
+_UPLOAD_CHUNK = 1024 * 1024
+# 媒体处理串行化（本地 CPU 单任务，避免多个重任务竞争）
+import threading as _threading
+_WORKER_SEMAPHORE = _threading.Semaphore(1)
+
+
+class UploadRejected(HTTPException):
+    def __init__(self, status_code: int, msg: str):
+        super().__init__(status_code=status_code, detail={"error": msg})
+
+
+async def _stream_upload_to(upload, dest: Path, max_bytes: int) -> int:
+    """流式落盘：分块写、超限即断、首块校验容器魔数。"""
+    total, first = 0, True
+    with open(dest, "wb") as f:
+        while True:
+            chunk = await upload.read(_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                f.close()
+                dest.unlink(missing_ok=True)
+                raise UploadRejected(
+                    422, f"文件超过大小限制（{max_bytes // (1024 * 1024)}MB）")
+            if first:
+                head = bytes(chunk[:16])
+                if not (head[4:8] == b"ftyp" or head[:4] == b"\x1a\x45\xdf\xa3"):
+                    dest.unlink(missing_ok=True)
+                    raise UploadRejected(
+                        422, "文件内容不是合法的视频容器（mp4/mov/webm/mkv）")
+                first = False
+            f.write(chunk)
+    if total == 0:
+        dest.unlink(missing_ok=True)
+        raise UploadRejected(422, "空文件")
+    return total
+
+
+def _user_media_usage(media_dir: Path) -> tuple[int, int]:
+    files = bytes_ = 0
+    if media_dir.exists():
+        for p in media_dir.rglob("*"):
+            if p.is_file():
+                files += 1
+                bytes_ += p.stat().st_size
+    return files, bytes_
+
+
+def _run_media_worker(app, fn, *args):
+    """后台任务：独立数据库连接（不与请求共享）+ 串行信号量。"""
+    def _work():
+        from coach.db import Database as _DB
+        worker_db = _DB(app.state.db.path)
+        with _WORKER_SEMAPHORE:
+            try:
+                fn(worker_db, *args)
+            finally:
+                worker_db.conn.close()
+    t = _threading.Thread(target=_work, daemon=True)
+    t.start()
+    return t
 
 
 def register_routes(app) -> None:
@@ -374,10 +443,42 @@ def register_routes(app) -> None:
 
     # ---- M3.2：视频导入（上传/任务状态/候选确认/动作媒体）----
 
+    # M5.1 P1-5：短时签名 URL（替代长期令牌入 URL——浏览器历史/日志不再泄漏令牌）
+    _SIG_TTL_SECONDS = 600
+
+    def _media_sig(secret: str, uid: str, name: str, exp: int) -> str:
+        import hashlib
+        return hmac.new(secret.encode(), f"{uid}/{name}/{exp}".encode(),
+                        hashlib.sha256).hexdigest()[:32]
+
+    @api.get("/users/{uid}/media-sign")
+    def media_sign(uid: str, request: Request, name: str = Query(...)):
+        """发放 10 分钟媒体签名（需令牌头/本机模式）；前端 img/video 用
+        /api/media/{uid}/{name}?sig=&exp= 访问，不再携带长期 access_token。"""
+        token = request.app.state.access_token
+        if token and request.headers.get("X-Access-Token") != token:
+            raise HTTPException(status_code=401, detail={"error": "需要访问令牌"})
+        import time as _t
+        exp = int(_t.time()) + _SIG_TTL_SECONDS
+        secret = token or "local-media"
+        return {"sig": _media_sig(secret, uid, name, exp), "exp": exp,
+                "ttl": _SIG_TTL_SECONDS}
+
     @api.get("/media/{uid}/{name}")
-    def media_file(uid: str, name: str, request: Request):
-        """封面/片段文件（只读）。<img>/<video> 无法带自定义头，
-        令牌同时接受 ?access_token= 查询参数（仅限本只读路径）。"""
+    def media_file(uid: str, name: str, request: Request,
+                   sig: str = "", exp: int = 0):
+        """封面/片段文件（只读）。鉴权三选一：令牌头 / 短时签名(sig+exp) /
+        本机无令牌模式。长期 access_token 查询参数已弃用（P1-5 泄漏风险）。"""
+        token = request.app.state.access_token
+        if token:
+            ok = request.headers.get("X-Access-Token") == token
+            if not ok and sig and exp:
+                import time as _t
+                ok = (exp >= int(_t.time())
+                      and hmac.compare_digest(sig, _media_sig(token, uid, name, exp)))
+            if not ok:
+                raise HTTPException(status_code=401,
+                                    detail={"error": "媒体访问需要令牌头或有效签名"})
         base = (request.app.state.db.path.parent / "media" / uid).resolve()
         target = (base / name).resolve()
         if not str(target).startswith(str(base)) or not target.is_file():
@@ -400,24 +501,31 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422, detail={"error": "仅支持 mp4/mov/webm/mkv"})
         media_dir = db.path.parent / "media" / uid
         media_dir.mkdir(parents=True, exist_ok=True)
+        # M5.1 P0-2：配额先行（文件数/总字节）
+        usage_files, usage_bytes = _user_media_usage(media_dir)
+        if usage_files >= MAX_USER_MEDIA_FILES:
+            raise UploadRejected(422, f"媒体文件数已达上限（{MAX_USER_MEDIA_FILES}），请清理后再传")
+        if usage_bytes >= MAX_USER_MEDIA_BYTES:
+            raise UploadRejected(422, "媒体总容量已达上限（2GB），请清理后再传")
         stamp = int(_time.time() * 1000)
         video_path = media_dir / f"v{stamp}_{Path(video.filename).name}"
-        video_path.write_bytes(await video.read())
+        size = await _stream_upload_to(video, video_path, MAX_VIDEO_BYTES)
+        if usage_bytes + size > MAX_USER_MEDIA_BYTES:
+            video_path.unlink(missing_ok=True)
+            raise UploadRejected(422, "媒体总容量已达上限（2GB），请清理后再传")
         subtitle_path = None
         if isinstance(subtitle, UploadFile) and subtitle.filename:
             if not subtitle.filename.lower().endswith((".srt", ".vtt")):
+                video_path.unlink(missing_ok=True)
                 raise HTTPException(status_code=422, detail={"error": "字幕仅支持 srt/vtt"})
             subtitle_path = media_dir / f"s{stamp}_{Path(subtitle.filename).name}"
             subtitle_path.write_bytes(await subtitle.read())
         asset_id = db.add_media_asset(uid, title, str(video_path),
                                       str(subtitle_path) if subtitle_path else None)
-        # §10.4：媒体处理不阻塞请求——后台线程执行转写与候选提取
-        import threading
+        # §10.4：媒体处理不阻塞请求——后台线程（独立 DB 连接+串行信号量）
         from coach.media_import import process_asset
-        threading.Thread(
-            target=process_asset, daemon=True,
-            args=(db, asset_id, str(video_path),
-                  str(subtitle_path) if subtitle_path else None)).start()
+        _run_media_worker(request.app, process_asset, asset_id, str(video_path),
+                          str(subtitle_path) if subtitle_path else None)
         return {"asset_id": asset_id, "status": "processing"}
 
     @api.get("/users/{uid}/media/videos")
@@ -458,6 +566,9 @@ def register_routes(app) -> None:
             exercise_id = str(payload.get("exercise_id") or cand.get("exercise_id") or "")
             if not exercise_id:
                 raise HTTPException(status_code=422, detail={"error": "缺少 exercise_id"})
+            if not library.get(exercise_id):  # M5.1 P1-2：不允许指向库外动作
+                raise HTTPException(status_code=422,
+                                    detail={"error": f"动作 {exercise_id} 不在动作库内"})
             media_dir = Path(asset["video_path"]).parent
             cover = make_cover(asset["video_path"], cand.get("start") or 0.0,
                                str(media_dir / f"cover_{asset_id}_{index}.jpg"))
@@ -489,6 +600,98 @@ def register_routes(app) -> None:
         _user_profile(db, uid)
         return {"proposals": db.list_exercise_proposals(uid)}
 
+    @api.post("/users/{uid}/exercise-proposals/{proposal_id}/review")
+    def exercise_proposal_review(uid: str, proposal_id: int, request: Request,
+                                 payload: dict = Body(...)):
+        """M5.1 P1-2 入库闭环：审核通过 → 生成正式动作 YAML 入库
+        （status: draft，结构化属性未审核的既有纪律不变）→ library 运行时
+        reload → 可搜索/可加入计划；可选同时把提案依据片段关联到新动作。
+        """
+        import re as _re
+        import yaml as _yaml
+        db = request.app.state.db
+        _user_profile(db, uid)
+        proposals = [p for p in db.list_exercise_proposals(uid, status=None)
+                     if p["id"] == proposal_id]
+        if not proposals:
+            raise HTTPException(status_code=404, detail={"error": "提案不存在"})
+        proposal = proposals[0]
+        decision = payload.get("decision")
+        if decision not in ("approve", "reject"):
+            raise HTTPException(status_code=400,
+                                detail={"error": "decision 必须是 approve/reject"})
+        db.conn.execute(
+            "UPDATE exercise_proposals SET status=? WHERE id=?",
+            ("approved" if decision == "approve" else "rejected", proposal_id))
+        db.conn.commit()
+        if decision == "reject":
+            return {"proposal_id": proposal_id, "status": "rejected"}
+
+        # 生成合法 YAML（tools/validate.py 十二必填字段全满足；joint_stress 留空
+        # = 无压力数据，生成计划的伤病筛选不会依赖它）
+        ex_id = _re.sub(r"[^a-z0-9_]+", "_",
+                        str(payload.get("id") or proposal["name"]).strip().lower())
+        if not ex_id or not ex_id[0].isalpha():
+            raise HTTPException(status_code=422,
+                                detail={"error": "动作 id 非法（须以字母开头）"})
+        if (library.root / f"{ex_id}.yaml").exists() or library.get(ex_id):
+            raise HTTPException(status_code=422,
+                                detail={"error": f"动作 id {ex_id!r} 已存在"})
+        pattern = payload.get("pattern") or proposal.get("pattern") or "isolation"
+        if pattern not in ("squat", "hinge", "lunge", "h_push", "v_push",
+                           "h_pull", "v_pull", "isolation", "core", "carry"):
+            pattern = "isolation"
+        aliases = [str(a) for a in (payload.get("aliases")
+                                    or proposal.get("aliases") or [])][:8]
+        doc = {
+            "id": ex_id, "name": proposal["name"],
+            "aliases": list(dict.fromkeys([proposal["name"], *aliases])),
+            "pattern": pattern,
+            "primary": [str(x) for x in (payload.get("primary") or [])][:4],
+            "secondary": [], "equipment": [str(x) for x in (payload.get("equipment") or ["bodyweight"])][:3],
+            "location": ["gym", "home"],
+            "level_min": "beginner", "joint_stress": {},
+            "track_e1rm": False, "substitutes": [], "status": "draft",
+            "_provenance": {"source": "user_video_proposal",
+                            "proposal_id": proposal_id,
+                            "sentence": proposal.get("sentence") or ""},
+        }
+        path = library.root / f"{ex_id}.yaml"
+        path.write_text(_yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
+                        encoding="utf-8")
+        from tools.validate import validate as _validate_exercises
+        errors = _validate_exercises(library.root)
+        if errors:
+            path.unlink(missing_ok=True)
+            library.reload()
+            raise HTTPException(status_code=422,
+                                detail={"error": "生成的动作未通过库校验，已回滚",
+                                        "details": errors[:5]})
+        library.reload()
+        # 可选：把提案依据片段关联到新动作
+        link_id = None
+        if payload.get("link_media") and proposal.get("asset_id"):
+            from coach.media_import import make_clip, make_cover
+            asset = db.get_media_asset(uid, proposal["asset_id"])
+            if asset and asset["status"] == "ready":
+                sentence = proposal.get("sentence") or ""
+                start = 0.0
+                for c in asset.get("candidates") or []:
+                    if sentence and c.get("sentence") == sentence:
+                        start = float(c.get("start") or 0)
+                media_dir = Path(asset["video_path"]).parent
+                cover = make_cover(asset["video_path"], start,
+                                   str(media_dir / f"cover_prop{proposal_id}.jpg"))
+                clip = make_clip(asset["video_path"], start, start + 15,
+                                 str(media_dir / f"clip_prop{proposal_id}.mp4"))
+                link_id = db.add_exercise_media_link(
+                    uid, ex_id, asset["id"], sentence, start, start + 15,
+                    cover, clip)
+        return {"proposal_id": proposal_id, "status": "approved",
+                "exercise_id": ex_id, "media_link_id": link_id,
+                "note": "已入动作库（status=draft：结构化属性未经审核，"
+                        "加入计划时将带披露说明）"}
+
     # ---- M4：动作视频分析（上传/任务/结果/对比）----
 
     @api.post("/users/{uid}/motion-analyses")
@@ -511,18 +714,24 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422, detail={"error": "需要 exercise_id"})
         media_dir = db.path.parent / "media" / uid
         media_dir.mkdir(parents=True, exist_ok=True)
+        usage_files, usage_bytes = _user_media_usage(media_dir)
+        if usage_files >= MAX_USER_MEDIA_FILES:
+            raise UploadRejected(422, f"媒体文件数已达上限（{MAX_USER_MEDIA_FILES}），请清理后再传")
         video_path = media_dir / f"ma{int(_time.time() * 1000)}_{Path(video.filename).name}"
-        video_path.write_bytes(await video.read())
+        size = await _stream_upload_to(video, video_path, MAX_VIDEO_BYTES)
+        if usage_bytes + size > MAX_USER_MEDIA_BYTES:
+            video_path.unlink(missing_ok=True)
+            raise UploadRejected(422, "媒体总容量已达上限（2GB），请清理后再传")
 
-        def _work() -> None:
+        def _process(wdb) -> None:
             try:
                 result = process_analysis(exercise_id, str(video_path), view)
-                db.finish_motion_analysis(analysis_id, "ready", result=result)
+                wdb.finish_motion_analysis(analysis_id, "ready", result=result)
             except Exception as e:  # noqa: BLE001 失败要留痕不吞
-                db.finish_motion_analysis(analysis_id, "failed", error=str(e))
+                wdb.finish_motion_analysis(analysis_id, "failed", error=str(e))
 
         analysis_id = db.add_motion_analysis(uid, exercise_id, view, str(video_path))
-        threading.Thread(target=_work, daemon=True).start()
+        _run_media_worker(request.app, _process)
         return {"analysis_id": analysis_id, "status": "processing"}
 
     @api.get("/users/{uid}/motion-analyses")

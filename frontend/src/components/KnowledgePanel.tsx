@@ -50,10 +50,16 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
   const [importResult, setImportResult] = useState<string>('')
   const [error, setError] = useState<{ message: string; details?: string[] } | null>(null)
 
+  const [proposals, setProposals] = useState<{ id: number; name: string; sentence: string | null }[]>([])
+  const [propNote, setPropNote] = useState('')
   const loadClaims = useCallback(() => {
     api.knowledgeClaims(uid)
       .then((r) => setClaims((r.claims as unknown as ImportedClaim[])))
       .catch(() => setClaims([]))
+    fetch(`/api/users/${uid}/exercise-proposals`, {
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+    }).then((r) => r.json()).then((r) => setProposals(r.proposals || [])).catch(() => setProposals([]))
   }, [uid])
   useEffect(() => { loadClaims() }, [loadClaims])
 
@@ -205,6 +211,60 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
 
           {claims && pending.length === 0 && quarantined.length === 0 && (
             <Empty>暂无待审核观点；导入内容后在这里逐条审核。</Empty>
+          )}
+
+          {proposals.length > 0 && (
+            <Card title={`新动作提案（${proposals.length}）待审核入库`}>
+              <ul className="space-y-2">
+                {proposals.map((pr) => (
+                  <li key={pr.id} className="rounded-lg bg-neutral-800/60 p-2.5 text-sm">
+                    <p className="font-medium">{pr.name}</p>
+                    {pr.sentence && <p className="text-xs text-neutral-500">依据：{pr.sentence}</p>}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                      <label className="text-neutral-400">模式
+                        <select id={`pat-${pr.id}`} className="input ml-1 !w-28 !py-1 text-xs">
+                          {['squat','hinge','lunge','h_push','v_push','h_pull','v_pull','isolation','core','carry']
+                            .map((x) => <option key={x}>{x}</option>)}
+                        </select>
+                      </label>
+                      <input id={`eid-${pr.id}`} className="input !w-40 !py-1 text-xs"
+                             placeholder="动作 id（英文，如 kettlebell_swing）" />
+                      <button className="tag bg-emerald-900/60 text-emerald-300"
+                              onClick={async () => {
+                                const pattern = (document.getElementById(`pat-${pr.id}`) as HTMLSelectElement).value
+                                const exId = (document.getElementById(`eid-${pr.id}`) as HTMLInputElement).value.trim()
+                                if (!exId) { setPropNote('请先填写英文动作 id（如 kettlebell_swing）'); return }
+                                const res = await fetch(`/api/users/${uid}/exercise-proposals/${pr.id}/review`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json',
+                                    ...(localStorage.getItem('fc-access-token')
+                                      ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {}) },
+                                  body: JSON.stringify({ decision: 'approve', pattern, id: exId, link_media: true }),
+                                })
+                                const body = await res.json()
+                                setPropNote(res.ok ? `已入库：${body.exercise_id}（draft，可搜索/可加入计划）` : body.detail?.error || '失败')
+                                loadClaims()
+                              }}>审核通过并入库</button>
+                      <button className="tag bg-red-900/60 text-red-300"
+                              onClick={async () => {
+                                await fetch(`/api/users/${uid}/exercise-proposals/${pr.id}/review`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json',
+                                    ...(localStorage.getItem('fc-access-token')
+                                      ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {}) },
+                                  body: JSON.stringify({ decision: 'reject' }),
+                                })
+                                loadClaims()
+                              }}>拒绝</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {propNote && <p className="mt-2 text-xs text-accent">{propNote}</p>}
+              <p className="mt-2 text-[11px] text-neutral-500">
+                入库动作 status=draft（结构化属性未审核）；伤病用户的计划筛选不会依赖其空压力数据。
+              </p>
+            </Card>
           )}
 
           <VideoImportPanel uid={uid} />

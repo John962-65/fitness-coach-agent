@@ -41,6 +41,12 @@ class ExerciseLibrary:
     def _norm(text: str) -> str:
         return "".join(str(text).split()).lower()
 
+    def reload(self) -> None:
+        """运行时重载（M5.1：新动作审核入库后无需重启进程）。"""
+        self._by_id = {}
+        self._alias = {}
+        self._load()
+
     def _load(self) -> None:
         for path in sorted(self.root.glob("*.yaml")):
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
