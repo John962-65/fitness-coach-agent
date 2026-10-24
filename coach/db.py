@@ -183,6 +183,42 @@ CREATE TABLE IF NOT EXISTS knowledge_claims (
     reviewed_at TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS media_assets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    video_path  TEXT NOT NULL,
+    subtitle_path TEXT,                 -- 用户提供的 srt/vtt（无则本地 whisper 转写）
+    transcript  TEXT,                   -- JSON：[{start, end, text}]
+    status      TEXT NOT NULL,          -- processing / ready / failed（兼作任务状态）
+    error       TEXT,
+    candidates  TEXT,                   -- JSON：动作候选（库匹配 + 证据句 + 时间戳）
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS exercise_media_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    asset_id    INTEGER NOT NULL,
+    cover_path  TEXT,                   -- 封面帧（可空：生成失败不阻塞关联）
+    clip_path   TEXT,                   -- 演示片段（可空）
+    sentence    TEXT,                   -- 关联依据（转写原句）
+    start       REAL, "end" REAL,
+    created_at  TEXT NOT NULL,
+    UNIQUE(user_id, exercise_id, asset_id, start)
+);
+CREATE TABLE IF NOT EXISTS exercise_proposals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    name        TEXT NOT NULL,          -- 新动作候选（用户确认，不入 exercises/ 库）
+    aliases     TEXT,                   -- JSON list
+    pattern     TEXT,
+    note        TEXT,
+    asset_id    INTEGER,
+    sentence    TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected（发起人批）
+    created_at  TEXT NOT NULL
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -939,3 +975,115 @@ class Database:
             " AND status='approved' ORDER BY id DESC LIMIT ?",
             (user_id, limit)).fetchall()
         return [r["content"] for r in rows]
+
+    # ---- M3.2：视频导入（media_assets / 链接 / 新动作候选）----
+    def add_media_asset(self, user_id: str, title: str, video_path: str,
+                        subtitle_path: str | None) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO media_assets(user_id, title, video_path, subtitle_path,"
+            " status, created_at) VALUES(?,?,?,?, 'processing', ?)",
+            (user_id, title[:200], video_path, subtitle_path, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_media_asset(self, user_id: str, asset_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM media_assets WHERE user_id=? AND id=?",
+            (user_id, asset_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for key in ("transcript", "candidates"):
+            if d.get(key):
+                try:
+                    d[key] = json.loads(d[key])
+                except ValueError:
+                    d[key] = []
+        return d
+
+    def list_media_assets(self, user_id: str, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, title, status, error, candidates, created_at FROM media_assets"
+            " WHERE user_id=? ORDER BY id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["candidates"] = json.loads(d["candidates"] or "[]")
+            except ValueError:
+                d["candidates"] = []
+            out.append(d)
+        return out
+
+    def update_media_asset(self, asset_id: int, *, status: str,
+                           transcript: list | None = None,
+                           candidates: list | None = None,
+                           error: str | None = None) -> None:
+        sets = ["status=?"]
+        params: list = [status]
+        if transcript is not None:
+            sets.append("transcript=?")
+            params.append(json.dumps(transcript, ensure_ascii=False))
+        if candidates is not None:
+            sets.append("candidates=?")
+            params.append(json.dumps(candidates, ensure_ascii=False))
+        if error is not None:
+            sets.append("error=?")
+            params.append(error[:500])
+        params.append(asset_id)
+        self.conn.execute(f"UPDATE media_assets SET {', '.join(sets)} WHERE id=?", params)
+        self.conn.commit()
+
+    def add_exercise_media_link(self, user_id: str, exercise_id: str, asset_id: int,
+                                sentence: str, start: float, end: float,
+                                cover_path: str | None, clip_path: str | None) -> int | None:
+        try:
+            cur = self.conn.execute(
+                'INSERT INTO exercise_media_links(user_id, exercise_id, asset_id,'
+                ' cover_path, clip_path, sentence, start, "end", created_at)'
+                ' VALUES(?,?,?,?,?,?,?,?,?)',
+                (user_id, exercise_id, asset_id, cover_path, clip_path,
+                 sentence[:300], start, end, _now()))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+    def list_exercise_media(self, user_id: str, exercise_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT l.*, a.title AS asset_title FROM exercise_media_links l"
+            " JOIN media_assets a ON l.asset_id=a.id"
+            " WHERE l.user_id=? AND l.exercise_id=? ORDER BY l.id DESC",
+            (user_id, exercise_id)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_exercise_proposal(self, user_id: str, name: str, aliases: list,
+                              pattern: str, note: str, asset_id: int | None,
+                              sentence: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO exercise_proposals(user_id, name, aliases, pattern,"
+            " note, asset_id, sentence, status, created_at)"
+            " VALUES(?,?,?,?,?,?,?, 'pending', ?)",
+            (user_id, name[:100], json.dumps(aliases, ensure_ascii=False),
+             pattern, note[:500], asset_id, sentence[:300], _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_exercise_proposals(self, user_id: str,
+                                status: str | None = "pending") -> list[dict]:
+        sql = ("SELECT * FROM exercise_proposals WHERE user_id=?")
+        params: list = [user_id]
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        rows = self.conn.execute(sql + " ORDER BY id DESC", params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["aliases"] = json.loads(d.get("aliases") or "[]")
+            except ValueError:
+                d["aliases"] = []
+            out.append(d)
+        return out

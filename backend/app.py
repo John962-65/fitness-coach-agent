@@ -41,9 +41,14 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
 
         @app.middleware("http")
         async def _require_token(request: Request, call_next):
-            # /api/health 保持开放，供前端探测"服务需要令牌"并引导配置
-            if request.url.path.startswith("/api") and request.url.path != "/api/health":
-                if request.headers.get("X-Access-Token") != token:
+            # /api/health 保持开放，供前端探测"服务需要令牌"并引导配置；
+            # /api/media/* 只读媒体额外接受 ?access_token=（<img>/<video> 带不了头）
+            path = request.url.path
+            if path.startswith("/api") and path != "/api/health":
+                ok = request.headers.get("X-Access-Token") == token or (
+                    path.startswith("/api/media/")
+                    and request.query_params.get("access_token") == token)
+                if not ok:
                     return JSONResponse(
                         status_code=401,
                         content={"detail": {"error": "需要访问令牌（在「我的 → 数据与设置」配置）"}})

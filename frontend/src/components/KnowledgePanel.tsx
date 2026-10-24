@@ -206,8 +206,145 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
           {claims && pending.length === 0 && quarantined.length === 0 && (
             <Empty>暂无待审核观点；导入内容后在这里逐条审核。</Empty>
           )}
+
+          <VideoImportPanel uid={uid} />
         </>
       )}
     </div>
+  )
+}
+
+
+// ---- M3.2：视频导入（上传→候选确认→关联/新建/忽略）----
+interface MediaAsset {
+  id: number
+  title: string
+  status: string
+  error: string | null
+  created_at: string
+  candidates: {
+    exercise_id: string; name: string; match: string; sentence: string
+    start: number; status: string
+  }[]
+}
+
+export function VideoImportPanel({ uid }: { uid: string }) {
+  const [assets, setAssets] = useState<MediaAsset[] | null>(null)
+  const [title, setTitle] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    fetch(`/api/users/${uid}/media/videos`, {
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+    })
+      .then((r) => r.json())
+      .then((r) => setAssets(r.assets as MediaAsset[]))
+      .catch(() => setAssets([]))
+  }, [uid])
+  useEffect(() => { load() }, [load])
+
+  const upload = async (video: File, subtitle: File | null) => {
+    setBusy(true); setNote('')
+    const form = new FormData()
+    form.append('title', title || video.name)
+    form.append('video', video)
+    if (subtitle) form.append('subtitle', subtitle)
+    const res = await fetch(`/api/users/${uid}/media/videos`, {
+      method: 'POST',
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+      body: form,
+    })
+    const body = await res.json()
+    if (!res.ok) { setNote(body.detail?.error || '上传失败'); setBusy(false); return }
+    setNote('已上传，后台处理中（字幕直读或本地转写）…')
+    for (let i = 0; i < 15; i++) {       // 轮询任务状态
+      await new Promise((r) => setTimeout(r, 2000))
+      load()
+      const done = (assets ?? []).length // 简单触发刷新
+      if (done >= 0) { /* 状态由渲染呈现 */ }
+      const list = await fetch(`/api/users/${uid}/media/videos`, {
+        headers: localStorage.getItem('fc-access-token')
+          ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+      }).then((r) => r.json())
+      const me = (list.assets as MediaAsset[]).find((a) => a.id === body.asset_id)
+      if (me && me.status !== 'processing') { setNote(''); break }
+    }
+    setBusy(false); load()
+  }
+
+  const confirm = async (assetId: number, index: number, action: string) => {
+    const res = await fetch(`/api/users/${uid}/media/${assetId}/candidates/${index}/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(localStorage.getItem('fc-access-token')
+          ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {}),
+      },
+      body: JSON.stringify({ action }),
+    })
+    const body = await res.json()
+    if (!res.ok) setNote(body.detail?.error || '操作失败')
+    load()
+  }
+
+  return (
+    <Card title="视频导入">
+      <input className="input mb-2 text-sm" placeholder="视频标题（如：深蹲教学）"
+             value={title} onChange={(e) => setTitle(e.target.value)} />
+      <div className="space-y-1.5 text-sm">
+        <input type="file" disabled={busy} accept="video/mp4,video/webm,video/quicktime,.mkv"
+               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f, null) }} />
+        <input type="file" accept=".srt,.vtt"
+               onChange={(e) => {
+                 const sub = e.target.files?.[0]
+                 const v = (document.getElementById('vid-main') as HTMLInputElement)?.files?.[0]
+                 if (sub && v) upload(v, sub)
+               }} />
+        <input type="file" id="vid-main" accept="video/mp4,video/webm,video/quicktime,.mkv"
+               className="hidden" onChange={() => { /* 由上面两个入口触发 */ }} />
+      </div>
+      <p className="mt-1 text-[11px] text-neutral-500">
+        可选：先选字幕（srt/vtt）再选"字幕+视频"第二栏；无字幕时服务器本地转写（较慢）。
+        识别不强行匹配：无候选时如实显示。
+      </p>
+      {note && <p className="mt-1 text-xs text-accent">{note}</p>}
+
+      {(assets || []).map((a) => (
+        <div key={a.id} className="mt-3 rounded-xl bg-neutral-800/60 p-2.5">
+          <div className="flex items-center justify-between text-sm">
+            <span>{a.title}</span>
+            <Tag tone={a.status === 'ready' ? 'green' : a.status === 'failed' ? 'red' : 'amber'}>
+              {{ ready: '已处理', failed: '失败', processing: '处理中' }[a.status] || a.status}
+            </Tag>
+          </div>
+          {a.error && <p className="mt-1 text-xs text-red-400">{a.error}</p>}
+          {a.status === 'ready' && (a.candidates.length === 0
+            ? <p className="mt-1 text-xs text-neutral-500">未识别到库内动作候选（可手动关联或忽略）</p>
+            : a.candidates.map((c, i) => (
+              <div key={i} className="mt-1.5 rounded-lg bg-neutral-900/70 p-2 text-xs">
+                <p className="text-neutral-200">
+                  {c.name}
+                  <span className="ml-1 text-neutral-500">（{c.match} 匹配 @ {Math.round(c.start)}s）</span>
+                  {c.status !== 'pending' && <Tag>{c.status}</Tag>}
+                </p>
+                <p className="text-neutral-500">"{c.sentence}"</p>
+                {c.status === 'pending' && (
+                  <div className="mt-1 flex gap-2">
+                    <button className="tag bg-emerald-900/60 text-emerald-300"
+                            onClick={() => confirm(a.id, i, 'link')}>关联该动作</button>
+                    <button className="tag bg-sky-900/60 text-sky-300"
+                            onClick={() => confirm(a.id, i, 'new')}>新动作候选</button>
+                    <button className="tag bg-neutral-800 text-neutral-400"
+                            onClick={() => confirm(a.id, i, 'reject')}>忽略</button>
+                  </div>
+                )}
+              </div>
+            )))}
+        </div>
+      ))}
+    </Card>
   )
 }

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -370,6 +371,123 @@ def register_routes(app) -> None:
                                 detail={"error": "只有待审核观点能被审核"})
         return {"id": claim_id,
                 "status": "approved" if decision == "approve" else "rejected"}
+
+    # ---- M3.2：视频导入（上传/任务状态/候选确认/动作媒体）----
+
+    @api.get("/media/{uid}/{name}")
+    def media_file(uid: str, name: str, request: Request):
+        """封面/片段文件（只读）。<img>/<video> 无法带自定义头，
+        令牌同时接受 ?access_token= 查询参数（仅限本只读路径）。"""
+        base = (request.app.state.db.path.parent / "media" / uid).resolve()
+        target = (base / name).resolve()
+        if not str(target).startswith(str(base)) or not target.is_file():
+            raise HTTPException(status_code=404, detail={"error": "文件不存在"})
+        return FileResponse(target)
+
+    @api.post("/users/{uid}/media/videos")
+    async def media_upload(uid: str, request: Request):
+        from starlette.datastructures import UploadFile
+        import time as _time
+        db = request.app.state.db
+        _user_profile(db, uid)
+        form = await request.form()
+        video = form.get("video")
+        subtitle = form.get("subtitle")
+        title = str(form.get("title") or "未命名视频")
+        if not isinstance(video, UploadFile) or not video.filename:
+            raise HTTPException(status_code=400, detail={"error": "需要 video 文件"})
+        if not video.filename.lower().endswith((".mp4", ".mov", ".webm", ".mkv")):
+            raise HTTPException(status_code=422, detail={"error": "仅支持 mp4/mov/webm/mkv"})
+        media_dir = db.path.parent / "media" / uid
+        media_dir.mkdir(parents=True, exist_ok=True)
+        stamp = int(_time.time() * 1000)
+        video_path = media_dir / f"v{stamp}_{Path(video.filename).name}"
+        video_path.write_bytes(await video.read())
+        subtitle_path = None
+        if isinstance(subtitle, UploadFile) and subtitle.filename:
+            if not subtitle.filename.lower().endswith((".srt", ".vtt")):
+                raise HTTPException(status_code=422, detail={"error": "字幕仅支持 srt/vtt"})
+            subtitle_path = media_dir / f"s{stamp}_{Path(subtitle.filename).name}"
+            subtitle_path.write_bytes(await subtitle.read())
+        asset_id = db.add_media_asset(uid, title, str(video_path),
+                                      str(subtitle_path) if subtitle_path else None)
+        # §10.4：媒体处理不阻塞请求——后台线程执行转写与候选提取
+        import threading
+        from coach.media_import import process_asset
+        threading.Thread(
+            target=process_asset, daemon=True,
+            args=(db, asset_id, str(video_path),
+                  str(subtitle_path) if subtitle_path else None)).start()
+        return {"asset_id": asset_id, "status": "processing"}
+
+    @api.get("/users/{uid}/media/videos")
+    def media_list(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"assets": db.list_media_assets(uid)}
+
+    @api.post("/users/{uid}/media/{asset_id}/candidates/{index}/confirm")
+    def media_confirm(uid: str, asset_id: int, index: int, request: Request,
+                      payload: dict = Body(...)):
+        from coach.media_import import make_clip, make_cover
+        db = request.app.state.db
+        _user_profile(db, uid)
+        asset = db.get_media_asset(uid, asset_id)
+        if not asset or asset["status"] != "ready":
+            raise HTTPException(status_code=422,
+                                detail={"error": "视频尚未处理完成或处理失败"})
+        candidates = asset.get("candidates") or []
+        if not 0 <= index < len(candidates):
+            raise HTTPException(status_code=404, detail={"error": "候选不存在"})
+        cand = candidates[index]
+        action = payload.get("action")
+        if action == "reject":
+            candidates[index]["status"] = "rejected"
+            db.update_media_asset(asset_id, status="ready", candidates=candidates)
+            return {"result": "rejected"}
+        if action == "new":
+            proposal_id = db.add_exercise_proposal(
+                uid, str(payload.get("name") or cand.get("name") or "未命名动作"),
+                [str(a) for a in (payload.get("aliases") or [])][:8],
+                str(payload.get("pattern") or ""), str(payload.get("note") or ""),
+                asset_id, cand.get("sentence") or "")
+            candidates[index]["status"] = "proposed"
+            db.update_media_asset(asset_id, status="ready", candidates=candidates)
+            return {"result": "proposed", "proposal_id": proposal_id}
+        if action == "link":
+            exercise_id = str(payload.get("exercise_id") or cand.get("exercise_id") or "")
+            if not exercise_id:
+                raise HTTPException(status_code=422, detail={"error": "缺少 exercise_id"})
+            media_dir = Path(asset["video_path"]).parent
+            cover = make_cover(asset["video_path"], cand.get("start") or 0.0,
+                               str(media_dir / f"cover_{asset_id}_{index}.jpg"))
+            clip = make_clip(asset["video_path"], cand.get("start") or 0.0,
+                             cand.get("end") or 0.0,
+                             str(media_dir / f"clip_{asset_id}_{index}.mp4"))
+            link_id = db.add_exercise_media_link(
+                uid, exercise_id, asset_id, cand.get("sentence") or "",
+                float(cand.get("start") or 0), float(cand.get("end") or 0),
+                cover, clip)
+            if link_id is None:
+                raise HTTPException(status_code=422,
+                                    detail={"error": "该片段已关联过这个动作"})
+            candidates[index]["status"] = "linked"
+            db.update_media_asset(asset_id, status="ready", candidates=candidates)
+            return {"result": "linked", "link_id": link_id,
+                    "cover": bool(cover), "clip": bool(clip)}
+        raise HTTPException(status_code=400, detail={"error": "action 必须是 link/new/reject"})
+
+    @api.get("/users/{uid}/exercise-media")
+    def exercise_media(uid: str, request: Request, exercise_id: str = Query(...)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"links": db.list_exercise_media(uid, exercise_id)}
+
+    @api.get("/users/{uid}/exercise-proposals")
+    def exercise_proposal_list(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"proposals": db.list_exercise_proposals(uid)}
 
     # ---- M2：咨询留痕 / 计划版本历史与恢复 ----
 

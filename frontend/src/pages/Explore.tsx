@@ -26,6 +26,18 @@ export default function Explore() {
     return () => clearTimeout(t)
   }, [q, muscle])
 
+  // M3.2：详情打开时拉取该动作的用户教学媒体（封面/演示片段）
+  const [media, setMedia] = useState<{ cover_path: string | null; clip_path: string | null; sentence: string }[]>([])
+  useEffect(() => {
+    if (!detail) return
+    fetch(`/api/users/${uid}/exercise-media?exercise_id=${detail.id}`, {
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+    }).then((r) => r.json())
+      .then((r) => setMedia(r.links || []))
+      .catch(() => setMedia([]))
+  }, [detail, uid])
+
   return (
     <div className="space-y-3 pt-4">
       <PageHeader title="探索" sub="动作库与统一知识库（文件/博主观点/教练卡/我的导入）" />
@@ -89,6 +101,29 @@ export default function Explore() {
               </p>
             )}
             <div className="space-y-3 text-sm">
+              {media.length > 0 && (
+                <section>
+                  <h4 className="label">我的教学媒体（视频导入关联）</h4>
+                  <div className="space-y-2">
+                    {media.map((m, i) => (
+                      <div key={i} className="rounded-lg bg-neutral-800/60 p-2">
+                        {m.clip_path ? (
+                          <video controls preload="metadata" className="max-h-48 w-full rounded"
+                                 src={`/api/media/${m.clip_path.match(/media\/([^/]+\/[^/]+)$/)?.[1] || ''
+                                   }${localStorage.getItem('fc-access-token')
+                                     ? `?access_token=${encodeURIComponent(localStorage.getItem('fc-access-token') || '')}` : ''}`} />
+                        ) : m.cover_path ? (
+                          <img alt="封面" className="max-h-40 rounded"
+                               src={`/api/media/${m.cover_path.match(/media\/([^/]+\/[^/]+)$/)?.[1] || ''
+                                 }${localStorage.getItem('fc-access-token')
+                                   ? `?access_token=${encodeURIComponent(localStorage.getItem('fc-access-token') || '')}` : ''}`} />
+                        ) : null}
+                        <p className="mt-1 text-xs text-neutral-500">依据：{m.sentence}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               {typeof detail.setup === 'string' && detail.setup && (
                 <section><h4 className="label">准备</h4><p className="text-neutral-300">{detail.setup}</p></section>
               )}
