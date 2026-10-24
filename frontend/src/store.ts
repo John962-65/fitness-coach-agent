@@ -58,10 +58,11 @@ interface AppState {
   setUid: (uid: string) => void
 
   session: WorkoutSession | null
-  /** 开始计划训练。返回 kept=true 表示已有未完成记录的会话被保留（P0-1 防静默覆盖），未创建新会话。 */
-  startSession: (day: string, entries: SessionEntry[]) => { kept: boolean }
-  /** 开始自由训练。保护语义同上。 */
-  startFreeSession: () => { kept: boolean }
+  /** 开始计划训练。kept=true 表示未创建新会话：
+   *  resumed=true 为同目标恢复（已记录组原样保留）；否则是冲突等待用户选择（P0-1）。 */
+  startSession: (day: string, entries: SessionEntry[]) => { kept: boolean; resumed?: boolean }
+  /** 开始自由训练。语义同上。 */
+  startFreeSession: () => { kept: boolean; resumed?: boolean }
   addFreeExercise: (entry: SessionEntry) => void
   removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
@@ -107,15 +108,18 @@ export const useApp = create<AppState>()((set) => ({
   session: null,
   startSession: (day, entries) => {
     const cur = useApp.getState().session
-    // P0-1：已有含记录的进行中会话且目标不同 → 保留现有会话，由调用方提示用户选择
-    if (cur && hasProgress(cur) && !(cur.mode === 'planned' && cur.day === day)) return { kept: true }
+    // 同目标重复启动：直接恢复现有会话，绝不重新初始化（P1）
+    if (cur && cur.mode === 'planned' && cur.day === day) return { kept: true, resumed: true }
+    // 目标不同且已有记录：保留现有会话，由调用方提示用户选择（P0-1）
+    if (cur && hasProgress(cur)) return { kept: true }
     set({ session: { id: newSessionId(), mode: 'planned', day, date: today(),
                      entries, started_at: new Date().toISOString(), notes: '' } })
     return { kept: false }
   },
   startFreeSession: () => {
     const cur = useApp.getState().session
-    if (cur && hasProgress(cur) && cur.mode !== 'free') return { kept: true }
+    if (cur && cur.mode === 'free') return { kept: true, resumed: true }
+    if (cur && hasProgress(cur)) return { kept: true }
     set({ session: { id: newSessionId(), mode: 'free', day: 'free', date: today(),
                      entries: [], started_at: new Date().toISOString(), notes: '' } })
     return { kept: false }

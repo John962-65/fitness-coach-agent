@@ -31,11 +31,19 @@ export default function History() {
   // 列表筛选（客户端过滤，数据取最近 50 条）
   const [typeFilter, setTypeFilter] = useState('')
   const [q, setQ] = useState('')
+  const [listOffset, setListOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
 
-  const load = useCallback(() => {
-    api.checkins(uid, 50).then((r) => setCheckins(r.checkins)).catch((e) => setError(e.message))
+  const load = useCallback((offset = 0) => {
+    api.checkins(uid, 50, undefined, offset)
+      .then((r) => {
+        setCheckins((prev) => (offset > 0 && prev ? [...prev, ...r.checkins] : r.checkins))
+        setListOffset(offset)
+        setHasMore(r.checkins.length >= 50)
+      })
+      .catch((e) => setError(e.message))
   }, [uid])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(0) }, [load])
 
   const filtered = useMemo(() => (checkins || []).filter((c) => {
     if (typeFilter && c.type !== typeFilter) return false
@@ -84,6 +92,11 @@ export default function History() {
             <div className="space-y-3">
               {filtered.map((c) => <CheckinCard key={c.id} c={c} onCorrect={() => setCorrecting(c)} />)}
             </div>
+            {hasMore && (
+              <button className="btn-ghost w-full" onClick={() => load(listOffset + 50)}>
+                加载更多
+              </button>
+            )}
           </>
         )}
 
@@ -190,14 +203,23 @@ function CalendarView({ uid, onCorrect }: {
     api.periodSummary(uid, periodDays)
       .then(setSummary).catch(() => setSummary(null))
   }, [uid, periodDays])
-  // 当日记录按日期向服务端查询（M6.3.1：不受列表 50 条窗口限制）
+  // 当日记录按日期向服务端查询（M6.3.1：与日历聚合同口径），分页拉全
   useEffect(() => {
     if (!selected) { setDayCheckins(null); return }
     let alive = true
     setDayCheckins(null)
-    api.checkins(uid, 50, selected)
-      .then((r) => { if (alive) setDayCheckins(r.checkins) })
-      .catch(() => { if (alive) setDayCheckins([]) })
+    ;(async () => {
+      const all: Checkin[] = []
+      try {
+        for (let offset = 0; offset < 200; offset += 50) {
+          const r = await api.checkins(uid, 50, selected, offset)
+          if (!alive) return
+          all.push(...r.checkins)
+          if (r.checkins.length < 50) break
+        }
+      } catch { /* 查询失败按空处理 */ }
+      if (alive) setDayCheckins(all)
+    })()
     return () => { alive = false }
   }, [uid, selected])
 
@@ -223,7 +245,7 @@ function CalendarView({ uid, onCorrect }: {
     setYear(d.getFullYear()); setMonth(d.getMonth() + 1); setSelected(null)
   }
 
-  const dayCheckinsList = selected ? (dayCheckins || []).filter((c) => (c.at || '').slice(0, 10) === selected) : []
+  const dayCheckinsList = dayCheckins || []
   const maxMuscle = summary ? Math.max(1, ...Object.values(summary.by_muscle)) : 1
 
   return (

@@ -95,9 +95,9 @@ export const api = {
     post<{ plan_id: number; plan_version: number; changes: string[]; warnings: string[] }>(
       `/users/${uid}/plan/edits`, { operations, reason, base_version: baseVersion }),
 
-  checkins: (uid: string, limit = 20, date?: string) =>
+  checkins: (uid: string, limit = 20, date?: string, offset = 0) =>
     req<{ checkins: Checkin[] }>(
-      `/users/${uid}/checkins?limit=${limit}${date ? `&date=${date}` : ''}`),
+      `/users/${uid}/checkins?limit=${limit}${date ? `&date=${date}` : ''}&offset=${offset}`),
   saveCheckin: (uid: string, type: string, data: unknown, submissionId?: string) =>
     post<{ id: number; type: string; warnings: string[]; existing?: boolean }>(
       `/users/${uid}/checkins`,

@@ -43,6 +43,7 @@ export default function Workout() {
     if (isFree) {
       if (session && session.mode === 'free') return
       const r = startFreeSession()
+      if (r.resumed) return                      // 同目标恢复：现有会话原样继续
       if (r.kept) {
         const cur = useApp.getState().session!
         const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)
@@ -83,6 +84,7 @@ export default function Workout() {
           logged: [],
         }))
         const r = startSession(decodeURIComponent(day), plannedEntries)
+        if (r.resumed) return                      // 同目标恢复：现有会话原样继续
         if (r.kept) {
           const cur = useApp.getState().session!
           const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)

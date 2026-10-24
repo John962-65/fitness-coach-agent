@@ -391,6 +391,9 @@ class Database:
 
     def list_checkins(self, user_id: str, limit: int = 20, offset: int = 0,
                       date: str | None = None) -> list[dict]:
+        """date 过滤与日历聚合使用同一口径（session_local_date：会话本地日期优先，
+        旧记录回退服务器时间）——SQL 只做窗口粗筛，精确过滤在 Python 侧完成。"""
+        from .analytics.exercise_metrics import session_local_date
         sql = ("SELECT c.id,c.type,c.data,c.created_at,"
                " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision,"
                " (SELECT reason FROM checkin_revisions r WHERE r.checkin_id=c.id"
@@ -398,15 +401,24 @@ class Database:
                " FROM checkins c WHERE c.user_id=?")
         params: list = [user_id]
         if date:
-            # M6.3.1：按日期查询（服务端 created_at 前缀匹配；与日历聚合同源）
-            sql += " AND substr(c.created_at,1,10)=?"
-            params.append(date)
-        sql += " ORDER BY c.id DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+            # 窗口粗筛：±2 天覆盖跨时区/跨日场景，精确口径由 session_local_date 统一判定
+            base = date
+            yy, mm, dd = int(base[:4]), int(base[5:7]), int(base[8:10])
+            from datetime import date as _d, timedelta as _td
+            lo = (_d(yy, mm, dd) - _td(days=2)).isoformat()
+            hi = (_d(yy, mm, dd) + _td(days=3)).isoformat()
+            sql += " AND c.created_at >= ? AND c.created_at < ?"
+            params.extend([lo, hi])
+        sql += " ORDER BY c.id DESC"
         rows = self.conn.execute(sql, params).fetchall()
-        return [{"id": r["id"], "revision": r["revision"], "last_reason": r["last_reason"],
-                 "type": r["type"], "data": json.loads(r["data"]), "at": r["created_at"]}
-                for r in rows]
+        out = []
+        for r in rows:
+            data = json.loads(r["data"])
+            if date and session_local_date(r["created_at"], data) != date:
+                continue
+            out.append({"id": r["id"], "revision": r["revision"], "last_reason": r["last_reason"],
+                        "type": r["type"], "data": data, "at": r["created_at"]})
+        return out[offset:offset + limit]
 
     def get_checkin(self, user_id: str, checkin_id: int) -> dict | None:
         row = self.conn.execute(

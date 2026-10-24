@@ -184,3 +184,8 @@ def test_session_meta_local_date_and_duration(db):
     assert [d["date"] for d in cal["days"]] == ["2026-10-25"]             # 按本地日期入格
     summary = period_summary(db, UID, days=30)
     assert summary["avg_duration_min"] == 25
+
+    # P0 回归：日期查询与日历同一口径——本地日期 10-25 能查到（创建于 10-24 的这条）
+    assert [c["id"] for c in db.list_checkins(UID, 50, date="2026-10-25")] == [row["id"]]
+    # 反向：按服务器创建日期查询查不到（该训练属于用户本地 10-25）
+    assert db.list_checkins(UID, 50, date="2026-10-24") == []
