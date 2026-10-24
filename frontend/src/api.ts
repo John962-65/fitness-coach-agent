@@ -134,6 +134,17 @@ export const api = {
       `/users/${uid}/changes/${proposalId}/confirm`, { message }),
 
   trials: (uid: string) => req<{ trials: Trial[] }>(`/users/${uid}/trials`),
+  startTrial: (uid: string, payload: { change_desc: string; reason: string;
+    observe: string; stop_rule: string; review_days?: number; baseline?: string }) =>
+    post<{ trial_id: number; status: string }>(`/users/${uid}/trials`, payload),
+  endTrial: (uid: string, trialId: number, payload: { outcome: string;
+    decision: 'keep' | 'stop' | 'adjust' }) =>
+    post<{ trial_id: number; decision: string }>(
+      `/users/${uid}/trials/${trialId}/end`, payload),
+  approachRevision: (uid: string, revision: number) =>
+    req<{ revision: number; content: ApproachView['approach'];
+          created_at: string; initiator: string }>(
+      `/users/${uid}/approach/revisions/${revision}`),
 
   motionAnalyses: (uid: string, exerciseId?: string) => {
     const q = exerciseId ? `?exercise_id=${encodeURIComponent(exerciseId)}` : ''

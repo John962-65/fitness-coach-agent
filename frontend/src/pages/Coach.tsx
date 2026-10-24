@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { Card, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
 import { useApp } from '../store'
@@ -33,6 +34,7 @@ export function opSummary(op: Record<string, unknown>): string {
 
 export default function Coach() {
   const uid = useApp((s) => s.uid)
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -121,6 +123,28 @@ export default function Coach() {
               </p>
             </div>
           ))}
+          {consultations[0] && consultations[0].advices.flatMap((a) => a.options).length > 0 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-accent">把某个方案变成一次尝试 →</summary>
+              <ul className="mt-1 space-y-1">
+                {consultations[0].advices.flatMap((a) => a.options.map((o) => ({ label: a.label, o })))
+                  .slice(0, 4).map(({ label, o }, i) => (
+                  <li key={i}>
+                    <button className="text-left text-xs text-neutral-300 underline"
+                            onClick={() => {
+                              localStorage.setItem('m5-trial-draft', JSON.stringify({
+                                change_desc: o.title,
+                                reason: `来自${label}建议：${o.detail}`.slice(0, 180),
+                              }))
+                              navigate('/mine')
+                            }}>
+                      · {o.title}（{label}）
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 

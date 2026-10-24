@@ -272,7 +272,8 @@ class Database:
     def _migrate_note_columns(self) -> None:
         """老库增量补列；不动既有数据。"""
         for table, cols in (("coach_notes", ("note_type", "review_at")),
-                            ("knowledge_discussions", ("related_card",))):
+                            ("knowledge_discussions", ("related_card",)),
+                            ("personal_trials", ("baseline",))):
             have = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             for col in cols:
                 if col not in have:
@@ -658,7 +659,8 @@ class Database:
     # ---- personal_trials（C4 有边界的个人尝试，26.3C）----
     def start_personal_trial(self, user_id: str, change_desc: str, reason: str,
                              observe: str, stop_rule: str,
-                             review_days: int | None = None) -> int:
+                             review_days: int | None = None,
+                             baseline: str | None = None) -> int:
         row = self.conn.execute(
             "SELECT id, change_desc FROM personal_trials WHERE user_id=? AND status='active'",
             (user_id,)).fetchone()
@@ -672,8 +674,10 @@ class Database:
                       ).isoformat(timespec="seconds")
         cur = self.conn.execute(
             "INSERT INTO personal_trials(user_id, change_desc, reason, observe,"
-            " stop_rule, review_at, status, created_at) VALUES(?,?,?,?,?,?,'active',?)",
-            (user_id, change_desc, reason, observe, stop_rule, review, _now()))
+            " stop_rule, review_at, baseline, status, created_at)"
+            " VALUES(?,?,?,?,?,?,?,'active',?)",
+            (user_id, change_desc, reason, observe, stop_rule, review,
+             baseline, _now()))
         self.conn.commit()
         return cur.lastrowid
 

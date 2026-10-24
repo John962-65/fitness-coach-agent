@@ -23,6 +23,7 @@ export default function Mine() {
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
   const [showRevisions, setShowRevisions] = useState(false)
+  const [comparePicks, setComparePicks] = useState<number[]>([])
 
   const load = useCallback(() => {
     api.profile(uid).then((r) => { setProfile(r.profile); setSummary(r.summary) })
@@ -103,11 +104,20 @@ export default function Mine() {
               {showRevisions ? '收起版本历史' : `版本历史（${revisions?.length ?? 0}）`}
             </button>
             {showRevisions && (
+              <>
+              <p className="mb-1 text-[11px] text-neutral-500">勾选两个版本可对比各维度差异</p>
               <ul className="space-y-1.5">
                 {(revisions || []).map((r) => (
                   <li key={r.revision} className="rounded-lg bg-neutral-800/60 p-2 text-xs">
                     <div className="flex items-center justify-between">
-                      <span><b>v{r.revision}</b> · {r.initiator === 'system_migration' ? '初始化' : r.initiator === 'ai' ? 'AI 建议' : '本人修改'}</span>
+                      <label className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={comparePicks.includes(r.revision)}
+                               disabled={comparePicks.length === 2 && !comparePicks.includes(r.revision)}
+                               onChange={() => setComparePicks((p) =>
+                                 p.includes(r.revision) ? p.filter((x) => x !== r.revision)
+                                   : p.length < 2 ? [...p, r.revision] : p)} />
+                        <b>v{r.revision}</b> · {r.initiator === 'system_migration' ? '初始化' : r.initiator === 'ai' ? 'AI 建议' : '本人修改'}
+                      </label>
                       <span className="text-neutral-500">{r.created_at.slice(0, 10)}</span>
                     </div>
                     <p className="mt-0.5 text-neutral-400">{r.reason}</p>
@@ -122,6 +132,8 @@ export default function Mine() {
                   </li>
                 ))}
               </ul>
+              {comparePicks.length === 2 && <ApproachCompare uid={uid} picks={comparePicks} />}
+              </>
             )}
           </div>
         )}
@@ -133,24 +145,7 @@ export default function Mine() {
 
       {note && <p className="text-center text-xs text-accent">{note}</p>}
 
-      <Card title="个人尝试">
-        {!trials?.length ? <Empty>暂无记录（可在 AI 教练页发起一次有边界的尝试）</Empty> : (
-          <ul className="space-y-2 text-sm">
-            {trials.map((t) => (
-              <li key={t.id} className="rounded-lg bg-neutral-800/60 p-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{t.change_desc}</span>
-                  {t.status === 'active'
-                    ? <Tag tone={t.due_review ? 'amber' : 'blue'}>{t.due_review ? '该复盘了' : '进行中'}</Tag>
-                    : <Tag tone="neutral">{({ keep: '保留', stop: '停止', adjust: '调整' } as Record<string, string>)[t.decision || ''] || t.decision}</Tag>}
-                </div>
-                <p className="mt-0.5 text-xs text-neutral-500">观察：{t.observe} · 停止条件：{t.stop_rule}</p>
-                {t.outcome && <p className="mt-0.5 text-xs text-neutral-400">结果：{t.outcome}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <TrialsCard uid={uid} trials={trials} onChanged={load} note={setNote} />
 
       <Card title="数据与设置">
         <div className="space-y-2">
@@ -350,5 +345,174 @@ function FailedSyncCard({ onChanged }: { onChanged: () => void }) {
       </div>
       {msg && <p className="mt-2 text-center text-xs text-accent">{msg}</p>}
     </Card>
+  )
+}
+
+// ---- M5：个人尝试闭环卡（发起五要素/结束复盘/草稿预填）----
+function TrialsCard({ uid, trials, onChanged, note }: {
+  uid: string
+  trials: Trial[] | null
+  onChanged: () => void
+  note: (msg: string) => void
+}) {
+  const active = (trials || []).find((t) => t.status === 'active')
+  const history = (trials || []).filter((t) => t.status !== 'active')
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState({ change_desc: '', reason: '', observe: '',
+                                       stop_rule: '', review_days: 14, baseline: '' })
+  const [ending, setEnding] = useState(false)
+  const [outcome, setOutcome] = useState('')
+  const [decision, setDecision] = useState<'keep' | 'stop' | 'adjust'>('keep')
+  const [error, setError] = useState('')
+
+  // Coach 页"发起尝试"直连草稿（M5 验收链：了解方案 → 选择尝试）
+  useEffect(() => {
+    const raw = localStorage.getItem('m5-trial-draft')
+    if (raw) {
+      try { setDraft((d) => ({ ...d, ...JSON.parse(raw) })); setOpen(true) } catch { /* 忽略坏草稿 */ }
+      localStorage.removeItem('m5-trial-draft')
+    }
+  }, [])
+
+  const start = () => {
+    setError('')
+    api.startTrial(uid, draft)
+      .then(() => { setOpen(false); note('尝试已开始：单因素改变，观察期内如实记录'); onChanged() })
+      .catch((e: ApiError) => setError(e.message))
+  }
+  const end = () => {
+    if (!active) return
+    setError('')
+    api.endTrial(uid, active.id, { outcome, decision })
+      .then(() => {
+        setEnding(false); setOutcome('')
+        note(decision === 'keep' ? '已保留该尝试。若它改变了训练方式，去"编辑我的训练方式"固化下来'
+          : decision === 'adjust' ? '已记录"调整"结论：想好下一个单因素再开新尝试'
+          : '已停止该尝试，回到之前的做法')
+        onChanged()
+      })
+      .catch((e: ApiError) => setError(e.message))
+  }
+
+  return (
+    <Card title="个人尝试"
+          right={!active && !open
+            ? <button className="text-xs text-accent underline" onClick={() => setOpen(true)}>发起一次尝试</button>
+            : undefined}>
+      {error && <ErrorBox message={error} />}
+      {active ? (
+        <div className="text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">{active.change_desc}</span>
+            <Tag tone={active.due_review ? 'amber' : 'blue'}>
+              {active.due_review ? '该复盘了' : '进行中'}
+            </Tag>
+          </div>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            为什么：{active.reason} · 观察：{active.observe} · 停止条件：{active.stop_rule}
+            {active.review_at ? ` · 复盘时点 ${active.review_at.slice(0, 10)}` : ''}
+          </p>
+          {active.baseline && <p className="mt-0.5 text-xs text-neutral-600">尝试前基线：{active.baseline}</p>}
+          {ending ? (
+            <div className="mt-2 space-y-2 rounded-lg bg-neutral-800/60 p-2">
+              <p className="text-xs text-neutral-400">复盘：这段时间的感受与执行情况（必填，带混杂因素的个人观察）</p>
+              <textarea className="input min-h-16 text-xs" value={outcome}
+                        placeholder="例如：前两周 sleep 变好，第三周加班没执行好；膝无不适"
+                        onChange={(e) => setOutcome(e.target.value)} />
+              <div className="flex gap-2">
+                {([['keep', '保留'], ['adjust', '调整'], ['stop', '停止']] as const).map(([v, l]) => (
+                  <button key={v} onClick={() => setDecision(v)}
+                          className={`tag ${decision === v ? 'bg-accent text-neutral-950' : 'bg-neutral-800 text-neutral-300'}`}>{l}</button>
+                ))}
+                <button className="btn-primary ml-auto !py-1.5 text-xs" onClick={end}>提交复盘</button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn-ghost mt-2 w-full !py-2 text-xs" onClick={() => setEnding(true)}>
+              结束并复盘（保留 / 调整 / 停止）
+            </button>
+          )}
+        </div>
+      ) : open ? (
+        <div className="space-y-2 text-sm">
+          <p className="text-xs text-neutral-500">五要素缺一不可；同一时间只试一个变量</p>
+          <input className="input text-xs" placeholder="改变什么（单一因素，如：改上下肢分化）"
+                 value={draft.change_desc} onChange={(e) => setDraft({ ...draft, change_desc: e.target.value })} />
+          <input className="input text-xs" placeholder="为什么尝试"
+                 value={draft.reason} onChange={(e) => setDraft({ ...draft, reason: e.target.value })} />
+          <input className="input text-xs" placeholder="观察什么（如：恢复情况/膝不适）"
+                 value={draft.observe} onChange={(e) => setDraft({ ...draft, observe: e.target.value })} />
+          <input className="input text-xs" placeholder="何时停止（如：膝痛立即停）"
+                 value={draft.stop_rule} onChange={(e) => setDraft({ ...draft, stop_rule: e.target.value })} />
+          <div className="flex gap-2">
+            <input className="input text-xs" type="number" min={1} max={180}
+                   value={draft.review_days}
+                   onChange={(e) => setDraft({ ...draft, review_days: Number(e.target.value) })} />
+            <input className="input text-xs" placeholder="尝试前的基线感受（可选）"
+                   value={draft.baseline} onChange={(e) => setDraft({ ...draft, baseline: e.target.value })} />
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-primary flex-1 !py-2 text-xs" onClick={start}>开始尝试</button>
+            <button className="btn-ghost flex-1 !py-2 text-xs" onClick={() => setOpen(false)}>取消</button>
+          </div>
+        </div>
+      ) : !history.length ? (
+        <Empty>暂无记录；也可以在 AI 教练页对某个方案点"发起尝试"</Empty>
+      ) : null}
+      {history.length > 0 && (
+        <ul className="mt-2 space-y-1.5">
+          {history.map((t) => (
+            <li key={t.id} className="rounded-lg bg-neutral-800/40 p-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span>{t.change_desc}</span>
+                <Tag tone={t.decision === 'keep' ? 'green' : t.decision === 'stop' ? 'neutral' : 'amber'}>
+                  {{ keep: '保留', stop: '停止', adjust: '调整' }[t.decision || ''] || t.decision}
+                </Tag>
+              </div>
+              {t.outcome && <p className="mt-0.5 text-neutral-500">复盘：{t.outcome}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+// ---- M5：训练方式两版对比（维度级，历史不固定）----
+function ApproachCompare({ uid, picks }: { uid: string; picks: number[] }) {
+  const [data, setData] = useState<[ApproachView['approach'], ApproachView['approach']] | null>(null)
+  useEffect(() => {
+    Promise.all(picks.map((r) => api.approachRevision(uid, r)))
+      .then((rs) => setData([rs[0].content, rs[1].content]))
+      .catch(() => setData(null))
+  }, [uid, picks])
+  if (!data) return <Spinner label="加载对比…" />
+  const [a, b] = data
+  const rows: [string, string, string][] = [
+    ['结构', a!.structure.value, b!.structure.value],
+    ['强度风格', a!.intensity_style.value, b!.intensity_style.value],
+    ['动作选择数', String(a!.exercise_selection.length), String(b!.exercise_selection.length)],
+    ['饮食方式', a!.diet_approach.strategy || a!.diet_approach.note || '—',
+                 b!.diet_approach.strategy || b!.diet_approach.note || '—'],
+    ['恢复方式', a!.recovery_approach.note || '—', b!.recovery_approach.note || '—'],
+    ['喜欢', a!.preferences.liked.join('、') || '—', b!.preferences.liked.join('、') || '—'],
+    ['不喜欢', a!.preferences.disliked.join('、') || '—', b!.preferences.disliked.join('、') || '—'],
+  ]
+  return (
+    <div className="mt-2 rounded-lg bg-neutral-800/60 p-2 text-xs">
+      <p className="mb-1 font-semibold text-neutral-300">v{picks[0]} ↔ v{picks[1]} 对比</p>
+      <table className="w-full">
+        <tbody>
+          {rows.map(([label, va, vb]) => (
+            <tr key={label} className={va !== vb ? 'text-amber-300' : 'text-neutral-400'}>
+              <td className="w-16 py-0.5">{label}</td>
+              <td className="py-0.5">{va}</td>
+              <td className="py-0.5">{vb}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[11px] text-neutral-600">差异行高亮；历史版本随时可恢复，不把选择永久固定</p>
+    </div>
   )
 }

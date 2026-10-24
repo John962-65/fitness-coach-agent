@@ -548,6 +548,63 @@ def register_routes(app) -> None:
         return {"a": {"id": a, **ra["result"]}, "b": {"id": b, **rb["result"]},
                 "compare": compare_results(ra["result"], rb["result"])}
 
+    # ---- M5：个人尝试闭环（发起/结束复盘）+ 方式版本内容 ----
+
+    @api.post("/users/{uid}/trials")
+    def trial_start(uid: str, request: Request, payload: dict = Body(...)):
+        """发起新尝试（五要素必填；同一时间仅一个进行中）。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        fields = {k: str(payload.get(k) or "").strip()
+                  for k in ("change_desc", "reason", "observe", "stop_rule")}
+        missing = [k for k, v in fields.items() if not v]
+        if missing:
+            raise HTTPException(status_code=422,
+                                detail={"error": "个人尝试五要素必填（改变什么/为什么/观察什么/何时停止）",
+                                        "details": [f"缺少 {m}" for m in missing]})
+        days = payload.get("review_days")
+        if days is not None and (not isinstance(days, int) or isinstance(days, bool)
+                                 or not 1 <= days <= 180):
+            raise HTTPException(status_code=422,
+                                detail={"error": "review_days 必须是 1-180 的整数"})
+        try:
+            trial_id = db.start_personal_trial(
+                uid, fields["change_desc"], fields["reason"],
+                fields["observe"], fields["stop_rule"], days,
+                baseline=str(payload.get("baseline") or "").strip() or None)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return {"trial_id": trial_id, "status": "active"}
+
+    @api.post("/users/{uid}/trials/{trial_id}/end")
+    def trial_end(uid: str, trial_id: int, request: Request,
+                  payload: dict = Body(...)):
+        """结束并复盘：记录期间感受/执行情况 + 最终决定。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        decision = str(payload.get("decision") or "")
+        if decision not in ("keep", "stop", "adjust"):
+            raise HTTPException(status_code=422,
+                                detail={"error": "decision 必须是 keep/stop/adjust"})
+        outcome = str(payload.get("outcome") or "").strip()
+        if not outcome:
+            raise HTTPException(status_code=422,
+                                detail={"error": "复盘需要记录尝试期间的感受/执行情况"})
+        if not db.end_personal_trial(uid, trial_id, outcome, decision):
+            raise HTTPException(status_code=404,
+                                detail={"error": "尝试不存在或已结束"})
+        return {"trial_id": trial_id, "status": "ended", "decision": decision}
+
+    @api.get("/users/{uid}/approach/revisions/{revision}")
+    def approach_revision_content(uid: str, revision: int, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        snap = db.get_approach_revision(uid, revision)
+        if not snap:
+            raise HTTPException(status_code=404, detail={"error": f"版本 v{revision} 不存在"})
+        return {"revision": revision, "content": snap["content"],
+                "created_at": snap["created_at"], "initiator": snap["initiator"]}
+
     # ---- M2：咨询留痕 / 计划版本历史与恢复 ----
 
     @api.get("/users/{uid}/consultations")

@@ -206,6 +206,7 @@ export interface Trial {
   stop_rule: string
   review_at: string | null
   outcome: string | null
+  baseline?: string | null
   decision: string | null
   status: string
   created_at: string

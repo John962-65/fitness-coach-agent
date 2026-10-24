@@ -496,3 +496,47 @@ def test_pending_proposals_expose_operations_for_preview(client):
     listing = c.get("/api/users/api_user/changes", params={"status": "pending"}).json()
     prop = next(p for p in listing["proposals"] if p["id"] == staged["proposal_id"])
     assert prop["operations"][0]["dimension"] == "structure"   # 前端预览数据
+
+
+# ---- M5：个人尝试闭环 + 方式版本内容 ----
+
+def test_trial_start_and_end_flow(client):
+    c, app = client
+    bad = c.post("/api/users/api_user/trials", json={"change_desc": "x"})
+    assert bad.status_code == 422 and "五要素" in bad.json()["detail"]["error"]
+    ok = c.post("/api/users/api_user/trials", json={
+        "change_desc": "改上下肢分化", "reason": "时间紧",
+        "observe": "恢复与执行率", "stop_rule": "膝痛即停",
+        "review_days": 14, "baseline": "当前每周 3 练基本完成"})
+    assert ok.status_code == 200 and ok.json()["status"] == "active"
+    # 单 active:第二个被拒
+    second = c.post("/api/users/api_user/trials", json={
+        "change_desc": "又改饮食", "reason": "x", "observe": "y", "stop_rule": "z"})
+    assert second.status_code == 422
+    # 结束复盘:缺 outcome 拒;decision 非法拒;成功落库
+    tid = ok.json()["trial_id"]
+    assert c.post(f"/api/users/api_user/trials/{tid}/end",
+                  json={"decision": "keep"}).status_code == 422
+    assert c.post(f"/api/users/api_user/trials/{tid}/end",
+                  json={"decision": "maybe", "outcome": "x"}).status_code == 422
+    done = c.post(f"/api/users/api_user/trials/{tid}/end",
+                  json={"decision": "keep", "outcome": "两周执行 6/8，膝无不适"})
+    assert done.status_code == 200
+    trials = app.state.db.personal_trials("api_user")
+    assert trials[0]["status"] == "ended" and trials[0]["decision"] == "keep"
+    assert trials[0]["baseline"].startswith("当前每周")
+    # 结束后可再开新尝试
+    again = c.post("/api/users/api_user/trials", json={
+        "change_desc": "饮食份量法", "reason": "不想算热量",
+        "observe": "体重趋势", "stop_rule": "连续两周暴冲"})
+    assert again.status_code == 200
+
+
+def test_approach_revision_content_endpoint(client):
+    c, _ = client
+    c.post("/api/users/api_user/approach/initialize")
+    snap = c.get("/api/users/api_user/approach/revisions/1")
+    assert snap.status_code == 200
+    body = snap.json()
+    assert body["content"]["structure"]["value"]  # 完整快照可取(对比用)
+    assert c.get("/api/users/api_user/approach/revisions/99").status_code == 404
