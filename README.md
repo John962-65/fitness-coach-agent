@@ -10,7 +10,8 @@
 ## 组成
 
 - `coach/` — 运行时（安全前置规则、槽位式计划生成、打卡/复盘/调整闭环、记忆契约、目标协商、教练卡通道）
-- `backend/` — 2.0 服务层（FastAPI 封装现有核心：档案/今日/训练方式/计划编辑/打卡/动作库/AI 对话；`python3 -m backend` 启动，见 `TASKBOOK_2.0.md` §五）
+- `backend/` — 2.0 服务层（FastAPI：档案/今日/训练方式/计划编辑/打卡/动作库/AI 对话；存在 `frontend/dist` 时同进程托管 SPA）
+- `frontend/` — 2.0 手机 PWA（React+TS+Vite+Tailwind：今日/训练/执行/历史/AI 教练/探索/我的/建档；`npm run build` 后 `python3 -m backend` 单进程运行）
 - `knowledge/` — 按教练场景组织的知识文件（分层加载：常驻原则 / 索引 / 按需全文）
 - `exercises/` — 动作库（结构化属性 + 教学字段，含替换与伤病筛选）
 - `claims/` — 观点条目池（可追溯 draft/审核状态；对外仅"转述 + 出处"）

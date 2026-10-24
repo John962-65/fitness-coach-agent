@@ -1,0 +1,13 @@
+{
+  "name": "Fitness Coach 私人健身教练",
+  "short_name": "FitnessCoach",
+  "description": "遵循自身——在 AI 教练帮助下找到、验证并调整适合自己的训练方式",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

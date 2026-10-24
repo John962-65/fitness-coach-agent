@@ -1181,3 +1181,16 @@ P1（槽位模板默认动作）共 17 个动作，其中 12 个已有批准卡�
 - **FastAPI 服务层（B4）**：`backend/`（app 工厂 + /api 路由，薄层全部委托 coach/ 域函数）：health / 档案 / 今日简报（确定性）/ 训练方式（查看/初始化/版本/恢复）/ 统一修改（手动/AI 暂存/确认/列表）/ 计划（查看/手动编辑）/ 打卡（落库走与 agent 同套清洗归一 + 纠错）/ 动作库检索（名称/别名/id/肌群/器械/状态）/ AI 对话（复用 CoachAgent）。`python3 -m backend` 启动，uvicorn 真实冒烟通过（临时库）；CLI 保留。
 - **验证**：新增 test_approach.py 16 + test_changes.py 13 + test_plan_edit.py 12 + test_api.py 10；全量离线回归 **494 passed**（443 基线零退化 + 51 新增）。本轮零真实 LLM 调用、冻结评测 YAML 未动、真实库未触碰（新表为增量 schema，下次打开自动补建）。
 - **边界（不冒充完成）**：agent 既有工具（apply_adjustment/confirm_profile_change/重排）按原冻结机制运行，迁移到统一服务属 M2；经协议提交的计划带 `approach_revision` 戳、agent 旧路径不带（GET 如实标注）；多设备并发本轮仅 base_version 乐观锁。改动待发起人授权后提交 git。
+
+## 三十八、2.0 B6 前端落地：手机 PWA 五页 + 表单建档 + 训练执行（2026-10-24）
+
+发起人指示"按照任务书把前端完成"，解除任务书 §1.2 的前端暂缓；范围与验收线见 TASKBOOK_2.0.md §八。
+
+- **技术栈**：React 18 + TypeScript + Vite 5 + Tailwind 3 + Zustand + React Router 6 + idb-keyval；PWA（manifest + 最小 SW：外壳缓存、/api 走网络）。`frontend/` 新包，node_modules/dist 不入库。
+- **五页导航**：今日 / 训练 / AI 教练 / 探索 / 我的（手机优先）。今日页含医疗/隔离警告、当日训练匹配、待复核提醒、执行统计；训练页含计划展示与编辑器（六种操作走统一修改协议 + base_version 乐观锁，422 冲突自动刷新）；执行页逐组记录（重量/次数/RPE/热身组、上次重量自动带出、休息计时、训练中换动作）；历史页纠错（expected_revision + 必填原因，修订标签）；AI 教练页含待确认提案卡片（语义门 confirm）；探索页动作库（搜索/肌群筛选/审核标签/教学详情）；我的页训练方式（初始化/版本/恢复）+ 尝试 + 数据导出 + 用户切换。
+- **表单化建档（不经过 LLM）**：四步表单，PAR-Q 四项必答；后端新增确定性 `POST /onboarding`（校验对齐 onboarding 门槛，表单自述即依据），阳性自动落医疗暂停模板。
+- **离线**：IndexedDB 队列 + 路由切换自动同步；422 永久拒绝丢弃、网络类按序保留（vitest 抓到断网丢后续条目 bug 并修复）。
+- **部署**：`create_app` 自动托管 `frontend/dist`（SPA 回退），`python3 -m backend` 单进程即完整产品。
+- **验证**：tsc + vite build 通过；vitest 5/5；后端 test_api 增 6 项（16 项全绿），全量回归 **500 passed** 零退化；冻结集未动。
+- **浏览器 E2E（真实 Chromium 390×844，FAKE_LLM + 临时库）**：建档 4 步 → 定级进阶 → 三分化计划 → 改计划 v1→v2（draft 披露自动出现）→ 训练执行（上次重量带出 102.5kg、3 组、休息计时）→ 完成 → 历史 → 纠错（修订 v1）→ 我的（训练方式 13 项初始化）→ 探索详情 → 今日页截图视觉验收。E2E 抓到并修复 1 个前端 bug（成功页被空会话守卫遮挡）。
+- **边界**：图表/结构化 AI 回复组件/三维/推送属后续增强；本轮改动未提交 git，等发起人授权。

@@ -15,3 +15,7 @@ eval/runs/
 # 历史备份（已被 git 取代）
 *.bak.*
 inbox/chenshi-nutrition-skill/
+
+# 前端（2.0 B6）：依赖与构建产物不进版本库
+frontend/node_modules/
+frontend/dist/
