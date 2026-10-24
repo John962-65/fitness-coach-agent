@@ -129,7 +129,8 @@ def test_plan_get_and_manual_edit_via_api(client):
     edited = c.post("/api/users/api_user/plan/edits", json={
         "operations": [{"op": "add_exercise", "day": day, "exercise": "plank",
                         "sets": 3, "reps": "45秒", "role": "accessory"}],
-        "reason": "加核心"}).json()
+        "reason": "加核心",
+        "base_version": plan["base_version"]}).json()
     assert edited["plan_version"] == 2 and edited["warnings"] == []
     new_plan = c.get("/api/users/api_user/plan").json()
     assert any(e["exercise_id"] == "plank"
@@ -284,3 +285,156 @@ def test_spa_fallback_serves_index(tmp_path):
         assert c.get("/assets/app.js").text == "console.log(1)"   # 静态资源
         assert c.get("/api/health").json()["status"] == "ok"      # API 优先
         assert c.get("/api/users/ghost/profile").status_code == 404
+
+
+# ---- M1.1：训练数据完整性 / 离线可靠性 / 前后端一致性（外部审查 P0）----
+
+def test_plan_edits_require_explicit_base_version(client):
+    """P0-1：缺 base_version 拒绝（不得自动补最新版绕过乐观锁）。"""
+    c, _ = client
+    day = c.get("/api/users/api_user/plan").json()["content"]["schedule"][0]["day"]
+    ops = [{"op": "rename_day", "day": day, "new_name": "推日"}]
+    resp = c.post("/api/users/api_user/plan/edits", json={"operations": ops, "reason": "x"})
+    assert resp.status_code == 422
+    assert "base_version" in resp.json()["detail"]["error"]
+
+
+def test_concurrent_edit_stale_submission_rejected(client):
+    """P0-1 双页面并发：A 基于 v1 提交前，B 已把计划推进到 v2 → A 被 422 拒绝。"""
+    c, _ = client
+    plan = c.get("/api/users/api_user/plan").json()
+    stale_base = plan["base_version"]
+    day = plan["content"]["schedule"][0]["day"]
+    # 页面 B：基于最新版完成一次编辑
+    ok = c.post("/api/users/api_user/plan/edits", json={
+        "operations": [{"op": "edit_set_prescription", "day": day, "index": 0, "sets": 5}],
+        "reason": "B 的修改", "base_version": stale_base})
+    assert ok.status_code == 200
+    # 页面 A：仍基于 v1 的旧版本提交 → 拒绝，数据未变
+    resp = c.post("/api/users/api_user/plan/edits", json={
+        "operations": [{"op": "edit_set_prescription", "day": day, "index": 0, "sets": 6}],
+        "reason": "A 的修改", "base_version": stale_base})
+    assert resp.status_code == 422
+    current = c.get("/api/users/api_user/plan").json()
+    assert current["content"]["schedule"][0]["exercises"][0]["sets"] == 5
+
+
+def test_checkin_submission_id_is_idempotent(client):
+    """P0-2：响应丢失后重试同一 submission_id → 返回同一条，不重复入库。"""
+    c, app = client
+    payload = {"type": "training", "submission_id": "sub-e2e-001",
+               "data": {"exercises": [{"name": "杠铃卧推",
+                                       "set_logs": [{"weight_kg": 60, "reps": 10, "rpe": 7}]}]}}
+    first = c.post("/api/users/api_user/checkins", json=payload).json()
+    again = c.post("/api/users/api_user/checkins", json=payload).json()
+    assert first["id"] == again["id"] and again["existing"] is True
+    rows = [x for x in app.state.db.list_checkins("api_user", 50)
+            if x["type"] == "training"]
+    assert len(rows) == 1
+    # 不同 ID 正常新增
+    other = c.post("/api/users/api_user/checkins", json={**payload, "submission_id": "sub-2"})
+    assert other.json()["id"] != first["id"] and "existing" not in other.json()
+
+
+def test_set_logs_persist_every_set(client):
+    """P0-4：每组数据完整保存；聚合字段由服务端从正式组派生（兼容旧引擎）。"""
+    c, app = client
+    resp = c.post("/api/users/api_user/checkins", json={
+        "type": "training", "submission_id": "sub-sets-1",
+        "data": {"exercises": [{"name": "杠铃卧推", "set_logs": [
+            {"weight_kg": 40, "reps": 10, "warmup": True, "at": "t0"},
+            {"weight_kg": 60, "reps": 10, "rpe": 7, "at": "t1"},
+            {"weight_kg": 65, "reps": 8, "rpe": 8, "at": "t2"},
+            {"weight_kg": 70, "reps": 6, "rpe": 9, "at": "t3"},
+        ]}]}})
+    assert resp.status_code == 200
+    saved = app.state.db.list_checkins("api_user", 5)[0]["data"]["exercises"][0]
+    logs = saved["set_logs"]
+    assert len(logs) == 4                                  # 每组都在（含热身组）
+    assert [l["weight_kg"] for l in logs] == [40, 60, 65, 70]
+    assert logs[0]["warmup"] is True and logs[3]["at"] == "t3"
+    # 聚合派生：热身不计组数；代表组取容量最大（60×10）
+    assert saved["sets"] == 3 and saved["weight_kg"] == 60
+    assert saved["reps"] == 10 and saved["rpe"] == 7
+    # 派生量能被旧引擎消费（e1RM 输入形状不变）
+    states = c.get("/api/users/api_user/exercise-states").json()["states"]
+    bench = next(s for s in states if s["exercise_id"] == "barbell_bench_press")
+    assert bench["last_weight"] == 60
+
+
+def test_set_logs_bad_rows_cleaned_with_warning(client):
+    c, app = client
+    resp = c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [{"name": "杠铃卧推", "set_logs": [
+            {"weight_kg": 60, "reps": 10},
+            {"weight_kg": -5, "reps": 8},
+            {"weight_kg": 70, "reps": "abc"},
+            "not-a-dict",
+        ]}]}})
+    body = resp.json()
+    assert body["id"] and len(body["warnings"]) >= 3
+    saved = [x for x in app.state.db.list_checkins("api_user", 5)
+             if x["id"] == body["id"]][0]["data"]["exercises"][0]
+    assert len(saved["set_logs"]) == 1                     # 只剩干净的第一组
+
+
+@pytest.mark.parametrize("op,keyword", [
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 0, "reps": 10}, "组数"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 99, "reps": 10}, "组数"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": "abc", "reps": 10}, "组数"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 3, "reps": "12-8"}, "区间"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 3, "reps": 101}, "范围"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 3, "reps": 10,
+      "weight_kg": -2.5}, "重量"),
+    ({"op": "add_exercise", "day": "周一", "exercise": "plank", "sets": 3, "reps": 10,
+      "weight_kg": 2000}, "重量"),
+])
+def test_prescription_validation_rejects_bad_values(client, op, keyword):
+    """P1-2：异常组数/次数/重量进不了计划（编辑接口层拦截）。"""
+    c, _ = client
+    plan = c.get("/api/users/api_user/plan").json()
+    base = plan["base_version"]
+    resp = c.post("/api/users/api_user/plan/edits",
+                  json={"operations": [op], "reason": "x", "base_version": base})
+    assert resp.status_code == 422
+    assert any(keyword in d for d in resp.json()["detail"]["details"])
+
+
+def test_prescription_accepts_duration_and_range(client):
+    c, _ = client
+    plan = c.get("/api/users/api_user/plan").json()
+    day = plan["content"]["schedule"][0]["day"]
+    ok = c.post("/api/users/api_user/plan/edits", json={
+        "operations": [{"op": "add_exercise", "day": day, "exercise": "plank",
+                        "sets": 3, "reps": "45秒", "role": "accessory"}],
+        "reason": "时长型次数合法", "base_version": plan["base_version"]})
+    assert ok.status_code == 200
+
+
+def test_access_token_required_when_configured(tmp_path):
+    """P0-3：配置令牌后，无/错令牌 401，对令牌 200；health 保持开放供探测。"""
+    from backend.app import create_app as _create
+    app = _create(db_path=tmp_path / "auth.db", access_token="secret-token")
+    with TestClient(app) as c:
+        assert c.get("/api/health").status_code == 200
+        assert c.get("/api/users/x/profile").status_code == 401
+        assert c.get("/api/users/x/profile",
+                     headers={"X-Access-Token": "wrong"}).status_code == 401
+        assert c.post("/api/users/x/checkins",
+                      headers={"X-Access-Token": "secret-token"},
+                      json={"type": "body", "data": {"weight_kg": 75}}).status_code == 200
+
+
+def test_access_token_guard_on_non_loopback_host(tmp_path, monkeypatch):
+    """P0-3：非回环主机且未设令牌 → __main__ 拒绝启动。"""
+    import importlib
+    import subprocess
+    import sys
+    code = ("import os, sys; os.environ['API_HOST']='0.0.0.0'; "
+            "sys.path.insert(0, '.'); "
+            "from backend.__main__ import main; main()")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                            cwd=str(importlib.import_module("pathlib").Path(".").resolve()))
+    assert result.returncode != 0
+    assert "API_ACCESS_TOKEN" in result.stderr

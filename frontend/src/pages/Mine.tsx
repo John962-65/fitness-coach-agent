@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { Card, Empty, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
+import { discardFailed, exportFailedJSON, failedItems, retryFailed } from '../offline'
 import { useApp } from '../store'
 import { ApproachRevision, ApproachView, Profile, Trial } from '../types'
 
@@ -126,6 +127,10 @@ export default function Mine() {
         )}
       </Card>
 
+      {view?.initialized && <ApproachEditor uid={uid} view={view} onSaved={load} />}
+
+      <FailedSyncCard onChanged={() => load()} />
+
       {note && <p className="text-center text-xs text-accent">{note}</p>}
 
       <Card title="个人尝试">
@@ -160,6 +165,21 @@ export default function Mine() {
             <button className="btn-ghost shrink-0 text-sm"
                     onClick={() => { setUid(''); navigate('/welcome') }}>新用户建档</button>
           </div>
+          <div>
+            <label className="label">访问令牌（仅当服务设置了 API_ACCESS_TOKEN 时需要）</label>
+            <div className="flex gap-2">
+              <input className="input text-sm" type="password" id="fc-token-input"
+                     defaultValue={localStorage.getItem('fc-access-token') || ''}
+                     placeholder="X-Access-Token" />
+              <button className="btn-ghost shrink-0 text-sm"
+                      onClick={() => {
+                        const v = (document.getElementById('fc-token-input') as HTMLInputElement).value.trim()
+                        if (v) localStorage.setItem('fc-access-token', v)
+                        else localStorage.removeItem('fc-access-token')
+                        setNote(v ? '访问令牌已保存，后续请求自动携带' : '访问令牌已清除')
+                      }}>保存</button>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -168,5 +188,167 @@ export default function Mine() {
         视频估计与模型推断不构成医学结论。
       </p>
     </div>
+  )
+}
+
+
+// ---- P1-3：训练方式编辑器（五维度直改，走统一修改协议；不暗中重排计划）----
+const STRUCTURES: [string, string][] = [
+  ['full_body', '全身'], ['upper_lower', '上下肢分化'], ['ppl', '推拉腿分化'],
+  ['circuit', '循环训练'], ['custom', '自定义'],
+]
+const INTENSITIES: [string, string][] = [
+  ['linear', '线性进阶'], ['rpe_based', 'RPE 驱动'], ['periodized', '周期化'], ['flexible', '灵活进阶'],
+]
+
+function ApproachEditor({ uid, view, onSaved }: {
+  uid: string; view: ApproachView; onSaved: () => void
+}) {
+  const a = view.approach!
+  const [open, setOpen] = useState(false)
+  const [structure, setStructure] = useState(a.structure.value)
+  const [structureNote, setStructureNote] = useState(a.structure.note || '')
+  const [intensity, setIntensity] = useState(a.intensity_style.value)
+  const [diet, setDiet] = useState(a.diet_approach.strategy || a.diet_approach.note || '')
+  const [recovery, setRecovery] = useState(a.recovery_approach.note || '')
+  const [deload, setDeload] = useState(a.recovery_approach.deload_policy || '')
+  const [liked, setLiked] = useState(a.preferences.liked.join('、'))
+  const [disliked, setDisliked] = useState(a.preferences.disliked.join('、'))
+  const [error, setError] = useState<{ message: string; details?: string[] } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const save = async () => {
+    setSaving(true); setError(null); setMsg('')
+    const ops: { op: string; dimension: string; value: Record<string, unknown> }[] = []
+    if (structure !== a.structure.value || structureNote !== (a.structure.note || '')) {
+      ops.push({ op: 'set_dimension', dimension: 'structure',
+                 value: { value: structure, note: structureNote } })
+    }
+    if (intensity !== a.intensity_style.value) {
+      ops.push({ op: 'set_dimension', dimension: 'intensity_style', value: { value: intensity } })
+    }
+    if (diet !== (a.diet_approach.strategy || a.diet_approach.note || '')) {
+      ops.push({ op: 'set_dimension', dimension: 'diet_approach', value: { strategy: diet } })
+    }
+    if (recovery !== (a.recovery_approach.note || '')
+        || deload !== (a.recovery_approach.deload_policy || '')) {
+      ops.push({ op: 'set_dimension', dimension: 'recovery_approach',
+                 value: { note: recovery, deload_policy: deload } })
+    }
+    if (liked !== a.preferences.liked.join('、') || disliked !== a.preferences.disliked.join('、')) {
+      ops.push({ op: 'set_dimension', dimension: 'preferences',
+                 value: { liked: liked.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
+                          disliked: disliked.split(/[、,，]/).map((x) => x.trim()).filter(Boolean) } })
+    }
+    if (!ops.length) { setMsg('没有修改'); setSaving(false); return }
+    try {
+      const r = await api.submitChange<{ approach_revision: number }>(
+        uid, 'approach', ops, '在「我的」页直接修改',
+        { approach_revision: a.revision })
+      setMsg(`已保存为 v${r.approach_revision}`)
+      onSaved()
+    } catch (e) {
+      const err = e as ApiError
+      setError({ message: err.message, details: err.details })
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <Card title="编辑我的训练方式"
+          right={<button className="text-xs text-accent underline"
+                         onClick={() => setOpen((o) => !o)}>{open ? '收起' : '展开编辑'}</button>}>
+      {!open ? (
+        <p className="text-xs text-neutral-500">
+          直接修改结构/强度/饮食/恢复/偏好——每次修改记录版本，可随时恢复；
+          <b className="text-neutral-400">计划不会因此被自动重排</b>，
+          需要的话去「AI 教练」商量确认。
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {error && <ErrorBox message={error.message} details={error.details} />}
+          <div className="grid grid-cols-[80px_1fr] items-center gap-2">
+            <span className="text-xs text-neutral-400">结构</span>
+            <select className="input !py-1.5 text-sm" value={structure}
+                    onChange={(e) => setStructure(e.target.value)}>
+              {STRUCTURES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <input className="input text-xs" value={structureNote} placeholder="结构备注（如：时间紧改成上下肢）"
+                 onChange={(e) => setStructureNote(e.target.value)} />
+          <div className="grid grid-cols-[80px_1fr] items-center gap-2">
+            <span className="text-xs text-neutral-400">强度风格</span>
+            <select className="input !py-1.5 text-sm" value={intensity}
+                    onChange={(e) => setIntensity(e.target.value)}>
+              {INTENSITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <input className="input text-xs" value={diet} placeholder="饮食方式（如：灵活饮食，不精确计热量）"
+                 onChange={(e) => setDiet(e.target.value)} />
+          <input className="input text-xs" value={recovery} placeholder="恢复方式备注"
+                 onChange={(e) => setRecovery(e.target.value)} />
+          <input className="input text-xs" value={deload} placeholder="卸载策略（如：连续两周无进步就减半周）"
+                 onChange={(e) => setDeload(e.target.value)} />
+          <div className="grid grid-cols-2 gap-2">
+            <input className="input text-xs" value={liked} placeholder="喜欢的（顿号分隔）"
+                   onChange={(e) => setLiked(e.target.value)} />
+            <input className="input text-xs" value={disliked} placeholder="不喜欢的（顿号分隔）"
+                   onChange={(e) => setDisliked(e.target.value)} />
+          </div>
+          <button className="btn-primary w-full" disabled={saving} onClick={save}>
+            {saving ? '保存中…' : '保存修改（记录为新版本）'}
+          </button>
+          {msg && <p className="text-center text-xs text-accent">{msg}</p>}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ---- P0-2：同步失败记录（可重试/丢弃/导出，绝不静默删除）----
+function FailedSyncCard({ onChanged }: { onChanged: () => void }) {
+  const [items, setItems] = useState<Awaited<ReturnType<typeof failedItems>> | null>(null)
+  const [msg, setMsg] = useState('')
+  const refresh = useCallback(() => { failedItems().then(setItems) }, [])
+  useEffect(() => { refresh() }, [refresh])
+
+  if (items === null || items.length === 0) return null
+  return (
+    <Card title={<span><Tag tone="amber">同步失败</Tag> <span className="ml-1">{items.length} 条待处理</span></span>}>
+      <p className="mb-2 text-xs text-neutral-500">
+        这些训练记录因数据校验未通过而未能同步，已保留在本机——可修正后重试、导出备份或丢弃。
+      </p>
+      <ul className="space-y-2">
+        {items.map((f) => (
+          <li key={f.id} className="rounded-lg bg-neutral-800/60 p-2 text-xs">
+            <p className="text-neutral-300">{new Date(f.at).toLocaleString('zh-CN')} · {f.type}</p>
+            <p className="mt-0.5 text-red-400">失败原因：{f.error}</p>
+            <div className="mt-1 flex gap-2">
+              <button className="text-accent underline"
+                      onClick={async () => { await discardFailed(f.id); refresh() }}>丢弃这条</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 flex gap-2">
+        <button className="btn-ghost flex-1 !py-2 text-xs"
+                onClick={async () => {
+                  const r = await retryFailed(async (u, t, d, sid) => {
+                    await api.saveCheckin(u, t, d, sid)
+                  })
+                  setMsg(`重试完成：成功 ${r.synced}，仍失败 ${r.failed}，待网络 ${r.remaining}`)
+                  refresh(); onChanged()
+                }}>全部重试</button>
+        <button className="btn-ghost flex-1 !py-2 text-xs"
+                onClick={async () => {
+                  const blob = new Blob([await exportFailedJSON()], { type: 'application/json' })
+                  const a = document.createElement('a')
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `fitness-coach-sync-failed-${Date.now()}.json`
+                  a.click(); URL.revokeObjectURL(a.href)
+                }}>导出失败记录</button>
+      </div>
+      {msg && <p className="mt-2 text-center text-xs text-accent">{msg}</p>}
+    </Card>
   )
 }

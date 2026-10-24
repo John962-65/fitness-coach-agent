@@ -71,6 +71,14 @@ export interface Profile {
   [k: string]: unknown
 }
 
+export interface SetLog {
+  weight_kg?: number | null
+  reps?: number | null
+  rpe?: number | null
+  warmup?: boolean
+  at?: string
+}
+
 export interface CheckinExercise {
   name: string
   exercise_id?: string | null
@@ -78,6 +86,7 @@ export interface CheckinExercise {
   reps?: number
   rpe?: number
   sets?: number | string
+  set_logs?: SetLog[] // M1.1 P0-4：逐组完整记录（服务端同时派生兼容聚合字段）
   [k: string]: unknown
 }
 

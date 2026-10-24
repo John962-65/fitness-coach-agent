@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
-import { enqueueCheckin, queuedCount } from '../offline'
+import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { SessionEntry, useApp } from '../store'
 
 export default function Workout() {
@@ -30,10 +30,24 @@ export default function Workout() {
     if (!day) return
     // 已有当天的进行中会话直接恢复（刷新不丢）
     if (session && session.day === decodeURIComponent(day)) return
-    api.plan(uid).then((p) => {
+    const loadPlan = () => api.plan(uid).then((p) => { api.cachePlan(uid, p); return p })
+      .catch((e) => {
+        // 断网降级：最近一次加载的计划（隔离标记一并沿用缓存值）
+        const cached = api.cachedPlan(uid)
+        if ((e as { status?: number }).status === 0 && cached) return cached
+        throw e
+      })
+    loadPlan().then((p) => {
+      // P1-1：隔离中的旧处方不得作为可执行训练
+      if (p.fenced) {
+        setError('该计划已隔离（伤病/安全记录未解除）：旧动作安排暂不能执行。'
+                 + '请先到「AI 教练」确认安全记录并共同确认重排。')
+        return
+      }
       const planDay = p.content.schedule.find((d) => d.day === decodeURIComponent(day))
       if (!planDay) { setError('计划里没有这一天'); return }
-      return api.exerciseStates(uid).then((states) => {
+      // 上次重量是辅助信息:断网降级为空(不阻塞训练执行)
+      return api.exerciseStates(uid).catch(() => ({ states: [] })).then((states) => {
         const last = new Map(states.states.map((s) => [s.exercise_id, s.last_weight]))
         startSession(decodeURIComponent(day), planDay.exercises.map((ex) => ({
           exercise_id: ex.exercise_id,
@@ -73,17 +87,18 @@ export default function Workout() {
   const save = async () => {
     setSaving(true)
     setSaveError(null)
+    const submissionId = newSubmissionId() // 稳定提交 ID：断网重试不重复入库
     const lines: string[] = []
     const exercises = entries.flatMap((e: SessionEntry) => {
       const done = e.logged.filter((l) => !l.warmup)
       if (!done.length) return []
-      const last = done[done.length - 1]
       const name = e.replaced_with || e.name
-      lines.push(`${name} ${done.length}×${last.reps ?? '?'} @ ${last.weight ?? '?'}kg`)
-      return [{
-        name, sets: done.length, reps: last.reps, weight_kg: last.weight,
-        rpe: last.rpe, warmup_sets: e.logged.filter((l) => l.warmup).length,
-      }]
+      lines.push(`${name} ${done.length} 组：` + done.map((l) =>
+        `${l.weight ?? '?'}kg×${l.reps ?? '?'}`).join('、'))
+      // P0-4：每组完整保存（重量/次数/RPE/热身/完成时间）；聚合字段由服务端派生
+      return [{ name, set_logs: e.logged.map((l) => ({
+        weight_kg: l.weight, reps: l.reps, rpe: l.rpe, warmup: l.warmup, at: l.at,
+      })) }]
     })
     if (!exercises.length) { setSaveError({ message: '还没有记录任何正式组' }); setSaving(false); return }
     const data = {
@@ -91,7 +106,7 @@ export default function Workout() {
       raw: `${session!.day}：${lines.join('；')}${session!.notes ? `。备注：${session!.notes}` : ''}`,
     }
     try {
-      const result = await api.saveCheckin(uid, 'training', data)
+      const result = await api.saveCheckin(uid, 'training', data, submissionId)
       const warn = result.warnings.length ? `（${result.warnings.join('；')}）` : ''
       clearSession()
       setSaved(`已保存 ${exercises.length} 个动作、${totalSets} 组${warn}`)
@@ -99,7 +114,7 @@ export default function Workout() {
     } catch (e) {
       const err = e as ApiError
       if (err.status === 0) {
-        await enqueueCheckin(uid, 'training', data)
+        await enqueueCheckin(uid, 'training', data, submissionId)
         useApp.getState().setOfflineCount(await queuedCount())
         clearSession()
         setSaved('当前离线：训练已暂存到本机，恢复网络后自动同步。')
@@ -189,7 +204,7 @@ export default function Workout() {
   )
 }
 
-function SetForm({ onDone }: { onDone: (s: { weight: number | null; reps: number | null; rpe: number | null; warmup: boolean }) => void }) {
+function SetForm({ onDone }: { onDone: (s: { weight: number | null; reps: number | null; rpe: number | null; warmup: boolean; at?: string }) => void }) {
   const [weight, setWeight] = useState('')
   const [reps, setReps] = useState('')
   const [rpe, setRpe] = useState('')
@@ -211,6 +226,7 @@ function SetForm({ onDone }: { onDone: (s: { weight: number | null; reps: number
                   reps: reps === '' ? null : Number(reps),
                   rpe: rpe === '' ? null : Number(rpe),
                   warmup,
+                  at: new Date().toISOString(),
                 })
                 setWeight(''); setReps(''); setRpe(''); setWarmup(false)
               }}>✓</button>

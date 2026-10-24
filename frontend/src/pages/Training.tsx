@@ -13,8 +13,18 @@ export default function Training() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
+  const [offlineMode, setOfflineMode] = useState(false)
   useEffect(() => {
-    api.plan(uid).then(setPlan).catch((e) => setError(e.message))
+    api.plan(uid).then((p) => { api.cachePlan(uid, p); setPlan(p) })
+      .catch((e) => {
+        // 断网降级：用最近一次加载的计划展示（训练执行页同样降级）
+        const cached = api.cachedPlan(uid)
+        if ((e as { status?: number }).status === 0 && cached) {
+          setPlan(cached); setOfflineMode(true)
+        } else {
+          setError(e.message)
+        }
+      })
   }, [uid])
 
   if (error) {
@@ -36,6 +46,11 @@ export default function Training() {
     <div className="space-y-3 pt-4">
       <PageHeader title="训练"
         sub={`${plan.content.template} · 计划 v${plan.version}`} />
+      {offlineMode && (
+        <p className="rounded-xl bg-amber-950/40 p-2.5 text-xs text-amber-300">
+          当前离线：显示最近一次加载的计划；训练记录会暂存本机，恢复网络自动同步。
+        </p>
+      )}
 
       {plan.fenced && (
         <div className="rounded-xl border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
@@ -75,10 +90,16 @@ export default function Training() {
               </li>
             ))}
           </ul>
-          <button className="btn-ghost mt-3 w-full"
-                  onClick={() => navigate(`/workout/${encodeURIComponent(d.day)}`)}>
-            开始这天的训练
-          </button>
+          {plan.fenced ? (
+            <p className="mt-3 text-xs text-red-300">
+              计划已隔离：旧动作安排暂不能执行（历史与实际活动记录不受影响）。
+            </p>
+          ) : (
+            <button className="btn-ghost mt-3 w-full"
+                    onClick={() => navigate(`/workout/${encodeURIComponent(d.day)}`)}>
+              开始这天的训练
+            </button>
+          )}
         </Card>
       ))}
 

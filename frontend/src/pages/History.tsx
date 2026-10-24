@@ -30,14 +30,32 @@ export default function History() {
                 <span className="text-xs text-neutral-500">{(c.at || '').slice(0, 10)}</span>
               </div>}>
           {c.type === 'training' && c.data.exercises?.length ? (
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-1.5 text-sm">
               {c.data.exercises.map((ex, i) => (
-                <li key={i} className="flex justify-between">
-                  <span>{ex.name}</span>
-                  <span className="text-neutral-400">
-                    {ex.sets ? `${ex.sets}组 · ` : ''}{ex.weight_kg ?? '—'}kg × {ex.reps ?? '—'}
-                    {ex.rpe ? ` RPE${ex.rpe}` : ''}
-                  </span>
+                <li key={i}>
+                  {ex.set_logs?.length ? (
+                    <div>
+                      <span>{ex.name}</span>
+                      <span className="ml-1 text-xs text-neutral-500">{ex.set_logs.length} 组</span>
+                      <ul className="mt-0.5 space-y-0.5 text-xs text-neutral-400">
+                        {ex.set_logs.map((l, j) => (
+                          <li key={j}>
+                            第{j + 1}组{l.warmup ? '（热身）' : ''}：
+                            {l.weight_kg != null ? `${l.weight_kg}kg × ` : ''}{l.reps ?? '?'}次
+                            {l.rpe ? ` · RPE${l.rpe}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span>{ex.name}</span>
+                      <span className="text-neutral-400">
+                        {ex.sets ? `${ex.sets}组 · ` : ''}{ex.weight_kg ?? '—'}kg × {ex.reps ?? '—'}
+                        {ex.rpe ? ` RPE${ex.rpe}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

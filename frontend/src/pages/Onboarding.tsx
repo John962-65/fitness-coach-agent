@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError, OnboardingResult } from '../api'
 import { ErrorBox, PageHeader, Tag } from '../components/Bits'
@@ -27,16 +27,33 @@ export default function Onboarding() {
     goal: 'muscle_gain', years: '', layoff: '0',
     location: 'gym', days: '3', minutes: '60',
     injuries: '', injuriesNone: false,
-    heart: '无', pregnancy: '不适用', medication: '无', clearance: '无',
+    // P0-5：健康筛查初始为"未回答"，必须由用户主动选择/填写
+    heart: '', pregnancy: '', medication: '', clearance: '',
   })
   const set = (patch: Partial<typeof f>) => setF((s) => ({ ...s, ...patch }))
 
   const parqPositive = useMemo(() =>
     [f.heart, f.pregnancy, f.medication, f.clearance].some((v) =>
-      v !== '无' && v !== '不适用' && !/^(没有|无|未|身体)/.test(v.trim())), [f])
+      v.trim() !== '' && v !== '无' && v !== '不适用'), [f])
+  const parqRef = useRef<Record<string, HTMLInputElement | null>>({})
 
   const submit = async () => {
     setSaving(true); setError(null)
+    // P0-5：四项筛查必须由用户主动作答；伤病必须勾选"无"或如实填写
+    const parq: ['heart' | 'pregnancy' | 'medication' | 'clearance', string][] = [
+      ['heart', '心血管疾病'], ['pregnancy', '怀孕/备孕'],
+      ['medication', '长期用药'], ['clearance', '医生运动限制']]
+    const unanswered = parq.filter(([k]) => !f[k].trim()).map(([, label]) => label)
+    if (unanswered.length) {
+      setError({ message: '健康筛查必须逐项作答（不做默认假设）', details: unanswered })
+      setSaving(false); setStep(3)
+      return
+    }
+    if (!f.injuriesNone && !f.injuries.trim()) {
+      setError({ message: '请勾选「我没有伤病」，或填写你的伤病情况' })
+      setSaving(false); setStep(2)
+      return
+    }
     const uid = uidInput.trim() || `web-${Date.now().toString(36)}`
     const injuries = f.injuriesNone ? []
       : f.injuries.split(/[、,，;；\n]/).map((s) => s.trim()).filter(Boolean)
@@ -49,12 +66,12 @@ export default function Onboarding() {
         resources: { location: f.location, days_per_week: Number(f.days), session_minutes: Number(f.minutes) },
         conditions: {
           injuries,
-          injuries_evidence: f.injuriesNone || injuries.length === 0
-            ? `本人确认：${f.injuriesNone ? '没有伤病' : '无伤病'}（建档表单）`
-            : `伤病：${injuries.join('、')}（建档表单自述）`,
+          injuries_evidence: f.injuriesNone
+            ? '本人勾选确认：没有伤病（建档表单）'
+            : `伤病（建档表单自述）：${f.injuries.trim()}`,
           health_screen: { heart: f.heart, pregnancy: f.pregnancy,
                            medication: f.medication, clearance: f.clearance },
-          health_screen_evidence: `健康筛查自述（建档表单）：心血管=${f.heart}；怀孕/备孕=${f.pregnancy}；长期用药=${f.medication}；医生运动限制=${f.clearance}`,
+          health_screen_evidence: `健康筛查（建档表单逐项作答）：心血管=${f.heart}；怀孕/备孕=${f.pregnancy}；长期用药=${f.medication}；医生运动限制=${f.clearance}`,
         },
       })
       setUid(uid)
@@ -195,22 +212,32 @@ export default function Onboarding() {
             PAR-Q 健康筛查四项必答，<b>不会默认补全</b>。答案只用于确定训练强度边界，
             不构成医学判断；有疑问请咨询医生。
           </p>
-          {([['heart', '心血管疾病（高血压/冠心病等）', ['无', '有：请具体说明']],
+          {([['heart', '心血管疾病（高血压/冠心病等）', ['无', '有']],
              ['pregnancy', '怀孕或备孕', ['不适用', '无', '有']],
-             ['medication', '长期用药', ['无', '有：请具体说明']],
-             ['clearance', '医生是否限制过你的运动', ['无', '有：请具体说明']]] as const).map(
+             ['medication', '长期用药', ['无', '有']],
+             ['clearance', '医生是否限制过你的运动', ['无', '有']]] as const).map(
             ([key, label, presets]) => (
               <div key={key}>
                 <label className="label">{label}</label>
                 <div className="mb-1.5 flex flex-wrap gap-1.5">
                   {presets.map((p) => (
-                    <button key={p} onClick={() => set({ [key]: p } as Partial<typeof f>)}
-                            className={`tag ${f[key] === p ? 'bg-accent text-neutral-950' : 'bg-neutral-800 text-neutral-300'}`}>
-                      {p}
+                    <button key={p}
+                            onClick={() => {
+                              if (p === '有') {
+                                // 选「有」→ 聚焦输入框引导具体说明，不写入占位文字
+                                set({ [key]: '' } as Partial<typeof f>)
+                                parqRef.current[key]?.focus()
+                              } else {
+                                set({ [key]: p } as Partial<typeof f>)
+                              }
+                            }}
+                            className={`tag ${p !== '有' && f[key] === p ? 'bg-accent text-neutral-950' : 'bg-neutral-800 text-neutral-300'}`}>
+                      {p === '有' ? '有（需说明）' : p}
                     </button>
                   ))}
                 </div>
-                <input className="input" value={f[key]}
+                <input className="input" value={f[key]} ref={(el) => { parqRef.current[key] = el }}
+                       placeholder={f[key] === '' ? '未回答——请选择或填写' : '具体说明（如实填写）'}
                        onChange={(e) => set({ [key]: e.target.value } as Partial<typeof f>)} />
               </div>
             ))}

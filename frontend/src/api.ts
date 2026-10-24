@@ -14,12 +14,20 @@ export class ApiError extends Error {
   }
 }
 
+function accessToken(): string {
+  try { return localStorage.getItem('fc-access-token') || '' } catch { return '' }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken() ? { 'X-Access-Token': accessToken() } : {}),
+        ...(init?.headers as Record<string, string> | undefined),
+      },
     })
   } catch {
     throw new ApiError(0, '网络不可用')
@@ -69,6 +77,17 @@ export const api = {
     post<OnboardingResult>(`/users/${uid}/onboarding`, payload),
 
   plan: (uid: string) => req<PlanResponse>(`/users/${uid}/plan`),
+
+  // M1.1 补充：计划本地缓存（断网时训练执行降级用，避免"离线就不能练"）
+  cachePlan(uid: string, plan: PlanResponse) {
+    try { localStorage.setItem(`fc-plan-${uid}`, JSON.stringify(plan)) } catch { /* 存储不可用 */ }
+  },
+  cachedPlan(uid: string): PlanResponse | null {
+    try {
+      const raw = localStorage.getItem(`fc-plan-${uid}`)
+      return raw ? JSON.parse(raw) as PlanResponse : null
+    } catch { return null }
+  },
   planEdits: (uid: string, operations: PlanOp[], reason: string,
               baseVersion?: Record<string, unknown>) =>
     post<{ plan_id: number; plan_version: number; changes: string[]; warnings: string[] }>(
@@ -76,9 +95,10 @@ export const api = {
 
   checkins: (uid: string, limit = 20) =>
     req<{ checkins: Checkin[] }>(`/users/${uid}/checkins?limit=${limit}`),
-  saveCheckin: (uid: string, type: string, data: unknown) =>
-    post<{ id: number; type: string; warnings: string[] }>(
-      `/users/${uid}/checkins`, { type, data }),
+  saveCheckin: (uid: string, type: string, data: unknown, submissionId?: string) =>
+    post<{ id: number; type: string; warnings: string[]; existing?: boolean }>(
+      `/users/${uid}/checkins`,
+      { type, data, ...(submissionId ? { submission_id: submissionId } : {}) }),
   correctCheckin: (uid: string, checkinId: number,
                    payload: { expected_revision: number; data: unknown; reason: string; evidence: string }) =>
     post<Checkin>(`/users/${uid}/checkins/${checkinId}/correct`, payload),
@@ -99,6 +119,11 @@ export const api = {
   restoreRevision: (uid: string, revision: number, reason: string) =>
     post<{ restored_from: number }>(
       `/users/${uid}/approach/revisions/${revision}/restore`, { reason }),
+
+  submitChange: <T extends Record<string, unknown>>(uid: string, target: string,
+                   operations: unknown[], reason: string, baseVersion: Record<string, unknown>) =>
+    post<T>(`/users/${uid}/changes`,
+            { target, operations, reason, base_version: baseVersion }),
 
   changes: (uid: string, status?: string) =>
     req<{ proposals: Proposal[] }>(

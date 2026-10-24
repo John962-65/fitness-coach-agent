@@ -136,6 +136,13 @@ CREATE TABLE IF NOT EXISTS change_proposals (
     created_at  TEXT NOT NULL,
     decided_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS checkin_submissions (
+    user_id     TEXT NOT NULL,
+    submission_id TEXT NOT NULL,        -- 客户端稳定提交 ID（M1.1 P0-2 幂等）
+    checkin_id  INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, submission_id)
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -707,3 +714,23 @@ class Database:
              _now(), user_id, proposal_id))
         self.conn.commit()
         return cur.rowcount > 0
+
+    # ---- checkin_submissions（M1.1 P0-2：客户端提交 ID 幂等）----
+    def get_checkin_submission(self, user_id: str, submission_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT checkin_id, created_at FROM checkin_submissions"
+            " WHERE user_id=? AND submission_id=?", (user_id, submission_id)).fetchone()
+        return dict(row) if row else None
+
+    def record_checkin_submission(self, user_id: str, submission_id: str,
+                                  checkin_id: int) -> bool:
+        """记录提交 ID；已存在返回 False（重试场景，调用方改取既有结果）。"""
+        try:
+            self.conn.execute(
+                "INSERT INTO checkin_submissions(user_id, submission_id,"
+                " checkin_id, created_at) VALUES(?,?,?,?)",
+                (user_id, submission_id, checkin_id, _now()))
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False

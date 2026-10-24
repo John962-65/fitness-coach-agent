@@ -21,8 +21,8 @@ function Shell() {
   // 路由变化时尝试同步离线队列（恢复联网后自动补交）
   useEffect(() => {
     import('./offline').then(({ syncQueue, queuedCount }) =>
-      syncQueue(async (u, type, data) => { await api.saveCheckin(u, type, data) })
-        .then((r) => { if (r.synced || r.dropped) queuedCount().then(setOfflineCount) })
+      syncQueue(async (u, type, data, sid) => { await api.saveCheckin(u, type, data, sid) })
+        .then((r) => { if (r.synced || r.failed) queuedCount().then(setOfflineCount) })
         .catch(() => { /* 离线：留在队列 */ }))
   }, [location.pathname, setOfflineCount])
 

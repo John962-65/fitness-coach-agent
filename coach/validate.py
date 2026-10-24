@@ -88,6 +88,44 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                         ex.pop(field)
                     else:
                         ex[field] = n
+            # M1.1 P0-4：逐组记录 set_logs——每组单独清洗（重量/次数/RPE/热身），
+            # 坏组剔除并说明；聚合字段（sets/weight_kg/reps/rpe）由服务端从正式组派生。
+            if ex.get("set_logs") is not None:
+                logs = ex["set_logs"]
+                clean_logs = []
+                if isinstance(logs, list):
+                    for s in logs[:50]:
+                        if not isinstance(s, dict):
+                            warnings.append(f"{ex['name']} 的一条逐组记录不是对象，已跳过")
+                            continue
+                        s = dict(s)
+                        bad = False
+                        for field in ("weight_kg", "rpe"):
+                            if s.get(field) is not None:
+                                n = _to_number(s[field])
+                                if n is None or n < 0 or (field == "rpe" and not 0 <= n <= 10):
+                                    if field == "weight_kg":
+                                        warnings.append(f"{ex['name']} 某组的重量={s[field]!r} 无法识别，该组剔除")
+                                        bad = True  # 声称有重量却识别不了：不能静默变成徒手组
+                                    else:
+                                        warnings.append(f"{ex['name']} 某组的 RPE={s[field]!r} 无法识别，已丢弃该字段")
+                                        s.pop(field)
+                                else:
+                                    s[field] = n
+                        if s.get("reps") is not None:
+                            n = _to_number(s["reps"])
+                            if n is None or n < 1 or not float(n).is_integer():
+                                warnings.append(f"{ex['name']} 某组的次数={s['reps']!r} 无法识别，该组剔除")
+                                continue  # 次数是组的本质量：无法识别则整组无意义
+                            s["reps"] = int(n)
+                        if not isinstance(s.get("warmup"), bool):
+                            s.pop("warmup", None)
+                        if bad:
+                            continue
+                        clean_logs.append(s)
+                else:
+                    warnings.append(f"{ex['name']} 的 set_logs 必须是列表，已丢弃")
+                ex["set_logs"] = clean_logs
             clean_exs.append(ex)
         out["exercises"] = clean_exs
         if not clean_exs and data.get("exercises"):

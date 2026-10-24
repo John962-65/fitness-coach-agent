@@ -320,13 +320,20 @@ def register_routes(app) -> None:
 
     @api.post("/users/{uid}/plan/edits")
     def plan_edits(uid: str, request: Request, payload: dict = Body(...)):
-        """计划手动编辑（2.0 §4.1：常规编辑不需 AI 批准，安全校验不豁免）。"""
+        """计划手动编辑（2.0 §4.1：常规编辑不需 AI 批准，安全校验不豁免）。
+
+        M1.1 P0-1：base_version 必填——客户端必须携带打开编辑器时的计划版本，
+        不允许后端自动补最新版，否则并发编辑会绕过乐观锁把旧操作应用到新计划。
+        """
         db = request.app.state.db
-        record = db.get_active_plan_record(uid)
-        if not record:
+        if not db.get_active_plan_record(uid):
             raise HTTPException(status_code=404, detail={"error": "当前没有生效的计划"})
-        base = payload.get("base_version") or {
-            "plan_id": record["id"], "plan_version": record["version"]}
+        base = payload.get("base_version")
+        if not isinstance(base, dict) or not base.get("plan_id") or not base.get("plan_version"):
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "缺少 base_version：请携带打开编辑器时的计划版本"
+                                 "（plan_id + plan_version），防止并发修改互相覆盖"})
         try:
             return submit_manual(db, uid, "plan", payload.get("operations"),
                                  str(payload.get("reason") or "手动编辑计划"), base)
@@ -342,16 +349,47 @@ def register_routes(app) -> None:
 
     @api.post("/users/{uid}/checkins")
     def save_checkin(uid: str, request: Request, payload: dict = Body(...)):
-        """确定性打卡落库（与 agent save_checkin 同一套清洗与归一，不经 LLM）。"""
+        """确定性打卡落库（与 agent save_checkin 同一套清洗与归一，不经 LLM）。
+
+        M1.1：
+        - P0-2 幂等——可选 submission_id（客户端稳定提交 ID），重试同一 ID
+          返回已保存结果，不重复入库（响应已丢/断网重放场景）。
+        - P0-4 逐组——exercises[].set_logs 每组完整保存；聚合字段
+          （sets/weight_kg/reps/rpe）由服务端从正式组派生，保证旧复盘/调整
+          引擎无感兼容，客户端不再上传"最后一组"式聚合。
+        """
         db = request.app.state.db
         ctype = payload.get("type", "training")
         if ctype not in ("training", "body", "diet"):
             raise HTTPException(status_code=400,
                                 detail={"error": "type 必须是 training/body/diet"})
+        submission_id = str(payload.get("submission_id") or "").strip()[:64]
+        if submission_id:
+            existing = db.get_checkin_submission(uid, submission_id)
+            if existing:
+                return {"id": existing["checkin_id"], "type": ctype,
+                        "warnings": [], "existing": True}
         data, warnings = coerce_checkin(ctype, payload.get("data", {}))
         notes = list(warnings)
         if ctype == "training":
             for ex in data.get("exercises", []):
+                # P0-4：有逐组记录时，聚合字段一律从正式组派生（以容量最大的组为代表组）
+                logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else None
+                if logs:
+                    main = [s for s in logs if isinstance(s, dict) and not s.get("warmup")]
+                    if main:
+                        best = max(main, key=lambda s: (
+                            (s.get("weight_kg") or 0) * (s.get("reps") or 0),
+                            s.get("weight_kg") or 0))
+                        ex["sets"] = len(main)
+                        ex["weight_kg"] = best.get("weight_kg")
+                        ex["reps"] = best.get("reps")
+                        ex["rpe"] = best.get("rpe")
+                    else:
+                        ex.pop("weight_kg", None)
+                        ex.pop("reps", None)
+                        ex.pop("sets", None)
+                        ex.pop("rpe", None)
                 ex["exercise_id"] = None            # 动作 ID 是系统判定
                 raw_name = ex.get("name", "")
                 ex_id, official, _via = library.normalize(raw_name)
@@ -364,6 +402,14 @@ def register_routes(app) -> None:
                     _log_unmatched(request, uid, raw_name)
                     notes.append(f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
         checkin_id = db.record_checkin(uid, ctype, data)
+        if submission_id and not db.record_checkin_submission(uid, submission_id, checkin_id):
+            # 并发同 ID（极小窗口）：删除刚落的重复行，以先落库者为准
+            first = db.get_checkin_submission(uid, submission_id)
+            db.conn.execute("DELETE FROM checkins WHERE user_id=? AND id=?",
+                            (uid, checkin_id))
+            db.conn.commit()
+            return {"id": first["checkin_id"], "type": ctype,
+                    "warnings": notes, "existing": True}
         return {"id": checkin_id, "type": ctype, "warnings": notes}
 
     @api.post("/users/{uid}/checkins/{checkin_id}/correct")

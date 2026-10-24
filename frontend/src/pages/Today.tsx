@@ -85,10 +85,16 @@ export default function Today() {
                 </li>
               ))}
             </ul>
-            <button className="btn-primary mt-3 w-full"
-                    onClick={() => navigate(`/workout/${encodeURIComponent(todayPlan.day)}`)}>
-              开始训练
-            </button>
+            {brief.plan_fenced ? (
+              <p className="mt-3 text-xs text-red-300">
+                计划已隔离：旧动作安排暂不能执行，处理安全记录并确认重排后恢复。
+              </p>
+            ) : (
+              <button className="btn-primary mt-3 w-full"
+                      onClick={() => navigate(`/workout/${encodeURIComponent(todayPlan.day)}`)}>
+                开始训练
+              </button>
+            )}
           </div>
         ) : (
           <Empty>今天没有安排训练，休息也是训练的一部分。</Empty>
@@ -102,10 +108,12 @@ export default function Today() {
             {plan.content.schedule.map((d) => (
               <li key={d.day} className="flex justify-between">
                 <span className={d.day === weekday ? 'text-accent' : ''}>{d.day} · {d.focus}</span>
-                <button className="text-xs text-neutral-400 underline"
-                        onClick={() => navigate(`/workout/${encodeURIComponent(d.day)}`)}>
-                  练这天
-                </button>
+                {!brief.plan_fenced && (
+                  <button className="text-xs text-neutral-400 underline"
+                          onClick={() => navigate(`/workout/${encodeURIComponent(d.day)}`)}>
+                    练这天
+                  </button>
+                )}
               </li>
             ))}
           </ul>

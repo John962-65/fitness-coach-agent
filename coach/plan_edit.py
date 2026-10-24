@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import copy
 
+import re
+
 from .exercises import library
 from .programming import estimate_minutes
 
@@ -17,6 +19,59 @@ DRAFT_NOTE_PREFIX = "ℹ️ 以下动作的结构化属性"
 
 PLAN_OPS = ("add_exercise", "remove_exercise", "replace_exercise",
             "reorder_exercise", "edit_set_prescription", "rename_day")
+
+# M1.1 P1-2：训练处方统一校验（负重量/异常组数/非数字进不了计划）。
+# reps 兼容三种真实写法：整数（8）、区间（"8-12"）、时长（"45秒"/"60分"）。
+_RE_RANGE = re.compile(r"^(\d{1,3})\s*-\s*(\d{1,3})$")
+_RE_DURATION = re.compile(r"^(\d{1,3})\s*(秒|分|分钟)$")
+
+
+def _check_sets(name: str, value) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"{name} 的组数必须是 1-20 的整数，收到 {value!r}")
+    try:
+        n = float(value)
+    except ValueError:
+        raise ValueError(f"{name} 的组数必须是 1-20 的整数，收到 {value!r}") from None
+    if not n.is_integer() or not 1 <= n <= 20:
+        raise ValueError(f"{name} 的组数必须是 1-20 的整数，收到 {value!r}")
+    return int(n)
+
+
+def _check_reps(name: str, value) -> int | str:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"{name} 的次数无法识别（支持数字/区间 8-12/时长 45秒），收到 {value!r}")
+    if isinstance(value, (int, float)):
+        if not float(value).is_integer() or not 1 <= value <= 100:
+            raise ValueError(f"{name} 的次数超出范围（1-100），收到 {value!r}")
+        return int(value)
+    text = str(value).strip()
+    if text.isdigit():
+        if not 1 <= int(text) <= 100:
+            raise ValueError(f"{name} 的次数超出范围（1-100），收到 {text!r}")
+        return int(text)
+    m = _RE_RANGE.match(text)
+    if m:
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if not (1 <= lo <= hi <= 100):
+            raise ValueError(f"{name} 的次数区间无效（须 1≤低≤高≤100），收到 {text!r}")
+        return text.replace(" ", "")
+    m = _RE_DURATION.match(text)
+    if m and 1 <= int(m.group(1)) <= 600:
+        return text.replace(" ", "")
+    raise ValueError(f"{name} 的次数无法识别（支持数字/区间 8-12/时长 45秒），收到 {value!r}")
+
+
+def _check_weight(name: str, value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"{name} 的重量必须是 0-1000 的数字，收到 {value!r}")
+    try:
+        n = float(value)
+    except ValueError:
+        raise ValueError(f"{name} 的重量必须是 0-1000 的数字，收到 {value!r}") from None
+    if not (0 <= n <= 1000):
+        raise ValueError(f"{name} 的重量超出范围（0-1000kg），收到 {value!r}")
+    return n
 
 
 def _find_day(plan: dict, day_name: str) -> dict:
@@ -50,11 +105,15 @@ def _resolve_exercise(name_or_id: str) -> tuple[str, str]:
 def _entry(ex_id: str, official: str, op: dict) -> dict:
     entry = {"exercise_id": ex_id, "name": official,
              "role": op.get("role") or "secondary",
-             "sets": op.get("sets"), "reps": op.get("reps")}
+             "sets": _check_sets(official, op.get("sets")),
+             "reps": _check_reps(official, op.get("reps"))}
     if op.get("weight_kg") is not None:
-        entry["weight_kg"] = op["weight_kg"]
+        entry["weight_kg"] = _check_weight(official, op["weight_kg"])
     if op.get("note"):
-        entry["note"] = op["note"]
+        note = str(op["note"])
+        if len(note) > 200:
+            raise ValueError(f"{official} 的备注过长（≤200 字）")
+        entry["note"] = note
     return entry
 
 
@@ -162,11 +221,25 @@ def apply_plan_operations(plan: dict, operations: list[dict]) -> tuple[dict, lis
             idx = _locate(day, op)
             entry = day["exercises"][idx]
             changes = []
-            for field in ("sets", "reps", "weight_kg", "note"):
-                if field in op and op[field] is not None:
-                    old = entry.get(field)
-                    entry[field] = op[field]
-                    changes.append(f"{field} {old}→{op[field]}")
+            if op.get("sets") is not None:
+                old = entry.get("sets")
+                entry["sets"] = _check_sets(entry.get("name", ""), op["sets"])
+                changes.append(f"sets {old}→{entry['sets']}")
+            if op.get("reps") is not None:
+                old = entry.get("reps")
+                entry["reps"] = _check_reps(entry.get("name", ""), op["reps"])
+                changes.append(f"reps {old}→{entry['reps']}")
+            if op.get("weight_kg") is not None:
+                old = entry.get("weight_kg")
+                entry["weight_kg"] = _check_weight(entry.get("name", ""), op["weight_kg"])
+                changes.append(f"weight_kg {old}→{entry['weight_kg']}")
+            if op.get("note") is not None:
+                note = str(op["note"])
+                if len(note) > 200:
+                    raise ValueError(f"{entry.get('name', '')} 的备注过长（≤200 字）")
+                old = entry.get("note")
+                entry["note"] = note
+                changes.append(f"note →{note[:20]}")
             if not changes:
                 raise ValueError("edit_set_prescription 至少要改一个字段（sets/reps/weight_kg/note）")
             applied.append(f"{day['day']} {entry.get('name')}：{'，'.join(changes)}")

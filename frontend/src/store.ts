@@ -8,6 +8,7 @@ export interface LoggedSet {
   reps: number | null
   rpe: number | null
   warmup: boolean
+  at?: string // 完成时间（M1.1 P0-4：逐组持久化的组成部分）
 }
 
 export interface SessionEntry {

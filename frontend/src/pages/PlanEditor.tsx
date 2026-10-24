@@ -84,7 +84,8 @@ export default function PlanEditor() {
     setSaving(true)
     setError(null)
     try {
-      const result = await api.planEdits(uid, ops, reason || '手动编辑计划')
+      // P0-1：携带加载时的 base_version——并发修改会被后端 422 拒绝而非静默覆盖
+      const result = await api.planEdits(uid, ops, reason || '手动编辑计划', plan.base_version)
       navigate('/training', { state: { saved: result.plan_version } })
     } catch (e) {
       const err = e as ApiError
