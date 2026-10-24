@@ -1,9 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Empty, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
 import KnowledgePanel from '../components/KnowledgePanel'
 import { ExerciseDetail, ExerciseSummary } from '../types'
 import { useApp } from '../store'
+
+interface MotionFault { code: string; label?: string; value?: number; hint?: string }
+interface MotionAnalysisItem {
+  id: number; exercise_id: string; view: string; status: string; error: string | null
+  video_path?: string
+  created_at: string
+  result: {
+    supported: boolean; frames: number; note?: string; view?: string
+    faults: MotionFault[]
+    reps: { rep: number; start_s: number; end_s: number; peak_s: number }[]
+    summary: Record<string, number>
+  }
+}
 
 const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps',
   'quads', 'hamstrings', 'glutes', 'calves', 'core']
@@ -28,6 +41,21 @@ export default function Explore() {
 
   // M3.2：详情打开时拉取该动作的用户教学媒体（封面/演示片段）
   const [media, setMedia] = useState<{ cover_path: string | null; clip_path: string | null; sentence: string }[]>([])
+  // M4：动作视频分析（上传/任务/时间轴/对比）
+  const [analyses, setAnalyses] = useState<MotionAnalysisItem[]>([])
+  const [maNote, setMaNote] = useState('')
+  const [compare, setCompare] = useState<{ a: number; b: number } | null>(null)
+  const [compareResult, setCompareResult] = useState<Record<string, unknown> | null>(null)
+  const [analysisVideo, setAnalysisVideo] = useState<string | null>(null)
+  const loadAnalyses = useCallback(() => {
+    if (!detail) return
+    fetch(`/api/users/${uid}/motion-analyses?exercise_id=${detail.id}`, {
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+    }).then((r) => r.json())
+      .then((r) => setAnalyses((r.analyses || []) as MotionAnalysisItem[]))
+      .catch(() => setAnalyses([]))
+  }, [detail, uid])
   useEffect(() => {
     if (!detail) return
     fetch(`/api/users/${uid}/exercise-media?exercise_id=${detail.id}`, {
@@ -36,7 +64,38 @@ export default function Explore() {
     }).then((r) => r.json())
       .then((r) => setMedia(r.links || []))
       .catch(() => setMedia([]))
-  }, [detail, uid])
+    loadAnalyses()
+    setCompare(null); setCompareResult(null); setAnalysisVideo(null)
+  }, [detail, uid, loadAnalyses])
+
+  const uploadAnalysis = async (file: File) => {
+    if (!detail) return
+    setMaNote('已上传，分析中…')
+    const form = new FormData()
+    form.append('exercise_id', detail.id)
+    form.append('view', 'side')
+    form.append('video', file)
+    const res = await fetch(`/api/users/${uid}/motion-analyses`, {
+      method: 'POST',
+      headers: localStorage.getItem('fc-access-token')
+        ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+      body: form,
+    })
+    const body = await res.json()
+    if (!res.ok) { setMaNote(body.detail?.error || '上传失败'); return }
+    const id = body.analysis_id as number
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1500))
+      const list = await fetch(
+        `/api/users/${uid}/motion-analyses?exercise_id=${detail.id}`, {
+        headers: localStorage.getItem('fc-access-token')
+          ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+      }).then((r) => r.json())
+      const me = (list.analyses || []).find((x: { id: number }) => x.id === id)
+      if (me && me.status !== 'processing') { setMaNote(''); loadAnalyses(); return }
+    }
+    setMaNote('分析仍在进行（本地推理较慢），稍后刷新查看')
+  }
 
   return (
     <div className="space-y-3 pt-4">
@@ -101,6 +160,91 @@ export default function Explore() {
               </p>
             )}
             <div className="space-y-3 text-sm">
+              <section>
+                <h4 className="label">动作视频分析（首批：深蹲类/硬拉/RDL/卧推，侧面）</h4>
+              {analysisVideo && (
+                <video id="ma-video" controls src={analysisVideo} className="mb-2 max-h-56 w-full rounded" />
+              )}
+                <input type="file" accept="video/mp4,video/webm,video/quicktime,.mkv"
+                       onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAnalysis(f) }} />
+                {maNote && <p className="mt-1 text-xs text-accent">{maNote}</p>}
+                <div className="mt-2 space-y-2">
+                  {analyses.map((m) => (
+                    <div key={m.id} className="rounded-lg bg-neutral-800/60 p-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span>#{m.id} · {m.created_at.slice(0, 16)} · {m.view} 视角</span>
+                        <Tag tone={m.status === 'ready' ? 'green' : m.status === 'failed' ? 'red' : 'amber'}>
+                          {{ ready: '已分析', failed: '失败', processing: '分析中' }[m.status] || m.status}
+                        </Tag>
+                      </div>
+                      {m.error && <p className="text-red-400">{m.error}</p>}
+                      {m.status === 'ready' && (
+                        <div className="mt-1 space-y-1">
+                          {!m.result.supported
+                            ? <p className="text-amber-300">{m.result.note}</p>
+                            : <>
+                                <p className="text-neutral-400">
+                                  {m.result.frames} 帧 · {m.result.reps.length} 次重复（画面内估计）
+                                  {m.result.faults.length > 0
+                                    ? ` · ${m.result.faults.length} 项提示` : ' · 未命中已覆盖的可见项目'}
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {m.result.reps.map((r) => (
+                                    <button key={r.rep} className="tag bg-neutral-700 text-neutral-200"
+                                            onClick={() => {
+                                              const v = document.getElementById('ma-video') as HTMLVideoElement | null
+                                              if (v) { v.currentTime = r.start_s; v.play() }
+                                            }}>
+                                      第{r.rep}次 @{r.start_s}s
+                                    </button>
+                                  ))}
+                                </div>
+                                <ul className="space-y-0.5">
+                                  {m.result.faults.map((f, i) => (
+                                    <li key={i} className="text-amber-300">
+                                      ⚠️ {f.label || f.code}
+                                      {f.value !== undefined && ` 值=${f.value}`}
+                                      {f.hint && <span className="text-neutral-500">（{f.hint}）</span>}
+                                    </li>
+                                  ))}
+                                </ul>
+                                <p className="text-neutral-600">{m.result.note}</p>
+                              </>}
+                          <div className="flex gap-2">
+                            <button className="text-accent underline"
+                                    onClick={() => {
+                                      const file = m.video_path?.match(/media\/[^/]+\/([^/]+)$/)?.[1] || ''
+                                      const tk = localStorage.getItem('fc-access-token')
+                                      setAnalysisVideo(`/api/media/${uid}/${file}${tk ? `?access_token=${encodeURIComponent(tk)}` : ''}`)
+                                    }}>
+                              查看视频
+                            </button>
+                            <button className="text-sky-400 underline"
+                                    onClick={() => setCompare((c) => c && c.a !== m.id ? { ...c, b: m.id } : { a: m.id, b: 0 })}>
+                              {compare?.a === m.id ? '对比 A ✓' : '设为对比 A'}
+                            </button>
+                            {compare?.a && compare.a !== m.id && (
+                              <button className="text-sky-400 underline"
+                                      onClick={async () => {
+                                        const r = await api.motionCompare(uid, compare.a, m.id) as Record<string, unknown>
+                                        setCompareResult(r)
+                                      }}>与 A 对比</button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {compareResult && (
+                  <div className="mt-2 rounded-lg bg-sky-950/30 p-2 text-xs">
+                    <p className="font-semibold text-sky-300">两次对比（几何量变化，非评分）</p>
+                    <pre className="mt-1 whitespace-pre-wrap text-neutral-300">
+                      {JSON.stringify(compareResult.compare, null, 1)}
+                    </pre>
+                  </div>
+                )}
+              </section>
               {media.length > 0 && (
                 <section>
                   <h4 className="label">我的教学媒体（视频导入关联）</h4>

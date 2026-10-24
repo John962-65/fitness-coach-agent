@@ -135,6 +135,13 @@ export const api = {
 
   trials: (uid: string) => req<{ trials: Trial[] }>(`/users/${uid}/trials`),
 
+  motionAnalyses: (uid: string, exerciseId?: string) => {
+    const q = exerciseId ? `?exercise_id=${encodeURIComponent(exerciseId)}` : ''
+    return req<{ analyses: unknown[] }>(`/users/${uid}/motion-analyses${q}`)
+  },
+  motionCompare: (uid: string, a: number, b: number) =>
+    req<unknown>(`/users/${uid}/motion-analyses/compare?a=${a}&b=${b}`),
+
   knowledgeSearch: (uid: string, q: string) =>
     req<unknown>(`/knowledge/search?uid=${encodeURIComponent(uid)}&q=${encodeURIComponent(q)}`),
   knowledgeImport: (uid: string, payload: { title: string; kind: string; content: string }) =>

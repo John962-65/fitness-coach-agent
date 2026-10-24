@@ -489,6 +489,65 @@ def register_routes(app) -> None:
         _user_profile(db, uid)
         return {"proposals": db.list_exercise_proposals(uid)}
 
+    # ---- M4：动作视频分析（上传/任务/结果/对比）----
+
+    @api.post("/users/{uid}/motion-analyses")
+    async def motion_upload(uid: str, request: Request):
+        from starlette.datastructures import UploadFile
+        import threading
+        import time as _time
+        from coach.motion_analysis import process_analysis
+        db = request.app.state.db
+        _user_profile(db, uid)
+        form = await request.form()
+        video = form.get("video")
+        exercise_id = str(form.get("exercise_id") or "").strip()
+        view = str(form.get("view") or "side")
+        if view not in ("side", "front", "back"):
+            raise HTTPException(status_code=422, detail={"error": "view 必须是 side/front/back"})
+        if not isinstance(video, UploadFile) or not video.filename:
+            raise HTTPException(status_code=400, detail={"error": "需要 video 文件"})
+        if not exercise_id:
+            raise HTTPException(status_code=422, detail={"error": "需要 exercise_id"})
+        media_dir = db.path.parent / "media" / uid
+        media_dir.mkdir(parents=True, exist_ok=True)
+        video_path = media_dir / f"ma{int(_time.time() * 1000)}_{Path(video.filename).name}"
+        video_path.write_bytes(await video.read())
+
+        def _work() -> None:
+            try:
+                result = process_analysis(exercise_id, str(video_path), view)
+                db.finish_motion_analysis(analysis_id, "ready", result=result)
+            except Exception as e:  # noqa: BLE001 失败要留痕不吞
+                db.finish_motion_analysis(analysis_id, "failed", error=str(e))
+
+        analysis_id = db.add_motion_analysis(uid, exercise_id, view, str(video_path))
+        threading.Thread(target=_work, daemon=True).start()
+        return {"analysis_id": analysis_id, "status": "processing"}
+
+    @api.get("/users/{uid}/motion-analyses")
+    def motion_list(uid: str, request: Request, exercise_id: str | None = Query(None)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"analyses": db.list_motion_analyses(uid, exercise_id)}
+
+    @api.get("/users/{uid}/motion-analyses/compare")
+    def motion_compare(uid: str, request: Request,
+                       a: int = Query(...), b: int = Query(...)):
+        from coach.motion_analysis import compare_results
+        db = request.app.state.db
+        _user_profile(db, uid)
+        ra, rb = (db.get_motion_analysis(uid, a), db.get_motion_analysis(uid, b))
+        if not ra or not rb:
+            raise HTTPException(status_code=404, detail={"error": "分析记录不存在"})
+        if ra["status"] != "ready" or rb["status"] != "ready":
+            raise HTTPException(status_code=422, detail={"error": "两次分析都需完成处理"})
+        if ra["exercise_id"] != rb["exercise_id"]:
+            raise HTTPException(status_code=422,
+                                detail={"error": "对比需要同一动作的两次分析"})
+        return {"a": {"id": a, **ra["result"]}, "b": {"id": b, **rb["result"]},
+                "compare": compare_results(ra["result"], rb["result"])}
+
     # ---- M2：咨询留痕 / 计划版本历史与恢复 ----
 
     @api.get("/users/{uid}/consultations")

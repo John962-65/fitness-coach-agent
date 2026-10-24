@@ -219,6 +219,17 @@ CREATE TABLE IF NOT EXISTS exercise_proposals (
     status      TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected（发起人批）
     created_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS motion_analyses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    view        TEXT NOT NULL,          -- side / front / back
+    video_path  TEXT NOT NULL,
+    status      TEXT NOT NULL,          -- processing / ready / failed（M4 任务状态）
+    error       TEXT,
+    result      TEXT,                   -- JSON：supported/frames/faults/reps/summary/note
+    created_at  TEXT NOT NULL
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -1087,3 +1098,57 @@ class Database:
                 d["aliases"] = []
             out.append(d)
         return out
+
+    # ---- M4：动作视频分析（motion_analyses）----
+    def add_motion_analysis(self, user_id: str, exercise_id: str, view: str,
+                            video_path: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO motion_analyses(user_id, exercise_id, view, video_path,"
+            " status, created_at) VALUES(?,?,?,?, 'processing', ?)",
+            (user_id, exercise_id, view, video_path, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_motion_analysis(self, user_id: str, analysis_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM motion_analyses WHERE user_id=? AND id=?",
+            (user_id, analysis_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("result"):
+            try:
+                d["result"] = json.loads(d["result"])
+            except ValueError:
+                d["result"] = {}
+        return d
+
+    def list_motion_analyses(self, user_id: str, exercise_id: str | None = None,
+                             limit: int = 20) -> list[dict]:
+        sql = ("SELECT id, exercise_id, view, status, error, result, video_path,"
+               " created_at FROM motion_analyses WHERE user_id=?")
+        params: list = [user_id]
+        if exercise_id:
+            sql += " AND exercise_id=?"
+            params.append(exercise_id)
+        rows = self.conn.execute(sql + " ORDER BY id DESC LIMIT ?",
+                                 params + [limit]).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["result"] = json.loads(d["result"] or "{}")
+            except ValueError:
+                d["result"] = {}
+            out.append(d)
+        return out
+
+    def finish_motion_analysis(self, analysis_id: int, status: str,
+                               result: dict | None = None,
+                               error: str | None = None) -> None:
+        self.conn.execute(
+            "UPDATE motion_analyses SET status=?, result=?, error=? WHERE id=?",
+            (status,
+             json.dumps(result, ensure_ascii=False) if result is not None else None,
+             error[:500] if error else None, analysis_id))
+        self.conn.commit()

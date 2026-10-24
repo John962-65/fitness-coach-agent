@@ -91,6 +91,16 @@ def extract_keypoints(video_path: str, sample_every: int = 2) -> list[list[dict]
 
     返回 [{index: {x, y, visibility}}, ...]；按 mediapipe 版本自动选 API。
     """
+    frames, _fps = extract_keypoints_indexed(video_path, sample_every)
+    return [kp for _idx, kp in frames]
+
+
+def extract_keypoints_indexed(video_path: str,
+                              sample_every: int = 2) -> tuple[list[tuple[int, list[dict]]], float]:
+    """M4：带原始帧索引与 fps 的提取（时间轴标注需要把帧号换算成秒）。
+
+    返回 ([(frame_idx, keypoints)], fps)；识别不到人体的帧不计入。
+    """
     try:
         import cv2
         import mediapipe as mp
@@ -99,9 +109,51 @@ def extract_keypoints(video_path: str, sample_every: int = 2) -> list[list[dict]
             "需要 mediapipe + opencv：pip3 install mediapipe opencv-python-headless"
         ) from e
 
-    if hasattr(mp, "solutions"):
-        return _detect_legacy(video_path, sample_every)
-    return _detect_tasks(video_path, sample_every)
+    import cv2
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    out: list[tuple[int, list[dict]]] = []
+    use_tasks = not hasattr(mp, "solutions")
+
+    if use_tasks:
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+        if not MODEL_PATH.exists():
+            cap.release()
+            raise RuntimeError(f"缺少姿态模型文件 {MODEL_PATH}")
+        opts = vision.PoseLandmarkerOptions(
+            base_options=mp_python.BaseOptions(model_asset_path=str(MODEL_PATH)),
+            running_mode=vision.RunningMode.VIDEO, num_poses=1,
+            min_pose_detection_confidence=0.5)
+        detector = vision.PoseLandmarker.create_from_options(opts)
+    else:
+        pose = mp.solutions.pose.Pose(
+            static_image_mode=False, model_complexity=1,
+            enable_segmentation=False, min_detection_confidence=0.5)
+
+    i = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if i % sample_every == 0:
+            if use_tasks:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                res = detector.detect_for_video(image, int(i / fps * 1000) + 1)
+                lms = res.pose_landmarks[0] if res.pose_landmarks else None
+            else:
+                res = pose.process(frame)
+                lms = res.pose_landmarks
+            if lms:
+                out.append((i, [
+                    {"x": lm.x, "y": lm.y,
+                     "visibility": getattr(lm, "visibility", 0.0),
+                     "aspect_ratio": frame.shape[1] / frame.shape[0]}
+                    for lm in lms]))
+        i += 1
+    cap.release()
+    return out, fps
 
 
 def analyze_video(video_path: str, exercise: str, view: str = "side") -> dict:
