@@ -17,4 +17,5 @@ regressions: [pull_up, lat_pulldown]
 progressions: []
 substitutes: [pull_up, lat_pulldown]
 knowledge_refs: []
+measurement: bodyweight_reps
 status: approved

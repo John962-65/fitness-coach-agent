@@ -56,7 +56,7 @@ export default function ExercisePicker({ onPick, onClose, uid }: {
         {items?.map((ex) => (
           <li key={ex.id}>
             <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-canvas"
-                    onClick={() => { onPick(ex); onClose() }}>
+                    onClick={() => { onPick({ ...ex, measurement: ex.measurement }); onClose() }}>
               <ExerciseCover uid={me} exerciseId={ex.id} name={ex.name}
                              className="size-11 shrink-0 rounded-lg" iconSize={16} />
               <div className="min-w-0 flex-1">

@@ -71,12 +71,28 @@ export interface Profile {
   [k: string]: unknown
 }
 
+// M6.4-A：类型化逐组记录——不同记录类型使用不同指标，绝不混用公式
+export type MeasurementType =
+  | 'weight_reps' | 'bodyweight_reps' | 'assisted_reps' | 'duration' | 'distance_time'
+
+export type SetRecord =
+  | { type: 'weight_reps'; weight_kg: number; reps: number; rpe?: number }
+  | { type: 'bodyweight_reps'; reps: number; added_weight_kg?: number; rpe?: number }
+  | { type: 'assisted_reps'; reps: number; assistance_kg: number; rpe?: number }
+  | { type: 'duration'; duration_seconds: number }
+  | { type: 'distance_time'; distance_m: number; duration_seconds: number; weight_kg?: number }
+
 export interface SetLog {
+  type?: MeasurementType            // 缺省按 weight_reps（旧记录兼容）
   weight_kg?: number | null
   reps?: number | null
   rpe?: number | null
   warmup?: boolean
   at?: string
+  added_weight_kg?: number
+  assistance_kg?: number
+  duration_seconds?: number
+  distance_m?: number
 }
 
 export interface CheckinExercise {
@@ -108,6 +124,21 @@ export interface ExerciseSummary {
   equipment: string[]
   location: string[]
   status: string
+  measurement?: MeasurementType   // 记录类型（缺省 weight_reps）
+}
+
+export interface TrainingTemplate {
+  id: number
+  name: string
+  entries: {
+    exercise_id: string
+    name: string
+    measurement?: MeasurementType
+    superset_group?: string
+  }[]
+  note?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ExerciseDetail extends Partial<Record<string, unknown>> {
@@ -255,6 +286,8 @@ export interface ExerciseRecords {
   best_e1rm: { e1rm: number; weight_kg: number; reps: number | null; date: string } | null
   max_reps: { reps: number; weight_kg: number | null; date: string } | null
   best_volume_session: { volume: number; working_sets: number; date: string } | null
+  longest_set: { duration_seconds: number; date: string } | null
+  farthest: { distance_m: number; date: string } | null
 }
 
 export interface TrainingCalendar {

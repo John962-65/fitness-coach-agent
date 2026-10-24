@@ -978,11 +978,14 @@ def register_routes(app) -> None:
                 if logs:
                     main = [s for s in logs if isinstance(s, dict) and not s.get("warmup")]
                     if main:
+                        # M6.4-A：bodyweight_reps 的负荷 = 额外负重（自重不可比，不计入容量口径）
+                        def _load(s: dict):
+                            return s.get("added_weight_kg") if s.get("type") == "bodyweight_reps" \
+                                else s.get("weight_kg")
                         best = max(main, key=lambda s: (
-                            (s.get("weight_kg") or 0) * (s.get("reps") or 0),
-                            s.get("weight_kg") or 0))
+                            (_load(s) or 0) * (s.get("reps") or 0), _load(s) or 0))
                         ex["sets"] = len(main)
-                        ex["weight_kg"] = best.get("weight_kg")
+                        ex["weight_kg"] = _load(best)
                         ex["reps"] = best.get("reps")
                         ex["rpe"] = best.get("rpe")
                     else:
@@ -1020,6 +1023,42 @@ def register_routes(app) -> None:
             return {"id": first["checkin_id"], "type": ctype,
                     "warnings": notes, "existing": True}
         return {"id": checkin_id, "type": ctype, "warnings": notes}
+
+    # ---- M6.4-A：训练模板（可复用，与计划/会话独立） ----
+
+    @api.get("/users/{uid}/training-templates")
+    def list_training_templates(uid: str, request: Request):
+        _user_profile(request.app.state.db, uid)
+        return {"templates": request.app.state.db.list_training_templates(uid)}
+
+    @api.post("/users/{uid}/training-templates")
+    def save_training_template(uid: str, request: Request, payload: dict = Body(...)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail={"error": "模板名称必填"})
+        entries = payload.get("entries")
+        if not isinstance(entries, list) or not entries:
+            raise HTTPException(status_code=422, detail={"error": "模板至少需要一个动作"})
+        doc = {"entries": entries}
+        if payload.get("note"):
+            doc["note"] = str(payload["note"])[:200]
+        try:
+            tid = db.save_training_template(
+                uid, name[:40], doc,
+                template_id=payload.get("id"))
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"id": tid, "name": name}
+
+    @api.delete("/users/{uid}/training-templates/{template_id}")
+    def delete_training_template(uid: str, template_id: int, request: Request):
+        try:
+            request.app.state.db.delete_training_template(uid, template_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"deleted": template_id}
 
     # ---- M6.3 训练数据分析（逐组口径） ----
 
@@ -1089,6 +1128,7 @@ def register_routes(app) -> None:
                                "equipment": e.get("equipment") or [],
                                "location": e.get("location") or [],
                                "status": e.get("status"),
+                               "measurement": e.get("measurement") or "weight_reps",
                                "scope": e.get("scope", "builtin")} for e in items]}
 
     @api.get("/exercises/{ex_id}")

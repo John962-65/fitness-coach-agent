@@ -3,7 +3,7 @@ import type {
   ApproachRevision, ApproachView, Checkin, Consultation, ExerciseDetail,
   ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, PlanOp,
   PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, TodayBrief,
-  TrainingCalendar, Trial,
+  TrainingCalendar, TrainingTemplate, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -154,6 +154,16 @@ export const api = {
   },
   motionCompare: (uid: string, a: number, b: number) =>
     req<unknown>(`/users/${uid}/motion-analyses/compare?a=${a}&b=${b}`),
+
+  // M6.4-A：训练模板（可复用，与计划/会话独立）
+  trainingTemplates: (uid: string) =>
+    req<{ templates: TrainingTemplate[] }>(`/users/${uid}/training-templates`),
+  saveTrainingTemplate: (uid: string, payload: { id?: number; name: string;
+    entries: unknown[]; note?: string }) =>
+    post<{ id: number; name: string }>(`/users/${uid}/training-templates`, payload),
+  deleteTrainingTemplate: (uid: string, templateId: number) =>
+    req<{ deleted: number }>(`/users/${uid}/training-templates/${templateId}`,
+                             { method: 'DELETE' }),
 
   // M6.3 训练数据分析（逐组口径）
   exerciseStats: (uid: string, exerciseId: string) =>

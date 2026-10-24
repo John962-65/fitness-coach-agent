@@ -85,7 +85,8 @@ export function buildCorrectedData(
       for (let j = 0; j < orig.set_logs.length; j++) {
         const l = orig.set_logs[j]
         const e = edit.logs?.[j]
-        if (!e) { logs.push(l); continue }
+        // M6.4-A：非 weight_reps 类型（时长/距离等）暂不支持逐字段纠错，原样保留
+        if (!e || (l.type && l.type !== 'weight_reps')) { logs.push(l); continue }
         const weight = num(e.weight)
         const reps = num(e.reps)
         const rpe = num(e.rpe)

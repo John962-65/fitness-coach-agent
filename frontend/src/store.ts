@@ -3,17 +3,17 @@
 // 推断在重现问题，显式化反而更简单可靠）。
 import { create } from 'zustand'
 
-export interface LoggedSet {
-  weight: number | null
-  reps: number | null
-  rpe: number | null
+// M6.4-A：逐组记录 = 类型化 SetRecord + 会话字段（旧字段 weight/reps 由 weight_reps 类型承载）
+export type LoggedSet = import('./types').SetRecord & {
   warmup: boolean
-  at?: string // 完成时间（M1.1 P0-4：逐组持久化的组成部分）
+  at?: string
 }
 
 export interface SessionEntry {
   exercise_id: string
   name: string
+  measurement?: import('./types').MeasurementType  // 记录类型（缺省 weight_reps）
+  supersetGroup?: string                           // M6.4-A：超级组分组（A/B/C…）
   target: { sets: number | string; reps: number | string; weight: number | null }
   note?: string
   logged: LoggedSet[]
@@ -62,8 +62,9 @@ interface AppState {
    *  resumed=true 为同目标恢复（已记录组原样保留）；否则是冲突等待用户选择（P0-1）。 */
   startSession: (day: string, entries: SessionEntry[]) => { kept: boolean; resumed?: boolean }
   /** 开始自由训练。语义同上。 */
-  startFreeSession: () => { kept: boolean; resumed?: boolean }
+  startFreeSession: (label?: string) => { kept: boolean; resumed?: boolean }
   addFreeExercise: (entry: SessionEntry) => void
+  setEntryGroup: (entryIdx: number, group?: string) => void
   removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
   removeLastSet: (entryIdx: number) => void
@@ -116,17 +117,22 @@ export const useApp = create<AppState>()((set) => ({
                      entries, started_at: new Date().toISOString(), notes: '' } })
     return { kept: false }
   },
-  startFreeSession: () => {
+  startFreeSession: (label?: string) => {
     const cur = useApp.getState().session
     if (cur && cur.mode === 'free') return { kept: true, resumed: true }
     if (cur && hasProgress(cur)) return { kept: true }
-    set({ session: { id: newSessionId(), mode: 'free', day: 'free', date: today(),
+    set({ session: { id: newSessionId(), mode: 'free', day: label || 'free', date: today(),
                      entries: [], started_at: new Date().toISOString(), notes: '' } })
     return { kept: false }
   },
   addFreeExercise: (entry) =>
     set((st) => (st.session && st.session.mode === 'free'
       ? { session: { ...st.session, entries: [...st.session.entries, entry] } } : st)),
+  setEntryGroup: (entryIdx, group) =>
+    set((st) => (st.session
+      ? { session: { ...st.session, entries: st.session.entries.map((e, i) =>
+            i === entryIdx ? { ...e, supersetGroup: group } : e) } }
+      : st)),
   removeEntry: (entryIdx) =>
     set((st) => (st.session
       ? { session: { ...st.session, entries: st.session.entries.filter((_, i) => i !== entryIdx) } }

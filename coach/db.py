@@ -219,6 +219,14 @@ CREATE TABLE IF NOT EXISTS exercise_proposals (
     status      TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected（发起人批）
     created_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS training_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  created_at TEXT,
+  updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS custom_exercises (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     TEXT NOT NULL,
@@ -1172,6 +1180,52 @@ class Database:
             doc["scope"] = "user"
             out.append(doc)
         return out
+
+    # ---- M6.4-A：训练模板（可复用；与计划/会话相互独立） ----
+    def list_training_templates(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, name, doc, created_at, updated_at FROM training_templates"
+            " WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+        return [{"id": r["id"], "name": r["name"], **json.loads(r["doc"]),
+                 "created_at": r["created_at"], "updated_at": r["updated_at"]}
+                for r in rows]
+
+    def get_training_template(self, user_id: str, template_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT id, name, doc, created_at, updated_at FROM training_templates"
+            " WHERE user_id=? AND id=?", (user_id, template_id)).fetchone()
+        if not row:
+            return None
+        return {"id": row["id"], "name": row["name"], **json.loads(row["doc"]),
+                "created_at": row["created_at"], "updated_at": row["updated_at"]}
+
+    def save_training_template(self, user_id: str, name: str, doc: dict,
+                               template_id: int | None = None) -> int:
+        """template_id 为空 = 新建；否则更新本人模板（不改训练计划、不碰会话）。"""
+        now = _now()
+        if template_id is None:
+            cur = self.conn.execute(
+                "INSERT INTO training_templates(user_id,name,doc,created_at,updated_at)"
+                " VALUES(?,?,?,?,?)", (user_id, name, json.dumps(doc, ensure_ascii=False), now, now))
+            self.conn.commit()
+            return cur.lastrowid
+        cur = self.conn.execute(
+            "UPDATE training_templates SET name=?, doc=?, updated_at=?"
+            " WHERE user_id=? AND id=?",
+            (name, json.dumps(doc, ensure_ascii=False), now, user_id, template_id))
+        if cur.rowcount != 1:
+            raise ValueError("模板不存在或不属于当前用户")
+        self.conn.commit()
+        return template_id
+
+    def delete_training_template(self, user_id: str, template_id: int) -> None:
+        cur = self.conn.execute(
+            "DELETE FROM training_templates WHERE user_id=? AND id=?",
+            (user_id, template_id))
+        if cur.rowcount != 1:
+            raise ValueError("模板不存在或不属于当前用户")
+        self.conn.commit()
+
 
     def get_custom_exercise(self, user_id: str, ex_id: str) -> dict | None:
         row = self.conn.execute(

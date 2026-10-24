@@ -10,7 +10,7 @@ import {
 } from '../components/Bits'
 import { ExerciseCover } from '../components/media'
 import { useApp } from '../store'
-import { PlanResponse, PlanRevision } from '../types'
+import { PlanResponse, PlanRevision, TrainingTemplate } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -19,6 +19,7 @@ export default function Training() {
   const [plan, setPlan] = useState<PlanResponse | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState('')
+  const [templates, setTemplates] = useState<TrainingTemplate[] | null>(null)
   const [versions, setVersions] = useState<PlanRevision[] | null>(null)
   const [showVersions, setShowVersions] = useState(false)
   const [restoreNote, setRestoreNote] = useState('')
@@ -28,6 +29,11 @@ export default function Training() {
     api.planRevisions(uid).then((r) => setVersions(r.revisions)).catch(() => setVersions([]))
   }, [uid])
   useEffect(() => { loadVersions() }, [loadVersions])
+
+  const loadTemplates = useCallback(() => {
+    api.trainingTemplates(uid).then((r) => setTemplates(r.templates)).catch(() => setTemplates([]))
+  }, [uid])
+  useEffect(() => { loadTemplates() }, [loadTemplates])
 
   const [offlineMode, setOfflineMode] = useState(false)
   useEffect(() => {
@@ -168,6 +174,74 @@ export default function Training() {
           )}
         </div>
       )}
+
+      {/* 训练模板（M6.4-A：可复用；与当前计划独立） */}
+      <Card title="训练模板" className="mt-4"
+            sub="从自由训练「存为模板」而来；从模板开始不影响当前计划"
+            right={
+              <div className="flex gap-1.5">
+                <label className="btn-sm btn cursor-pointer border border-line bg-surface">
+                  导入
+                  <input type="file" accept="application/json" className="hidden"
+                         onChange={async (e) => {
+                           const f = e.target.files?.[0]
+                           if (!f) return
+                           try {
+                             const list = JSON.parse(await f.text()) as TrainingTemplate[]
+                             for (const t of Array.isArray(list) ? list : []) {
+                               if (!t?.name || !Array.isArray(t.entries)) continue
+                               await api.saveTrainingTemplate(uid, {
+                                 name: `${t.name}`, entries: t.entries, note: t.note })
+                             }
+                             loadTemplates()
+                           } catch { /* 坏文件忽略 */ }
+                         }} />
+                </label>
+                <button className="btn-sm btn border border-line bg-surface"
+                        onClick={() => {
+                          const blob = new Blob([JSON.stringify(templates || [], null, 2)],
+                                                { type: 'application/json' })
+                          const a = document.createElement('a')
+                          a.href = URL.createObjectURL(blob)
+                          a.download = `fitness-coach-templates-${Date.now()}.json`
+                          a.click(); URL.revokeObjectURL(a.href)
+                        }}>
+                  导出
+                </button>
+              </div>
+            }>
+        {!templates || templates.length === 0 ? (
+          <p className="text-xs leading-relaxed text-muted">
+            还没有模板。开始一次自由训练后，用「存为训练模板」把它保存下来，下次一键开始。
+          </p>
+        ) : (
+          <ul className="rows">
+            {templates.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{t.name}</p>
+                  <p className="nums text-xs text-muted">
+                    {t.entries.length} 个动作{t.updated_at ? ` · ${t.updated_at.slice(0, 10)}` : ''}
+                  </p>
+                </div>
+                <button className="btn-sm btn shrink-0 bg-night text-white"
+                        onClick={() => navigate(`/workout/template/${t.id}`)}>
+                  开始
+                </button>
+                <button className="btn-sm btn shrink-0 border border-line bg-surface text-muted"
+                        onClick={async () => {
+                          try {
+                            await api.deleteTrainingTemplate(uid, t.id)
+                            loadTemplates()
+                          } catch { /* 已删除 */ }
+                        }} aria-label={`删除模板 ${t.name}`}>
+                  删除
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {/* 其他训练日快速入口 */}
       <Card title="计划备注" className="mt-4">

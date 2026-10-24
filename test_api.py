@@ -624,3 +624,81 @@ def test_checkins_filter_by_date(client):
     # offset 分页
     page2 = c.get("/api/users/api_user/checkins", params={"limit": 1, "offset": 1}).json()
     assert isinstance(page2["checkins"], list)
+
+
+def test_training_templates_crud(client):
+    """M6.4-A 场景 A：模板保存/列表/更新/删除；与计划、会话相互独立。"""
+    c, _app = client
+    body = c.post("/api/users/api_user/training-templates", json={
+        "name": "胸背超级组日",
+        "entries": [
+            {"exercise_id": "barbell_bench_press", "name": "杠铃平板卧推",
+             "measurement": "weight_reps", "superset_group": "A"},
+            {"exercise_id": "barbell_row", "name": "杠铃划船",
+             "measurement": "weight_reps", "superset_group": "A"},
+        ]}).json()
+    assert body["name"] == "胸背超级组日"
+    tid = body["id"]
+
+    listed = c.get("/api/users/api_user/training-templates").json()["templates"]
+    assert [t["name"] for t in listed] == ["胸背超级组日"]
+    assert listed[0]["entries"][1]["superset_group"] == "A"
+
+    c.post("/api/users/api_user/training-templates", json={
+        "id": tid, "name": "胸背超级组日 v2", "entries": listed[0]["entries"]})
+    listed = c.get("/api/users/api_user/training-templates").json()["templates"]
+    assert len(listed) == 1 and listed[0]["name"] == "胸背超级组日 v2"
+
+    assert c.post("/api/users/api_user/training-templates",
+                  json={"name": "空", "entries": []}).status_code == 422
+
+    assert c.delete(f"/api/users/api_user/training-templates/{tid}").json()["deleted"] == tid
+    assert c.get("/api/users/api_user/training-templates").json()["templates"] == []
+
+
+def test_typed_set_logs_pass_through_and_stay_separate(client):
+    """M6.4-A 场景 B 数据层：类型化逐组记录透传落库，聚合派生不混用。"""
+    c, app = client
+    body = c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [
+            {"name": "杠铃平板卧推", "exercise_id": "barbell_bench_press",
+             "set_logs": [
+                 {"type": "weight_reps", "weight_kg": 60, "reps": 10,
+                  "warmup": False, "at": "2026-10-25T10:00:00"}]},
+            {"name": "引体向上", "exercise_id": "pull_up",
+             "set_logs": [
+                 {"type": "bodyweight_reps", "reps": 8,
+                  "added_weight_kg": 5, "at": "2026-10-25T10:05:00"},
+                 {"type": "bodyweight_reps", "reps": 6, "at": "2026-10-25T10:08:00"}]},
+            {"name": "平板支撑", "exercise_id": "plank",
+             "set_logs": [{"type": "duration", "duration_seconds": 90,
+                           "at": "2026-10-25T10:12:00"}]},
+        ]}}).json()
+    assert body["warnings"] == []
+    exs = app.state.db.list_checkins("api_user", 5)[0]["data"]["exercises"]
+    bench, pull, plank = exs
+    assert bench["weight_kg"] == 60 and bench["reps"] == 10
+    assert pull["weight_kg"] == 5 and pull["reps"] == 8
+    assert pull["set_logs"][1].get("added_weight_kg") is None
+    assert plank["weight_kg"] is None and plank["reps"] is None
+    assert plank["set_logs"][0]["duration_seconds"] == 90
+
+    stats = c.get("/api/users/api_user/exercise-stats/pull_up").json()
+    s = stats["sessions"][0]
+    assert s["volume"] == 40
+    assert s["reps_total"] == 14
+    assert s["best_e1rm"] is None
+    assert stats["records"]["max_reps"]["reps"] == 8
+    plank_stats = c.get("/api/users/api_user/exercise-stats/plank").json()
+    assert plank_stats["sessions"][0]["duration_total_s"] == 90
+    assert plank_stats["records"]["longest_set"]["duration_seconds"] == 90
+
+
+def test_bad_set_type_rejected(client):
+    c, _app = client
+    body = c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [{"name": "卧推", "set_logs": [
+            {"type": "magic", "weight_kg": 60, "reps": 10}]}]}}).json()
+    assert any("无法识别" in w for w in body["warnings"])

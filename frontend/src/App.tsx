@@ -52,6 +52,7 @@ function Shell() {
           <Route path="/training" element={<Training />} />
           <Route path="/training/edit" element={<PlanEditor />} />
           <Route path="/history" element={<History />} />
+          <Route path="/workout/template/:templateId" element={<Workout />} />
           <Route path="/workout/:day" element={<Workout />} />
           <Route path="/coach" element={<Coach />} />
           <Route path="/explore" element={<Explore />} />

@@ -46,3 +46,66 @@ export function parseTrainingNumber(s: string): number | null | undefined {
   const n = Number(t)
   return Number.isFinite(n) ? n : undefined
 }
+
+// ---- M6.4-A：分型逐组校验（不同记录类型不同规则，绝不混用） ----
+import type { MeasurementType } from '../types'
+
+export interface SetDraft {
+  type: MeasurementType
+  weight?: number | null
+  reps?: number | null
+  added?: number | null
+  assist?: number | null
+  minutes?: number | null
+  seconds?: number | null
+  distance?: number | null
+  rpe?: number | null
+}
+
+export function validateSetDraft(d: SetDraft): string | null {
+  if (d.rpe != null && (d.rpe < TRAINING_LIMITS.rpeMin || d.rpe > TRAINING_LIMITS.rpeMax))
+    return `RPE 取值范围 ${TRAINING_LIMITS.rpeMin}-${TRAINING_LIMITS.rpeMax}`
+  const repsErr = (required: boolean) => {
+    if (d.reps == null) return required ? '请填写次数' : null
+    if (!Number.isInteger(d.reps)) return '次数需为整数'
+    if (d.reps < TRAINING_LIMITS.repsMin || d.reps > TRAINING_LIMITS.repsMax)
+      return `次数需为 ${TRAINING_LIMITS.repsMin}-${TRAINING_LIMITS.repsMax} 的整数`
+    return null
+  }
+  const loadErr = (label: string, v: number | null | undefined, required: boolean) => {
+    if (v == null) return required ? `请填写${label}` : null
+    if (v < 0 || v > TRAINING_LIMITS.weightMax) return `${label}需在 0-${TRAINING_LIMITS.weightMax} 之间`
+    return null
+  }
+  switch (d.type) {
+    case 'weight_reps': {
+      if (d.weight != null && (d.weight <= 0 || d.weight > TRAINING_LIMITS.weightMax))
+        return `重量需在 0.01-${TRAINING_LIMITS.weightMax} kg 之间（自重动作请留空）`
+      return repsErr(true)
+    }
+    case 'bodyweight_reps': {
+      const e1 = repsErr(true)
+      if (e1) return e1
+      return loadErr('额外负重', d.added, false)
+    }
+    case 'assisted_reps': {
+      const e1 = repsErr(true)
+      if (e1) return e1
+      return loadErr('辅助重量', d.assist, true)
+    }
+    case 'duration': {
+      const total = (d.minutes || 0) * 60 + (d.seconds || 0)
+      if (total < 1) return '请填写持续时间'
+      if (total > 7200) return '单组持续时间不超过 120 分钟'
+      return null
+    }
+    case 'distance_time': {
+      if (d.distance == null || d.distance < 1 || d.distance > 200000)
+        return '距离需在 1-200000 米之间'
+      const total = (d.minutes || 0) * 60 + (d.seconds || 0)
+      if (total < 1) return '请填写用时'
+      if (total > 7200 * 6) return '单组用时不超过 12 小时'
+      return null
+    }
+  }
+}

@@ -7,6 +7,7 @@ import {
 } from '../components/Bits'
 import { buildCorrectedData, ExerciseEdit, SetEdit } from '../lib/checkin'
 import { parseTrainingNumber, validateSetValues } from '../lib/validate'
+import { formatSetRecord } from '../lib/setDisplay'
 import { useApp } from '../store'
 import { Checkin, PeriodSummary, TrainingCalendar } from '../types'
 
@@ -139,6 +140,7 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
                 <div>
                   <p className="text-sm font-medium">
                     {ex.name}
+                    {ex.superset_group ? <Tag tone="blue" className="ml-1.5">超级组 {String(ex.superset_group)}</Tag> : null}
                     <span className="nums ml-1.5 text-xs text-muted">{ex.set_logs.length} 组</span>
                   </p>
                   <ul className="nums mt-1 space-y-0.5">
@@ -146,11 +148,7 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
                       <li key={j} className="flex items-center gap-2 text-[13px] text-muted">
                         <span className="w-8 shrink-0 text-faint">#{j + 1}</span>
                         {l.warmup && <span className="tag bg-amber-50 text-amber-700">热身</span>}
-                        <span className="text-ink">
-                          {l.weight_kg != null ? `${l.weight_kg} kg` : ''}
-                          {l.weight_kg != null && l.reps != null ? ' × ' : ''}
-                          {l.reps ?? (l.weight_kg != null ? '' : '?')} 次
-                        </span>
+                        <span className="text-ink">{formatSetRecord(l)}</span>
                         {l.rpe ? <span className="text-faint">RPE {l.rpe}</span> : null}
                       </li>
                     ))}

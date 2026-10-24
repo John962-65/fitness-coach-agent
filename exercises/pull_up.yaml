@@ -17,4 +17,5 @@ regressions: [lat_pulldown]
 progressions: [weighted_pull_up]
 substitutes: [lat_pulldown]
 knowledge_refs: [20_exercises/back/lat_activation.md]
+measurement: bodyweight_reps
 status: approved

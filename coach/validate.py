@@ -100,6 +100,22 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                             continue
                         s = dict(s)
                         bad = False
+                        # M6.4-A：类型化逐组记录——type 决定本组的本质量字段；
+                        # 未带 type 的旧记录按 weight_reps 处理（向后兼容）。
+                        if s.get("type") is not None and s["type"] not in (
+                                "weight_reps", "bodyweight_reps", "assisted_reps",
+                                "duration", "distance_time"):
+                            warnings.append(f"{ex['name']} 某组的记录类型 {s['type']!r} 无法识别，该组剔除")
+                            continue
+                        for field in ("added_weight_kg", "assistance_kg",
+                                      "distance_m", "duration_seconds"):
+                            if s.get(field) is not None:
+                                n = _to_number(s[field])
+                                if n is None or n < 0:
+                                    warnings.append(f"{ex['name']} 某组的 {field}={s[field]!r} 无法识别，已丢弃该字段")
+                                    s.pop(field)
+                                else:
+                                    s[field] = n
                         for field in ("weight_kg", "rpe"):
                             if s.get(field) is not None:
                                 n = _to_number(s[field])

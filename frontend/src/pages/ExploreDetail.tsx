@@ -7,6 +7,7 @@ import {
   Chip, Empty, ErrorBox, Segmented, Spinner, SubHeader, Tag,
 } from '../components/Bits'
 import { Markdown } from '../components/Markdown'
+import { formatSetRecord } from '../lib/setDisplay'
 import { Sparkline } from '../components/charts'
 import { CoverPlaceholder, useSignedMedia } from '../components/media'
 import { ExerciseDetail, ExerciseRecords, ExerciseSession } from '../types'
@@ -446,6 +447,11 @@ function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string })
   if (records.best_volume_session) {
     prs.push(['单次最大容量', `${records.best_volume_session.volume} kg`, records.best_volume_session.date])
   }
+  if (records.longest_set) {
+    const sec = records.longest_set.duration_seconds
+    prs.push(['最长单组', `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`, records.longest_set.date])
+  }
+  if (records.farthest) prs.push(['最远距离', `${records.farthest.distance_m} 米`, records.farthest.date])
 
   return (
     <div className="space-y-4">
@@ -504,9 +510,7 @@ function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string })
                   {s.sets.map((st, i) => (
                     <li key={i} className="flex items-center gap-2 text-[13px] text-muted">
                       <span className="w-6 text-faint">#{i + 1}</span>
-                      <span className="text-ink">
-                        {st.weight_kg ?? '自重'}{st.weight_kg != null && ' kg'} × {st.reps ?? '?'} 次
-                      </span>
+                      <span className="text-ink">{formatSetRecord(st)}</span>
                       {st.e1rm != null && <span className="text-faint">e1RM {st.e1rm}</span>}
                       {st.volume > 0 && <span className="ml-auto text-faint">容量 {st.volume}</span>}
                     </li>

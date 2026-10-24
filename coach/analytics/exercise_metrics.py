@@ -54,18 +54,35 @@ def entry_identity(db, user_id: str | None, ex: dict) -> str | None:
 
 
 def _working_sets(set_logs: list) -> list[dict]:
+    """M6.4-A：分型逐组记录。不同记录类型使用不同指标，绝不混用公式：
+    - weight_reps（默认/旧记录）：容量 = 负重×次数；e1RM 按 1-12 次区间
+    - bodyweight_reps：容量只计额外负重×次数；次数本身是最重要的进步指标
+    - assisted_reps / duration / distance_time：不计入 kg 容量、不参与 e1RM
+    """
     out = []
     for log in set_logs:
         if not isinstance(log, dict) or log.get("warmup"):
             continue
+        t = log.get("type") if isinstance(log.get("type"), str) else "weight_reps"
         weight, reps = log.get("weight_kg"), log.get("reps")
-        est = e1rm(weight, reps) if isinstance(reps, int) and 1 <= reps <= E1RM_MAX_REPS else None
+        est = e1rm(weight, reps) if (t == "weight_reps" and isinstance(reps, int)
+                                     and 1 <= reps <= E1RM_MAX_REPS) else None
+        volume = 0
+        if t == "weight_reps" and weight is not None and reps:
+            volume = weight * reps
+        elif t == "bodyweight_reps" and log.get("added_weight_kg") and reps:
+            volume = log["added_weight_kg"] * reps  # 只计额外负重（自重部分不可比，不计）
         out.append({
+            "type": t,
             "weight_kg": weight,
             "reps": reps,
             "at": log.get("at"),
             "e1rm": est,
-            "volume": (weight or 0) * (reps or 0) if (weight is not None and reps) else 0,
+            "volume": volume,
+            "duration_seconds": log.get("duration_seconds"),
+            "distance_m": log.get("distance_m"),
+            "added_weight_kg": log.get("added_weight_kg"),
+            "assistance_kg": log.get("assistance_kg"),
         })
     return out
 
@@ -117,16 +134,22 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
                 continue
             heavy = max((s for s in working if s["weight_kg"] is not None),
                         key=lambda s: s["weight_kg"], default=None)
+            dur_sets = [s for s in working if s["type"] == "duration" and s["duration_seconds"]]
+            dist_sets = [s for s in working if s["type"] == "distance_time" and s["distance_m"]]
             sessions.append({
                 "checkin_id": row["id"],
                 "date": session_local_date(row["created_at"], data),
                 "working_sets": len(working),
                 "reps_total": sum(s["reps"] or 0 for s in working),
-                # 自重组（无外部负重）容量贡献 0，如实呈现
+                # 容量（kg）只来自负重类记录；时长/距离类不计入，另有独立汇总
                 "volume": round(sum(s["volume"] for s in working)),
                 "best_set": ({"weight_kg": heavy["weight_kg"], "reps": heavy["reps"]}
                              if heavy else None),
                 "best_e1rm": max((s["e1rm"] for s in working if s["e1rm"]), default=None),
+                "duration_total_s": round(sum(s["duration_seconds"] or 0 for s in dur_sets))
+                                    if dur_sets else None,
+                "distance_total_m": round(sum(s["distance_m"] or 0 for s in dist_sets))
+                                    if dist_sets else None,
                 "duration_min": _duration_min(working, data),
                 "sets": working,
             })
@@ -140,6 +163,7 @@ def personal_records(sessions: list[dict]) -> dict:
     次数纪录服务自重/轻负重场景；容量纪录是单次会话的总量。
     """
     heaviest = best_e1rm = max_reps = best_vol = None
+    longest = farthest = None
     for s in sessions:
         for st in s["sets"]:
             if st["weight_kg"] is not None and (
@@ -150,7 +174,13 @@ def personal_records(sessions: list[dict]) -> dict:
                              "reps": st["reps"], "date": s["date"]}
             if st["reps"] and (max_reps is None or st["reps"] > max_reps["reps"]):
                 max_reps = {"reps": st["reps"], "weight_kg": st["weight_kg"], "date": s["date"]}
+            if st["duration_seconds"] and (longest is None
+                                           or st["duration_seconds"] > longest["duration_seconds"]):
+                longest = {"duration_seconds": st["duration_seconds"], "date": s["date"]}
+            if st["distance_m"] and (farthest is None or st["distance_m"] > farthest["distance_m"]):
+                farthest = {"distance_m": st["distance_m"], "date": s["date"]}
         if best_vol is None or s["volume"] > best_vol["volume"]:
             best_vol = {"volume": s["volume"], "working_sets": s["working_sets"], "date": s["date"]}
     return {"heaviest": heaviest, "best_e1rm": best_e1rm,
-            "max_reps": max_reps, "best_volume_session": best_vol}
+            "max_reps": max_reps, "best_volume_session": best_vol,
+            "longest_set": longest, "farthest": farthest}

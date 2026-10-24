@@ -17,6 +17,7 @@ regressions: []
 progressions: []
 substitutes: []
 knowledge_refs: []
+measurement: duration
 status: draft
 _provenance:
   name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话
