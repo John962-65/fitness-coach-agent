@@ -1,7 +1,8 @@
 // API 客户端：错误统一为 ApiError（status + 人可读 message + details 列表）
 import type {
-  ApproachRevision, ApproachView, Checkin, ExerciseDetail, ExerciseState,
-  ExerciseSummary, PlanOp, PlanResponse, Profile, Proposal, TodayBrief, Trial,
+  ApproachRevision, ApproachView, Checkin, Consultation, ExerciseDetail,
+  ExerciseState, ExerciseSummary, PlanOp, PlanResponse, PlanRevision, Profile,
+  Proposal, TodayBrief, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -133,6 +134,14 @@ export const api = {
       `/users/${uid}/changes/${proposalId}/confirm`, { message }),
 
   trials: (uid: string) => req<{ trials: Trial[] }>(`/users/${uid}/trials`),
+
+  consultations: (uid: string, limit = 5) =>
+    req<{ consultations: Consultation[] }>(`/users/${uid}/consultations?limit=${limit}`),
+  planRevisions: (uid: string) =>
+    req<{ revisions: PlanRevision[] }>(`/users/${uid}/plan/revisions`),
+  restorePlanVersion: (uid: string, version: number, reason: string) =>
+    post<{ plan_id: number; plan_version: number; restored_from: number }>(
+      `/users/${uid}/plan/revisions/${version}/restore`, { reason }),
   chat: (uid: string, message: string) =>
     post<{ user_id: string; reply: string }>(`/users/${uid}/chat`, { message }),
 }

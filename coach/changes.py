@@ -247,6 +247,59 @@ def _apply(db, user_id, prepared, proposal_id, source, reason) -> dict:
     return _apply_plan(db, user_id, prepared, proposal_id, source, reason)
 
 
+def restore_plan_version(db, user_id: str, version: int, reason: str = "") -> dict:
+    """恢复历史计划版本（M2 撤销闭环）：复制旧版本内容为新版本提交。
+
+    与手动编辑同一套安全门：隔离/医疗暂停期拒绝；base 乐观锁用当前
+    生效计划 id；旧 pending 建议一并作废。
+    """
+    profile = db.get_existing_profile(user_id)
+    if not profile:
+        raise ProposalRejected(["用户不存在或尚未建档"])
+    errors: list[str] = []
+    fence = profile.get("plan_fence")
+    if fence:
+        errors.append(f"计划已隔离（{fence.get('reason', '未知原因')}）：恢复被拒绝")
+    if not training_permission(profile).allows_prescription:
+        errors.append("医疗许可不允许训练处方，恢复被拒绝")
+    record = db.get_active_plan_record(user_id)
+    old = db.get_plan_by_version(user_id, version)
+    if not record or not old:
+        raise ProposalRejected(["当前没有生效计划或目标版本不存在"])
+    if errors:  # 安全门优先于同版本等常规检查
+        raise ProposalRejected(errors)
+    if old["id"] == record["id"]:
+        raise ProposalRejected([f"v{version} 已是当前生效版本"])
+
+    content = copy.deepcopy(old["content"])
+    content["adjust_action"] = "restore"
+    content["adjust_reason"] = reason or f"恢复计划 v{version}"
+    approach = db.get_approach(user_id)
+    if approach:
+        content["approach_revision"] = approach.get("revision")
+    with db.conn:
+        if not db.conn.in_transaction:
+            db.conn.execute("BEGIN IMMEDIATE")
+        current = db.conn.execute(
+            "SELECT id FROM plans WHERE user_id=? AND active=1", (user_id,)).fetchone()
+        if not current or current["id"] != record["id"]:
+            raise ProposalRejected(["计划已被其他修改更新，请重试"])
+        db.conn.execute("UPDATE plans SET active=0 WHERE user_id=?", (user_id,))
+        new_version = db.conn.execute(
+            "SELECT COALESCE(MAX(version),0)+1 FROM plans WHERE user_id=?",
+            (user_id,)).fetchone()[0]
+        cur = db.conn.execute(
+            "INSERT INTO plans(user_id, version, content, active, created_at)"
+            " VALUES(?,?,?,1,?)",
+            (user_id, new_version, json.dumps(content, ensure_ascii=False), _now()))
+        profile["pending_adjustments"] = []
+        db.conn.execute("UPDATE users SET profile=? WHERE user_id=?",
+                        (json.dumps(profile, ensure_ascii=False), user_id))
+    return {"target": "plan", "plan_id": cur.lastrowid, "plan_version": new_version,
+            "restored_from": version,
+            "changes": [f"计划恢复自 v{version}（{content['adjust_reason']}）"]}
+
+
 def submit_manual(db, user_id: str, target: str, operations,
                   reason: str, base_version) -> dict:
     """手动修改：校验 → 暂存提案（审计）→ 单事务应用。失败时提案记 rejected。"""
@@ -277,12 +330,14 @@ def stage_ai(db, user_id: str, target: str, operations, reason: str,
             "warnings": prepared.get("warnings", [])}
 
 
-def confirm_proposal(db, user_id: str, proposal_id: str, message: str) -> dict:
+def confirm_proposal(db, user_id: str, proposal_id: str, message: str,
+                     already_recorded: bool = False) -> dict:
     """用户确认 AI 提案：语义门（同意/拒绝/含糊）→ 引用消歧 → 重校验 → 提交。
 
-    边界：API 场景下确认消息即用户最新发言（由客户端传入并留痕入 messages）；
-    "不得同轮自批"在 agent 对话流中由 created_message_id 跨轮检查保证，
-    这里要求确认消息必须是提案暂存之后的新用户消息。
+    边界：API 场景确认消息由客户端传入并在此留痕入库；agent 对话场景
+    本轮用户原话已由 chat() 落库，传 already_recorded=True 避免重复记录。
+    "不得同轮自批"由 created_message_id 跨轮检查保证：确认消息必须是
+    提案暂存之后的新用户消息。
     """
     proposal = db.get_proposal(user_id, proposal_id)
     if not proposal:
@@ -313,7 +368,11 @@ def confirm_proposal(db, user_id: str, proposal_id: str, message: str) -> dict:
             "当前有多条待确认提案，请在消息中注明要确认的提案 ID："
             + "、".join(p["id"] for p in pending)])
 
-    mid = db.add_message(user_id, "user", text)  # 确认原话留痕
+    if already_recorded:
+        # 对话场景：本轮原话已在库，直接作为最新用户消息依据
+        mid = db.latest_user_message_id(user_id)
+    else:
+        mid = db.add_message(user_id, "user", text)  # 确认原话留痕
     created = proposal.get("created_message_id")
     if isinstance(created, int) and mid <= created:
         db.decide_proposal(user_id, proposal_id, "rejected",

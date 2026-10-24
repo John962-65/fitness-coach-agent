@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS checkin_submissions (
     created_at  TEXT NOT NULL,
     PRIMARY KEY (user_id, submission_id)
 );
+CREATE TABLE IF NOT EXISTS agent_consultations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    question    TEXT NOT NULL,          -- 用户原话（M2：主教练咨询的原始问题）
+    specialists TEXT NOT NULL,          -- JSON：本轮咨询的专业 Agent 列表
+    advices     TEXT NOT NULL,          -- JSON：结构化 AgentAdvice（含知识依据）
+    created_at  TEXT NOT NULL
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -687,8 +695,9 @@ class Database:
 
     def list_proposals(self, user_id: str, status: str | None = None,
                        limit: int = 20) -> list[dict]:
-        sql = ("SELECT id, target, source, reason, status, base_version, result,"
-               " created_at, decided_at FROM change_proposals WHERE user_id=?")
+        sql = ("SELECT id, target, source, reason, status, base_version,"
+               " operations, result, created_at, decided_at"
+               " FROM change_proposals WHERE user_id=?")
         params: list = [user_id]
         if status:
             sql += " AND status=?"
@@ -700,6 +709,7 @@ class Database:
         for r in rows:
             d = dict(r)
             d["base_version"] = json.loads(d["base_version"])
+            d["operations"] = json.loads(d["operations"])
             if d.get("result"):
                 d["result"] = json.loads(d["result"])
             out.append(d)
@@ -734,3 +744,46 @@ class Database:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    # ---- agent_consultations（M2：多智能体咨询留痕，可追溯依据）----
+    def add_consultation(self, user_id: str, question: str,
+                         specialists: list, advices: list) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO agent_consultations(user_id, question, specialists,"
+            " advices, created_at) VALUES(?,?,?,?,?)",
+            (user_id, question[:500], json.dumps(specialists, ensure_ascii=False),
+             json.dumps(advices, ensure_ascii=False), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_consultations(self, user_id: str, limit: int = 5) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, question, specialists, advices, created_at"
+            " FROM agent_consultations WHERE user_id=? ORDER BY id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return [{"id": r["id"], "question": r["question"],
+                 "specialists": json.loads(r["specialists"]),
+                 "advices": json.loads(r["advices"]), "at": r["created_at"]}
+                for r in rows]
+
+    def get_plan_by_version(self, user_id: str, version: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT id, content FROM plans WHERE user_id=? AND version=?",
+            (user_id, version)).fetchone()
+        return ({"id": row["id"], "content": json.loads(row["content"])} if row else None)
+
+    def list_plan_versions(self, user_id: str, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, version, active, created_at, content FROM plans"
+            " WHERE user_id=? ORDER BY version DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        out = []
+        for r in rows:
+            content = json.loads(r["content"])
+            out.append({"id": r["id"], "version": r["version"],
+                        "active": bool(r["active"]), "at": r["created_at"],
+                        "action": content.get("adjust_action"),
+                        "reason": content.get("adjust_reason"),
+                        "template": content.get("template"),
+                        "days": [d.get("day") for d in content.get("schedule", [])]})
+        return out

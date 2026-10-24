@@ -438,3 +438,61 @@ def test_access_token_guard_on_non_loopback_host(tmp_path, monkeypatch):
                             cwd=str(importlib.import_module("pathlib").Path(".").resolve()))
     assert result.returncode != 0
     assert "API_ACCESS_TOKEN" in result.stderr
+
+
+# ---- M2：咨询留痕 / 计划版本历史与恢复 / 提案操作预览 ----
+
+def test_consultations_endpoint_empty_and_via_chat(client):
+    c, app = client
+    assert c.get("/api/users/api_user/consultations").json() == {"consultations": []}
+    body = c.post("/api/users/api_user/chat", json={"message": "蛋白粉怎么选"}).json()
+    assert "已咨询专家" in body["reply"] and "营养" in body["reply"]
+    rows = c.get("/api/users/api_user/consultations").json()["consultations"]
+    assert rows[0]["specialists"] == ["nutrition"]
+    assert rows[0]["advices"][0]["options"]                # 结构化建议可追溯
+
+
+def test_plan_revisions_list_and_restore(client):
+    c, _ = client
+    plan = c.get("/api/users/api_user/plan").json()
+    day = plan["content"]["schedule"][0]["day"]
+    # v2：改名一天
+    edited = c.post("/api/users/api_user/plan/edits", json={
+        "operations": [{"op": "rename_day", "day": day, "new_name": "推日"}],
+        "reason": "改名", "base_version": plan["base_version"]}).json()
+    assert edited["plan_version"] == 2
+    revs = c.get("/api/users/api_user/plan/revisions").json()["revisions"]
+    assert [r["version"] for r in revs] == [2, 1]
+    assert revs[0]["action"] == "manual_edit" and revs[1]["active"] is False
+    # 恢复 v1 → v3，内容回到原名
+    restored = c.post("/api/users/api_user/plan/revisions/1/restore",
+                      json={"reason": "还是原名好"}).json()
+    assert restored["plan_version"] == 3 and restored["restored_from"] == 1
+    current = c.get("/api/users/api_user/plan").json()
+    assert current["content"]["schedule"][0]["day"] == day
+    # 恢复当前版本 → 422
+    assert c.post("/api/users/api_user/plan/revisions/3/restore",
+                  json={"reason": ""}).status_code == 422
+
+
+def test_plan_restore_blocked_when_fenced(client):
+    c, app = client
+    p = app.state.db.get_existing_profile("api_user")
+    p["plan_fence"] = {"reason": "E2E", "safety_flag_ids": []}
+    app.state.db.save_profile("api_user", p)
+    resp = c.post("/api/users/api_user/plan/revisions/1/restore",
+                  json={"reason": ""})
+    assert resp.status_code == 422 and "隔离" in resp.json()["detail"]["error"]
+
+
+def test_pending_proposals_expose_operations_for_preview(client):
+    c, _ = client
+    c.post("/api/users/api_user/approach/initialize")
+    staged = c.post("/api/users/api_user/changes/ai", json={
+        "target": "approach",
+        "operations": [{"op": "set_dimension", "dimension": "structure",
+                        "value": {"value": "full_body"}}],
+        "reason": "建议全身", "base_version": {"approach_revision": 1}}).json()
+    listing = c.get("/api/users/api_user/changes", params={"status": "pending"}).json()
+    prop = next(p for p in listing["proposals"] if p["id"] == staged["proposal_id"])
+    assert prop["operations"][0]["dimension"] == "structure"   # 前端预览数据

@@ -197,6 +197,42 @@ class LLMClient:
                     target = "80_troubleshooting/fat_loss_plateau.md"
                 return self._call("load_knowledge", {"path": target})
 
+            # M2：协商改分化 → 提交待确认提案（FAKE 场景，E2E 用）
+            if "propose_change" in names:
+                structure = None
+                for word, value in (("上下肢", "upper_lower"), ("全身", "full_body"),
+                                     ("推拉腿", "ppl")):
+                    if word in last_user and "改" in last_user:
+                        structure = value
+                        break
+                if structure:
+                    return self._call("propose_change", {
+                        "target": "approach",
+                        "operations": [{"op": "set_dimension",
+                                        "dimension": "structure",
+                                        "value": {"value": structure,
+                                                  "note": "与用户协商"}}],
+                        "reason": f"用户想把训练结构改为{structure}"})
+
+            # M2：专业问题 → 咨询专家（确定性路由同后端）
+            if "consult_specialists" in names:
+                from .agents import route_question
+                if route_question(last_user):
+                    return self._call("consult_specialists", {"question": last_user})
+
+        if called_tool:
+            tool_texts = [m.get("content") for m in messages[last_user_idx + 1:]
+                          if m.get("role") == "tool"]
+            joined = "\n".join(str(t) for t in tool_texts)
+            if '"consulted"' in joined:
+                labels = []
+                for m in re.findall(r'"label":\s*"([^"]+)"', joined):
+                    if m not in labels:
+                        labels.append(m)
+                return {"content": "[FAKE_LLM] 已咨询专家：" + "、".join(labels)
+                        + "。候选方案与适用条件已注入，分歧并列由用户选择。",
+                        "tool_calls": []}
+
         return {
             "content": f"[FAKE_LLM] 收到：{last_user}（已结合档案与知识库生成回复）",
             "tool_calls": [],

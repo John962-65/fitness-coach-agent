@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { Card, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
 import { useApp } from '../store'
-import { PlanResponse } from '../types'
+import { PlanResponse, PlanRevision } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -11,7 +11,15 @@ export default function Training() {
   const uid = useApp((s) => s.uid)
   const [plan, setPlan] = useState<PlanResponse | null>(null)
   const [error, setError] = useState('')
+  const [versions, setVersions] = useState<PlanRevision[] | null>(null)
+  const [showVersions, setShowVersions] = useState(false)
+  const [restoreNote, setRestoreNote] = useState('')
   const navigate = useNavigate()
+
+  const loadVersions = useCallback(() => {
+    api.planRevisions(uid).then((r) => setVersions(r.revisions)).catch(() => setVersions([]))
+  }, [uid])
+  useEffect(() => { loadVersions() }, [loadVersions])
 
   const [offlineMode, setOfflineMode] = useState(false)
   useEffect(() => {
@@ -102,6 +110,40 @@ export default function Training() {
           )}
         </Card>
       ))}
+
+      <Card title="计划版本历史"
+            right={<button className="text-xs text-accent underline"
+                           onClick={() => setShowVersions((v) => !v)}>
+              {showVersions ? '收起' : `展开（${versions?.length ?? '…'}）`}
+            </button>}>
+        {showVersions && (
+          <ul className="space-y-1.5">
+            {(versions || []).map((v) => (
+              <li key={v.id} className="flex items-center justify-between rounded-lg bg-neutral-800/60 p-2 text-xs">
+                <div>
+                  <p><b>v{v.version}</b> · {v.action || '生成'}
+                    {v.active && <span className="ml-1 text-accent">（当前）</span>}</p>
+                  <p className="text-neutral-500">{v.reason || v.template} · {v.at?.slice(0, 10)}</p>
+                </div>
+                {!v.active && (
+                  <button className="shrink-0 text-accent underline"
+                          onClick={() => {
+                            setRestoreNote('')
+                            api.restorePlanVersion(uid, v.version, `网页恢复计划 v${v.version}`)
+                              .then((r) => {
+                                setRestoreNote(`已恢复 v${v.version} 为 v${r.plan_version}`)
+                                api.plan(uid).then(setPlan)
+                                loadVersions()
+                              })
+                              .catch((e) => setRestoreNote(e.message))
+                          }}>恢复</button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {restoreNote && <p className="mt-2 text-center text-xs text-accent">{restoreNote}</p>}
+      </Card>
 
       <Card title="计划备注">
         <ul className="list-disc space-y-1 pl-4 text-xs text-neutral-400">

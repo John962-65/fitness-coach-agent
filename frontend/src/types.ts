@@ -166,9 +166,36 @@ export interface Proposal {
   reason: string
   status: string
   base_version: Record<string, unknown>
+  operations: Record<string, unknown>[]
   result: Record<string, unknown> | null
   created_at: string
   decided_at: string | null
+}
+
+export interface Consultation {
+  id: number
+  question: string
+  specialists: string[]
+  advices: {
+    specialist: string
+    label: string
+    problem: string
+    options: { title: string; detail: string }[]
+    knowledge_basis: string[]
+    conditions: string[]
+  }[]
+  at: string
+}
+
+export interface PlanRevision {
+  id: number
+  version: number
+  active: boolean
+  at: string
+  action: string | null
+  reason: string | null
+  template: string
+  days: (string | undefined)[]
 }
 
 export interface Trial {

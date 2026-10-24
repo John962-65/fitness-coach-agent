@@ -2,7 +2,34 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { Card, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
 import { useApp } from '../store'
-import { ChatMsg, Proposal } from '../types'
+import { ChatMsg, Consultation, Proposal } from '../types'
+
+// 操作预览：把统一协议的类型化操作转成一行人话（2.0 §4.2"展示方案依据与取舍"）
+export function opSummary(op: Record<string, unknown>): string {
+  const day = op.day ? String(op.day) : ''
+  const ex = op.exercise ? String(op.exercise) : ''
+  const idx = op.index !== undefined ? `#${Number(op.index) + 1}` : ''
+  switch (op.op) {
+    case 'add_exercise': return `${day} 新增 ${ex}（${op.sets}×${op.reps}）`
+    case 'remove_exercise': return `${day} 移除 ${ex || idx}`
+    case 'replace_exercise': return `${day} ${idx || ex} 替换为 ${op.exercise}`
+    case 'reorder_exercise': return `${day} 第${Number(op.from) + 1}位 ↔ 第${Number(op.to) + 1}位`
+    case 'edit_set_prescription': {
+      const parts = ['sets', 'reps', 'weight_kg', 'note']
+        .filter((k) => op[k] !== undefined).map((k) => `${k}=${op[k]}`)
+      return `${day} ${idx} 处方：${parts.join('，')}`
+    }
+    case 'rename_day': return `${day} 改名 ${op.new_name}`
+    case 'set_dimension': {
+      const v = op.value as Record<string, unknown> | undefined
+      return `训练方式·${op.dimension}：${v ? JSON.stringify(v.value ?? v) : ''}`
+    }
+    case 'upsert_exercise_choice': return `动作选择 ${op.exercise_id}`
+    case 'remove_exercise_choice': return `移除动作选择 ${op.exercise_id}`
+    case 'upsert_execution_choice': return `执行选择 ${op.exercise_id}`
+    default: return JSON.stringify(op).slice(0, 60)
+  }
+}
 
 export default function Coach() {
   const uid = useApp((s) => s.uid)
@@ -11,6 +38,7 @@ export default function Coach() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [proposals, setProposals] = useState<Proposal[] | null>(null)
+  const [consultations, setConsultations] = useState<Consultation[] | null>(null)
   const [proposalNote, setProposalNote] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -18,6 +46,8 @@ export default function Coach() {
     api.changes(uid).then((r) =>
       setProposals(r.proposals.filter((p) => p.status === 'pending' && p.source === 'ai')))
       .catch(() => setProposals([]))
+    api.consultations(uid).then((r) => setConsultations(r.consultations))
+      .catch(() => setConsultations([]))
   }, [uid])
   useEffect(() => { loadProposals() }, [loadProposals])
   useEffect(() => { bottomRef.current?.scrollIntoView() }, [messages])
@@ -62,6 +92,11 @@ export default function Coach() {
             <Card key={p.id}
                   title={<span><Tag tone="blue">AI 建议</Tag> <span className="ml-1">{p.target === 'plan' ? '计划修改' : '训练方式调整'}</span></span>}>
               <p className="text-sm text-neutral-300">{p.reason}</p>
+              <ul className="mt-1.5 space-y-0.5 text-xs text-neutral-400">
+                {(p.operations || []).map((op, i) => (
+                  <li key={i}>· {opSummary(op)}</li>
+                ))}
+              </ul>
               <p className="mt-1 text-xs text-neutral-500">{p.id.slice(0, 12)}… · {p.created_at.slice(0, 10)}</p>
               <div className="mt-2 flex gap-2">
                 <button className="btn-primary flex-1 !py-2" onClick={() => confirm(p, true)}>同意</button>
@@ -70,6 +105,22 @@ export default function Coach() {
             </Card>
           ))}
           {proposalNote && <p className="text-center text-xs text-accent">{proposalNote}</p>}
+        </div>
+      )}
+
+      {consultations && consultations.length > 0 && (
+        <div className="card mb-2 text-xs">
+          <p className="mb-1 font-semibold text-neutral-300">最近咨询的专家</p>
+          {consultations.slice(0, 2).map((c) => (
+            <div key={c.id} className="mb-1.5 text-neutral-400">
+              <p className="truncate">「{c.question}」</p>
+              <p className="text-neutral-500">
+                {c.advices.map((a) => a.label).join('、')}
+                {c.advices.some((a) => a.options.length > 0)
+                  ? ` · ${c.advices.reduce((n, a) => n + a.options.length, 0)} 个候选方案` : ''}
+              </p>
+            </div>
+          ))}
         </div>
       )}
 

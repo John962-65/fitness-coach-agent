@@ -121,6 +121,74 @@ FINISH_ONBOARDING_TOOL = {
     },
 }
 
+CONSULT_SPECIALISTS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "consult_specialists",
+        "description": (
+            "用户提出训练安排/营养/恢复/动作技术/知识比较类专业问题时调用："
+            "系统按问题内容确定性路由到相关专家（训练科学/营养/恢复/动作/知识研究），"
+            "返回结构化建议（问题/事实/知识依据/候选方案/适用条件/风险/需确认事项）。"
+            "简单寒暄和打卡汇报不要调用。多个专家意见并列时如实呈现取舍，不裁决。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "用户的原始问题"},
+            },
+            "required": ["question"],
+        },
+    },
+}
+
+PROPOSE_CHANGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_change",
+        "description": (
+            "与用户协商后，把对训练方式或训练计划的结构化修改提交为**待确认提案**。"
+            "operations 与网页端统一修改协议一致（approach: set_dimension/"
+            "upsert_exercise_choice/...；plan: add_exercise/replace_exercise/"
+            "edit_set_prescription/rename_day/...）。提案只进入待确认状态，"
+            "必须等用户明确同意后才生效（网页提案卡或下一轮对话确认）——"
+            "本工具不会直接修改任何数据，调用后绝不能声称已改。"
+            "规则引擎的加重/卸载类调整仍走 apply_adjustment，不要用本工具。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "enum": ["approach", "plan"]},
+                "operations": {
+                    "type": "array", "description": "类型化操作列表（非自由 JSON 补丁）",
+                    "items": {"type": "object"},
+                },
+                "reason": {"type": "string", "description": "修改理由（展示给用户）"},
+            },
+            "required": ["target", "operations", "reason"],
+        },
+    },
+}
+
+CONFIRM_PROPOSAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "confirm_proposal",
+        "description": (
+            "用户在对话中明确同意某个待确认提案后调用（须是提案提交之后的"
+            "下一轮用户消息，同轮自批会被拒绝）。系统会用本轮用户原话做"
+            "语义确认（同意/拒绝/含糊），拒绝或含糊都不会执行。传 propose_change"
+            "返回的 proposal_id。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string"},
+            },
+            "required": ["proposal_id"],
+        },
+    },
+}
+
 SAVE_CHECKIN_TOOL = {
     "type": "function",
     "function": {
@@ -583,6 +651,12 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
     纠错要附本轮原话。修订后旧调整建议作废；不要声称已经自动改变训练计划。
 14. 单次可用时间变化写 resources.session_minutes；单纯喜欢/讨厌也要记录 preference，
     不必等到疼痛才调整。收到重排建议后解释时间取舍和选择理由，确认后再执行。
+15. 专业问题（训练安排/营养/恢复/动作技术/知识比较）先调 consult_specialists 获取
+    专家结构化建议再回答，引用其候选方案与适用条件；专家间分歧并列呈现，不裁决。
+    与用户协商出明确修改方案后，调 propose_change 提交待确认提案（target/operations/
+    reason）；提案在用户同意前不生效。用户在网页提案卡确认，或在对话中明确同意后
+    （下一轮）调用 confirm_proposal 执行——同轮提案同轮确认会被系统拒绝；
+    在生效前绝不能声称"已修改"。
 """
 
 # R3：输出侧数字承诺兜底（"30 天瘦 5 斤"类）
@@ -1058,6 +1132,9 @@ class CoachAgent:
                 GET_PRE_TRAINING_BRIEF_TOOL,
                 START_PERSONAL_TRIAL_TOOL,
                 END_PERSONAL_TRIAL_TOOL,
+                CONSULT_SPECIALISTS_TOOL,
+                PROPOSE_CHANGE_TOOL,
+                CONFIRM_PROPOSAL_TOOL,
             ]
             self._refresh_system_prompt()
 
@@ -1504,6 +1581,70 @@ class CoachAgent:
                 return self._correct_checkin(args)
             except (ValueError, TypeError, IndexError) as e:
                 return f"打卡未修改：{e}"
+
+        if name == "consult_specialists":
+            from .agents import consult_specialists as _consult
+            question = str(args.get("question") or self.messages[-1].get("content") or "")
+            result = _consult(self.db, self.llm, self.user_id, question)
+            if not result["consulted"]:
+                return ("本轮未咨询专家（问题简单或不属于专业类别），"
+                        "由你直接回答；不要把此结果当作专家建议。")
+            return json.dumps(result, ensure_ascii=False)
+
+        if name == "propose_change":
+            from .changes import ProposalRejected as _PR, stage_ai as _stage
+            target = args.get("target")
+            operations = args.get("operations")
+            reason = str(args.get("reason") or "")
+            if target == "approach":
+                approach = self.db.get_approach(self.user_id)
+                if not approach:
+                    return ("尚未初始化训练方式：先和用户确认，"
+                            "由用户在网页「我的」页从当前计划初始化后再提案。")
+                base = {"approach_revision": approach["revision"]}
+            elif target == "plan":
+                rec = self.db.get_active_plan_record(self.user_id)
+                if not rec:
+                    return "当前没有生效计划，无法提交计划修改提案。"
+                base = {"plan_id": rec["id"], "plan_version": rec["version"]}
+            else:
+                return "target 必须是 approach 或 plan。"
+            try:
+                staged = _stage(self.db, self.user_id, target, operations, reason,
+                                base,
+                                created_message_id=self.db.latest_user_message_id(self.user_id))
+            except _PR as e:
+                return f"提案未创建：{e}"
+            return (f"提案已提交待确认 [{staged['proposal_id']}]（目标：{target}）。"
+                    "向用户说明修改内容、理由与取舍；在用户明确同意之前不生效——"
+                    "用户可在网页提案卡确认，或在**下一轮**对话明确同意后"
+                    "调用 confirm_proposal 执行。绝不能声称已修改。")
+
+        if name == "confirm_proposal":
+            from .changes import (ProposalRejected as _PR,
+                                  confirm_proposal as _confirm)
+            pid = str(args.get("proposal_id") or "")
+            if not pid:
+                pending = self.db.list_proposals(self.user_id, status="pending")
+                listing = "、".join(p["id"] for p in pending) or "（无）"
+                return f"需要 proposal_id；当前待确认提案：{listing}"
+            # 确认依据=本轮用户原话（chat() 已落库），语义门与跨轮检查在协议内
+            row = self.db.conn.execute(
+                "SELECT content FROM messages WHERE user_id=? AND role='user'"
+                " ORDER BY id DESC LIMIT 1", (self.user_id,)).fetchone()
+            turn_text = row["content"] if row else ""
+            try:
+                result = _confirm(self.db, self.user_id, pid, turn_text,
+                                  already_recorded=True)
+            except _PR as e:
+                return f"提案未执行：{e}"
+            if result["status"] == "pending":
+                return ("用户表述含糊或仍在考虑，保持待确认；"
+                        "向用户复述提案内容，等明确答复。")
+            if result["status"] == "rejected":
+                return "用户已拒绝该提案，提案关闭；未做任何修改。"
+            return (f"提案已生效 [{pid}]：{json.dumps(result, ensure_ascii=False)[:300]}。"
+                    "向用户确认结果并说明后续影响。")
 
         if name == "get_plan":
             plan = self._enforce_medical_permission()

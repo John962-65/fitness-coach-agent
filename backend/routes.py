@@ -301,6 +301,31 @@ def register_routes(app) -> None:
         except ProposalRejected as e:
             raise _reject(e) from None
 
+    # ---- M2：咨询留痕 / 计划版本历史与恢复 ----
+
+    @api.get("/users/{uid}/consultations")
+    def consultations(uid: str, request: Request,
+                      limit: int = Query(5, ge=1, le=20)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"consultations": db.list_consultations(uid, limit)}
+
+    @api.get("/users/{uid}/plan/revisions")
+    def plan_revisions(uid: str, request: Request,
+                       limit: int = Query(20, ge=1, le=100)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"revisions": db.list_plan_versions(uid, limit)}
+
+    @api.post("/users/{uid}/plan/revisions/{version}/restore")
+    def plan_restore(uid: str, version: int, request: Request,
+                     reason: str = Body("", embed=True)):
+        from coach.changes import ProposalRejected as _PR, restore_plan_version
+        try:
+            return restore_plan_version(request.app.state.db, uid, version, reason)
+        except _PR as e:
+            raise _reject(e) from None
+
     # ---- 计划 ----
 
     @api.get("/users/{uid}/plan")
