@@ -28,11 +28,13 @@ def _detect_legacy(video_path: str, sample_every: int) -> list[list[dict]]:
     frames: list[list[dict]] = []
     cap = cv2.VideoCapture(video_path)
     i = 0
+    total_sampled = 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         if i % sample_every == 0:
+            total_sampled += 1
             res = pose.process(frame)
             if res.pose_landmarks:
                 frames.append([
@@ -91,15 +93,18 @@ def extract_keypoints(video_path: str, sample_every: int = 2) -> list[list[dict]
 
     返回 [{index: {x, y, visibility}}, ...]；按 mediapipe 版本自动选 API。
     """
-    frames, _fps = extract_keypoints_indexed(video_path, sample_every)
+    frames, _fps, _total = extract_keypoints_indexed(video_path, sample_every)
     return [kp for _idx, kp in frames]
 
 
 def extract_keypoints_indexed(video_path: str,
-                              sample_every: int = 2) -> tuple[list[tuple[int, list[dict]]], float]:
-    """M4：带原始帧索引与 fps 的提取（时间轴标注需要把帧号换算成秒）。
+                              sample_every: int = 2
+                              ) -> tuple[list[tuple[int, list[dict]]], float, int]:
+    """M4/M5.2：带原始帧索引与 fps 的提取（时间轴标注需要把帧号换算成秒）。
 
-    返回 ([(frame_idx, keypoints)], fps)；识别不到人体的帧不计入。
+    返回 ([(frame_idx, keypoints)], fps, total_frames_read)：
+    total_frames_read 是读取到的采样帧总数（含未检测到人体的帧），
+    用于计算检测覆盖率（大量失败帧 ≠ 有效分析，P1 质量门）。
     """
     try:
         import cv2
@@ -132,11 +137,13 @@ def extract_keypoints_indexed(video_path: str,
             enable_segmentation=False, min_detection_confidence=0.5)
 
     i = 0
+    total_sampled = 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         if i % sample_every == 0:
+            total_sampled += 1
             if use_tasks:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -153,7 +160,7 @@ def extract_keypoints_indexed(video_path: str,
                     for lm in lms]))
         i += 1
     cap.release()
-    return out, fps
+    return out, fps, max(total_sampled, 1)
 
 
 def analyze_video(video_path: str, exercise: str, view: str = "side") -> dict:

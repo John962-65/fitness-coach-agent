@@ -113,12 +113,17 @@ def test_proposal_approve_enters_library_and_plan(c51, tmp_path):
                          "id": ex_id_req})
         assert r.status_code == 200, r.text
         ex_id = r.json()["exercise_id"]
-        # 1) library 运行时可见
+        # 1) M5.2：入本人自定义库（不写全局 yaml）
+        from coach.exercise_service import get_exercise, resolve
         from coach.exercises import library
-        assert library.get(ex_id) and library.normalize("壶铃摆铃")[0] == ex_id
-        # 2) 统一检索/动作搜索可见
-        found = c.get("/api/exercises", params={"q": "壶铃摆铃"}).json()
-        assert any(e["id"] == ex_id for e in found["exercises"])
+        assert get_exercise(db, "u", ex_id)
+        assert library.get(ex_id) is None
+        assert not (library.root / f"{ex_id}.yaml").exists()
+        assert resolve(db, "u", "壶铃摆铃")[0] == ex_id
+        # 2) 动作搜索可见（M5.2：需带 uid 才含本人自定义）
+        found = c.get("/api/exercises", params={"q": "壶铃摆铃", "uid": "u"}).json()
+        assert any(e["id"] == ex_id and e["scope"] == "user"
+                   for e in found["exercises"])
         # 3) 可加入计划（draft 披露由既有机制承担）
         plan = c.get("/api/users/u/plan").json()
         day = plan["content"]["schedule"][0]["day"]
@@ -128,13 +133,10 @@ def test_proposal_approve_enters_library_and_plan(c51, tmp_path):
             "reason": "新动作入库试用",
             "base_version": plan["base_version"]})
         assert added.status_code == 200, added.text
-        # 4) 库校验器仍全绿（生成 YAML 合法）
-        from tools.validate import validate
-        assert validate(library.root) == []
+        # 4) 全局库文件未被触碰（P0-1）
+        assert not (library.root / f"{ex_id_req}.yaml").exists()
     finally:
-        # 清理生成的测试动作文件,不影响其他测试
-        (library.root / f"{ex_id_req}.yaml").unlink(missing_ok=True)
-        library.reload()
+        pass  # 自定义动作存 SQLite(临时库),无文件需要清理
 
 
 def test_link_rejects_unknown_exercise(c51, tmp_path):
@@ -213,17 +215,17 @@ def test_quality_gate_low_valid_ratio(monkeypatch):
     frames = [squat_like(0.2)] * 6 + [empty_frame()] * 6  # 一半帧无关键点
     idx, fps = _indexed(frames)
     monkeypatch.setattr("coach.vision.extract_keypoints_indexed",
-                        lambda p, s=2: (idx, fps))
+                        lambda p, s=2: (idx, fps, len(idx)))
     result = process_analysis("barbell_back_squat", "v.mp4", "side")
     assert result["frames"] == 12
     assert result["valid_ratio"] == 0.5
     low = [f for f in frames[:6]]
     idx2, _ = _indexed(low + [empty_frame()] * 9)  # 6/15=0.4
     monkeypatch.setattr("coach.vision.extract_keypoints_indexed",
-                        lambda p, s=2: (idx2, fps))
+                        lambda p, s=2: (idx2, fps, len(idx2)))
     low_result = process_analysis("barbell_back_squat", "v.mp4", "side")
     assert low_result["valid_ratio"] < 0.5
-    assert "有效帧比例" in low_result["note"]
+    assert "关键点完整率" in low_result["note"]
 
 
 def squat_like(hip_delta):

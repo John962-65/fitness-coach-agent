@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+
 import { ExerciseSummary } from '../types'
 import { ErrorBox, Spinner } from './Bits'
 
 // 动作选择器：搜索 + 肌群筛选。选择结果只给官方名，校验在后端。
-export default function ExercisePicker({ onPick, onClose }: {
+export default function ExercisePicker({ onPick, onClose, uid }: {
   onPick: (ex: ExerciseSummary) => void
   onClose: () => void
+  uid?: string
 }) {
   const [q, setQ] = useState('')
   const [muscle, setMuscle] = useState('')
@@ -18,8 +19,11 @@ export default function ExercisePicker({ onPick, onClose }: {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      api.exercises({ q, muscle })
-        .then((r) => setItems(r.exercises))
+      fetch(`/api/exercises?q=${encodeURIComponent(q)}${muscle ? `&muscle=${muscle}` : ''}` + (uid ? `&uid=${encodeURIComponent(uid)}` : ''), {
+        headers: localStorage.getItem('fc-access-token')
+          ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
+      })
+        .then((r) => r.json()).then((r) => setItems(r.exercises))
         .catch((e) => setError(e.message))
     }, 200)
     return () => clearTimeout(t)

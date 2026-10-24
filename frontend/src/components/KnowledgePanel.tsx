@@ -293,6 +293,12 @@ export function VideoImportPanel({ uid }: { uid: string }) {
   const [title, setTitle] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // M5.2 P0-3：三步上传（选视频→可选字幕→点解析），不再选择即传
+  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [subtitleFile, setSubtitleFile] = useState<File | null>(null)
+  const [manualFor, setManualFor] = useState<number | null>(null)
+  const [manual, setManual] = useState({ name: '', aliases: '', pattern: 'isolation' })
+  const [manualNote, setManualNote] = useState('')
 
   const load = useCallback(() => {
     fetch(`/api/users/${uid}/media/videos`, {
@@ -305,7 +311,8 @@ export function VideoImportPanel({ uid }: { uid: string }) {
   }, [uid])
   useEffect(() => { load() }, [load])
 
-  const upload = async (video: File, subtitle: File | null) => {
+  const upload = async (video: File | null, subtitle: File | null) => {
+    if (!video) { setNote('请先选择视频文件'); return }
     setBusy(true); setNote('')
     const form = new FormData()
     form.append('title', title || video.name)
@@ -332,7 +339,28 @@ export function VideoImportPanel({ uid }: { uid: string }) {
       const me = (list.assets as MediaAsset[]).find((a) => a.id === body.asset_id)
       if (me && me.status !== 'processing') { setNote(''); break }
     }
-    setBusy(false); load()
+    setBusy(false); setVideoFile(null); setSubtitleFile(null); load()
+  }
+
+  const createManualProposal = (assetId: number) => {
+    fetch(`/api/users/${uid}/media/${assetId}/manual-proposal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(localStorage.getItem('fc-access-token')
+          ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {}),
+      },
+      body: JSON.stringify({
+        name: manual.name,
+        aliases: manual.aliases.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
+        pattern: manual.pattern,
+      }),
+    }).then(async (r) => {
+      const body = await r.json()
+      if (!r.ok) { setManualNote(body.detail?.error || '创建失败'); return }
+      setManualNote(`提案 #${body.proposal_id} 已创建——在上方"新动作提案"卡审核入库`)
+      setManualFor(null); setManual({ name: '', aliases: '', pattern: 'isolation' })
+    })
   }
 
   const confirm = async (assetId: number, index: number, action: string) => {
@@ -355,16 +383,23 @@ export function VideoImportPanel({ uid }: { uid: string }) {
       <input className="input mb-2 text-sm" placeholder="视频标题（如：深蹲教学）"
              value={title} onChange={(e) => setTitle(e.target.value)} />
       <div className="space-y-1.5 text-sm">
-        <input type="file" disabled={busy} accept="video/mp4,video/webm,video/quicktime,.mkv"
-               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f, null) }} />
-        <input type="file" accept=".srt,.vtt"
-               onChange={(e) => {
-                 const sub = e.target.files?.[0]
-                 const v = (document.getElementById('vid-main') as HTMLInputElement)?.files?.[0]
-                 if (sub && v) upload(v, sub)
-               }} />
-        <input type="file" id="vid-main" accept="video/mp4,video/webm,video/quicktime,.mkv"
-               className="hidden" onChange={() => { /* 由上面两个入口触发 */ }} />
+        <div className="flex items-center gap-2">
+          <span className="w-10 shrink-0 text-xs text-neutral-500">① 视频</span>
+          <input type="file" disabled={busy} accept="video/mp4,video/webm,video/quicktime,.mkv"
+                 onChange={(e) => setVideoFile(e.target.files?.[0] || null)} />
+          {videoFile && <span className="shrink-0 text-xs text-accent">{videoFile.name}</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-10 shrink-0 text-xs text-neutral-500">② 字幕</span>
+          <input type="file" accept=".srt,.vtt" disabled={busy}
+                 onChange={(e) => setSubtitleFile(e.target.files?.[0] || null)} />
+          {subtitleFile && <span className="shrink-0 text-xs text-accent">{subtitleFile.name}</span>}
+        </div>
+        <button className="btn-primary w-full !py-2 text-xs"
+                disabled={busy || !videoFile}
+                onClick={() => upload(videoFile, subtitleFile)}>
+          ③ 开始解析{subtitleFile ? '（视频+字幕）' : '（无字幕，本地转写较慢）'}
+        </button>
       </div>
       <p className="mt-1 text-[11px] text-neutral-500">
         可选：先选字幕（srt/vtt）再选"字幕+视频"第二栏；无字幕时服务器本地转写（较慢）。
@@ -382,7 +417,35 @@ export function VideoImportPanel({ uid }: { uid: string }) {
           </div>
           {a.error && <p className="mt-1 text-xs text-red-400">{a.error}</p>}
           {a.status === 'ready' && (a.candidates.length === 0
-            ? <p className="mt-1 text-xs text-neutral-500">未识别到库内动作候选（可手动关联或忽略）</p>
+            ? (<div className="mt-1 text-xs">
+                 <p className="text-neutral-500">未识别到库内动作候选——可以手动创建新动作提案：</p>
+                 {manualFor === a.id ? (
+                   <div className="mt-1.5 space-y-1.5 rounded-lg bg-neutral-900/70 p-2">
+                     <input className="input !py-1.5 text-xs" placeholder="动作名称（必填）"
+                            value={manual.name}
+                            onChange={(e) => setManual({ ...manual, name: e.target.value })} />
+                     <input className="input !py-1.5 text-xs" placeholder="别名（顿号分隔，可选）"
+                            value={manual.aliases}
+                            onChange={(e) => setManual({ ...manual, aliases: e.target.value })} />
+                     <select className="input !py-1.5 text-xs" value={manual.pattern}
+                             onChange={(e) => setManual({ ...manual, pattern: e.target.value })}>
+                       {['squat','hinge','lunge','h_push','v_push','h_pull','v_pull','isolation','core','carry']
+                         .map((x) => <option key={x}>{x}</option>)}
+                     </select>
+                     <div className="flex gap-2">
+                       <button className="btn-primary flex-1 !py-1.5 text-xs"
+                               disabled={!manual.name.trim()}
+                               onClick={() => createManualProposal(a.id)}>创建提案</button>
+                       <button className="btn-ghost flex-1 !py-1.5 text-xs"
+                               onClick={() => setManualFor(null)}>取消</button>
+                     </div>
+                   </div>
+                 ) : (
+                   <button className="mt-1 text-accent underline"
+                           onClick={() => { setManualFor(a.id); setManualNote('') }}>手动创建动作提案</button>
+                 )}
+                 {manualNote && <p className="mt-1 text-accent">{manualNote}</p>}
+               </div>)
             : a.candidates.map((c, i) => (
               <div key={i} className="mt-1.5 rounded-lg bg-neutral-900/70 p-2 text-xs">
                 <p className="text-neutral-200">

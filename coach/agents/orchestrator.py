@@ -85,11 +85,11 @@ def _knowledge_context(db, user_id: str, question: str) -> tuple[str, list[dict]
             refs.append({"engine": engine, "ref": hit.get("ref"),
                          "provenance": hit.get("provenance"),
                          "title": hit.get("title")})
-            lines.append(f"[{engine}] {hit.get('title')}（来源:{hit.get('provenance')}）："
-                         f"{hit.get('snippet')}")
-    draft = (payload or {}).get("draft_matches")
-    if draft:
-        lines.append(f"[blogger_claims] 另有 {draft} 条草稿素材命中，审核通过前不得引用内容")
+            lines.append(f"[{engine}] {hit.get('ref')} {hit.get('title')}"
+                         f"（来源:{hit.get('provenance')}）：{hit.get('snippet')}")
+        draft = (payload or {}).get("draft_matches")   # M5.2 修复：循环内逐引擎读取
+        if draft:
+            lines.append(f"[{engine}] 另有 {draft} 条草稿命中，审核通过前不得引用内容")
     return "\n".join(lines[:12]), refs[:12]
 
 
@@ -106,12 +106,27 @@ def consult_specialists(db, llm, user_id: str, question: str) -> dict:
     context = _context_for(db, user_id, question)
     knowledge_text, knowledge_refs = _knowledge_context(db, user_id, question)
     if knowledge_text:
-        context += "\n\n# 相关知识检索命中（引用时保留出处；草稿来源不得当结论）\n" + knowledge_text
+        context += ("\n\n# 相关知识检索命中（citations 引用其 ref，形如 engine:ref；"
+                    "草稿来源不得当结论）\n" + knowledge_text)
+    valid_refs = {f"{r['engine']}:{r['ref']}" for r in knowledge_refs}
+    first_ref = next(iter(sorted(valid_refs)), "")
     advices = []
     for key in keys:  # 串行调用（单用户本地服务；并行化属后续优化）
-        advice = consult_one(llm, key, question, context)
+        advice = consult_one(llm, key, question, context, first_ref)
+        advice = _bind_citations(advice, valid_refs)
         advice["knowledge_refs"] = knowledge_refs
         advices.append(advice)
     combined = combine(advices)
     db.add_consultation(user_id, question, keys, combined["advices"])
     return {"consulted": keys, "knowledge_refs": knowledge_refs, **combined}
+
+
+def _bind_citations(advice: dict, valid_refs: set[str]) -> dict:
+    """证据绑定（P1）：每个 option 的 citations 校验属于本轮检索命中；
+    编造引用剔除；无任何合法引用的 option 标记 evidence='inferred'（推断）。
+    """
+    for opt in advice.get("options") or []:
+        kept = [c for c in (opt.get("citations") or []) if c in valid_refs]
+        opt["citations"] = kept
+        opt["evidence"] = "cited" if kept else "inferred"
+    return advice

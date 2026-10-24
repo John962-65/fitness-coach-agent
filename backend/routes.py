@@ -122,6 +122,19 @@ def _run_media_worker(app, fn, *args):
     return t
 
 
+def _load_aliases(raw) -> list:
+    import json as _json
+    if isinstance(raw, list):
+        return [str(a) for a in raw]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            v = _json.loads(raw)
+            return [str(a) for a in v] if isinstance(v, list) else []
+        except ValueError:
+            return []
+    return []
+
+
 def register_routes(app) -> None:
     api = APIRouter(prefix="/api")
 
@@ -566,7 +579,8 @@ def register_routes(app) -> None:
             exercise_id = str(payload.get("exercise_id") or cand.get("exercise_id") or "")
             if not exercise_id:
                 raise HTTPException(status_code=422, detail={"error": "缺少 exercise_id"})
-            if not library.get(exercise_id):  # M5.1 P1-2：不允许指向库外动作
+            from coach import exercise_service as _svc
+            if not _svc.get_exercise(db, uid, exercise_id):  # 内置或本人自定义
                 raise HTTPException(status_code=422,
                                     detail={"error": f"动作 {exercise_id} 不在动作库内"})
             media_dir = Path(asset["video_path"]).parent
@@ -603,71 +617,85 @@ def register_routes(app) -> None:
     @api.post("/users/{uid}/exercise-proposals/{proposal_id}/review")
     def exercise_proposal_review(uid: str, proposal_id: int, request: Request,
                                  payload: dict = Body(...)):
-        """M5.1 P1-2 入库闭环：审核通过 → 生成正式动作 YAML 入库
-        （status: draft，结构化属性未审核的既有纪律不变）→ library 运行时
-        reload → 可搜索/可加入计划；可选同时把提案依据片段关联到新动作。
+        """M5.2 P0-2 原子审核：pending 校验 → 冲突检查 → 插入 custom_exercises
+        → 读回确认 → 才提交 approved。任何失败保持提案 pending 并清理产物。
+        自定义动作只入 SQLite（本人可见），绝不写 exercises/ 目录（P0-1）。
         """
         import re as _re
-        import yaml as _yaml
+        from coach import exercise_service as _svc
         db = request.app.state.db
         _user_profile(db, uid)
-        proposals = [p for p in db.list_exercise_proposals(uid, status=None)
-                     if p["id"] == proposal_id]
-        if not proposals:
-            raise HTTPException(status_code=404, detail={"error": "提案不存在"})
-        proposal = proposals[0]
         decision = payload.get("decision")
         if decision not in ("approve", "reject"):
             raise HTTPException(status_code=400,
                                 detail={"error": "decision 必须是 approve/reject"})
-        db.conn.execute(
-            "UPDATE exercise_proposals SET status=? WHERE id=?",
-            ("approved" if decision == "approve" else "rejected", proposal_id))
-        db.conn.commit()
+        row = db.conn.execute(
+            "SELECT * FROM exercise_proposals WHERE user_id=? AND id=?",
+            (uid, proposal_id)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail={"error": "提案不存在"})
+        if row["status"] != "pending":
+            raise HTTPException(status_code=422,
+                                detail={"error": f"提案已处于 {row['status']} 状态，不能重复审核"})
         if decision == "reject":
+            db.conn.execute(
+                "UPDATE exercise_proposals SET status='rejected' WHERE id=?",
+                (proposal_id,))
+            db.conn.commit()
             return {"proposal_id": proposal_id, "status": "rejected"}
 
-        # 生成合法 YAML（tools/validate.py 十二必填字段全满足；joint_stress 留空
-        # = 无压力数据，生成计划的伤病筛选不会依赖它）
+        # ---- approve：全部校验先行，任何失败提案保持 pending ----
+        import yaml as _yaml
+        proposal = dict(row)
         ex_id = _re.sub(r"[^a-z0-9_]+", "_",
                         str(payload.get("id") or proposal["name"]).strip().lower())
         if not ex_id or not ex_id[0].isalpha():
             raise HTTPException(status_code=422,
                                 detail={"error": "动作 id 非法（须以字母开头）"})
-        if (library.root / f"{ex_id}.yaml").exists() or library.get(ex_id):
+        if library.get(ex_id) or db.get_custom_exercise(uid, ex_id):
             raise HTTPException(status_code=422,
                                 detail={"error": f"动作 id {ex_id!r} 已存在"})
         pattern = payload.get("pattern") or proposal.get("pattern") or "isolation"
         if pattern not in ("squat", "hinge", "lunge", "h_push", "v_push",
                            "h_pull", "v_pull", "isolation", "core", "carry"):
             pattern = "isolation"
+        name = proposal["name"]
         aliases = [str(a) for a in (payload.get("aliases")
-                                    or proposal.get("aliases") or [])][:8]
+                                    or _load_aliases(proposal.get("aliases")))][:8]
+        conflicts = _svc.alias_conflicts(db, uid, name, aliases)
+        if conflicts:
+            raise HTTPException(status_code=422,
+                                detail={"error": "名称/别名与既有动作冲突",
+                                        "details": conflicts[:5]})
         doc = {
-            "id": ex_id, "name": proposal["name"],
-            "aliases": list(dict.fromkeys([proposal["name"], *aliases])),
+            "id": ex_id, "name": name,
+            "aliases": list(dict.fromkeys([name, *aliases])),
             "pattern": pattern,
             "primary": [str(x) for x in (payload.get("primary") or [])][:4],
             "secondary": [], "equipment": [str(x) for x in (payload.get("equipment") or ["bodyweight"])][:3],
             "location": ["gym", "home"],
             "level_min": "beginner", "joint_stress": {},
             "track_e1rm": False, "substitutes": [], "status": "draft",
+            "scope": "user",
             "_provenance": {"source": "user_video_proposal",
                             "proposal_id": proposal_id,
                             "sentence": proposal.get("sentence") or ""},
         }
-        path = library.root / f"{ex_id}.yaml"
-        path.write_text(_yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
-                        encoding="utf-8")
-        from tools.validate import validate as _validate_exercises
-        errors = _validate_exercises(library.root)
-        if errors:
-            path.unlink(missing_ok=True)
-            library.reload()
+        # 插入 → 读回确认 → 提交审核状态（最后一步）
+        inserted = db.add_custom_exercise(uid, ex_id, doc)
+        if inserted is None:
             raise HTTPException(status_code=422,
-                                detail={"error": "生成的动作未通过库校验，已回滚",
-                                        "details": errors[:5]})
-        library.reload()
+                                detail={"error": f"动作 id {ex_id!r} 已存在"})
+        readback = db.get_custom_exercise(uid, ex_id)
+        if not readback or readback["name"] != name:
+            db.conn.execute("DELETE FROM custom_exercises WHERE user_id=? AND ex_id=?",
+                            (uid, ex_id))
+            db.conn.commit()
+            raise HTTPException(status_code=422,
+                                detail={"error": "入库读回校验失败，已回滚"})
+        db.conn.execute("UPDATE exercise_proposals SET status='approved' WHERE id=?",
+                        (proposal_id,))
+        db.conn.commit()
         # 可选：把提案依据片段关联到新动作
         link_id = None
         if payload.get("link_media") and proposal.get("asset_id"):
@@ -676,9 +704,9 @@ def register_routes(app) -> None:
             if asset and asset["status"] == "ready":
                 sentence = proposal.get("sentence") or ""
                 start = 0.0
-                for c in asset.get("candidates") or []:
-                    if sentence and c.get("sentence") == sentence:
-                        start = float(c.get("start") or 0)
+                for cnd in asset.get("candidates") or []:
+                    if sentence and cnd.get("sentence") == sentence:
+                        start = float(cnd.get("start") or 0)
                 media_dir = Path(asset["video_path"]).parent
                 cover = make_cover(asset["video_path"], start,
                                    str(media_dir / f"cover_prop{proposal_id}.jpg"))
@@ -689,8 +717,32 @@ def register_routes(app) -> None:
                     cover, clip)
         return {"proposal_id": proposal_id, "status": "approved",
                 "exercise_id": ex_id, "media_link_id": link_id,
-                "note": "已入动作库（status=draft：结构化属性未经审核，"
+                "scope": "user",
+                "note": "已入你的自定义动作库（仅本人可见；status=draft，"
                         "加入计划时将带披露说明）"}
+
+    @api.post("/users/{uid}/media/{asset_id}/manual-proposal")
+    def media_manual_proposal(uid: str, asset_id: int, request: Request,
+                              payload: dict = Body(...)):
+        """M5.2 P0-3：无候选视频也能从 UI 手动创建新动作提案。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        asset = db.get_media_asset(uid, asset_id)
+        if not asset or asset["status"] != "ready":
+            raise HTTPException(status_code=422,
+                                detail={"error": "视频尚未处理完成或处理失败"})
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail={"error": "需要动作名称"})
+        sentence = str(payload.get("sentence") or "").strip()
+        if not sentence and asset.get("transcript"):
+            sentence = str(asset["transcript"][0].get("text") or "")[:200]
+        proposal_id = db.add_exercise_proposal(
+            uid, name, [str(a) for a in (payload.get("aliases") or [])][:8],
+            str(payload.get("pattern") or "isolation"),
+            str(payload.get("note") or "手动创建（无自动候选）"),
+            asset_id, sentence)
+        return {"proposal_id": proposal_id, "status": "pending"}
 
     # ---- M4：动作视频分析（上传/任务/结果/对比）----
 
@@ -872,9 +924,13 @@ def register_routes(app) -> None:
                 status_code=422,
                 detail={"error": "缺少 base_version：请携带打开编辑器时的计划版本"
                                  "（plan_id + plan_version），防止并发修改互相覆盖"})
+        from coach import exercise_service as _svc
+        resolver = (lambda t, _u=uid, _d=db:
+                    _svc.resolve(_d, _u, t))
         try:
             return submit_manual(db, uid, "plan", payload.get("operations"),
-                                 str(payload.get("reason") or "手动编辑计划"), base)
+                                 str(payload.get("reason") or "手动编辑计划"), base,
+                                 resolver=resolver)
         except ProposalRejected as e:
             raise _reject(e) from None
 
@@ -965,9 +1021,10 @@ def register_routes(app) -> None:
     # ---- 动作库 ----
 
     @api.get("/exercises")
-    def exercises(q: str = "", muscle: str = "", equipment: str = "",
-                  status: str = ""):
-        items = library.all()
+    def exercises(request: Request, q: str = "", muscle: str = "",
+                  equipment: str = "", status: str = "", uid: str = ""):
+        from coach import exercise_service as _svc
+        items = _svc.list_exercises(request.app.state.db, uid or None)
         if status:
             items = [e for e in items if e.get("status") == status]
         if muscle:
@@ -994,11 +1051,13 @@ def register_routes(app) -> None:
                                "primary": e.get("primary") or [],
                                "equipment": e.get("equipment") or [],
                                "location": e.get("location") or [],
-                               "status": e.get("status")} for e in items]}
+                               "status": e.get("status"),
+                               "scope": e.get("scope", "builtin")} for e in items]}
 
     @api.get("/exercises/{ex_id}")
-    def exercise_detail(ex_id: str):
-        ex = library.get(ex_id)
+    def exercise_detail(request: Request, ex_id: str, uid: str = ""):
+        from coach import exercise_service as _svc
+        ex = _svc.get_exercise(request.app.state.db, uid or None, ex_id)
         if not ex:
             raise HTTPException(status_code=404, detail={"error": f"动作 {ex_id} 不存在"})
         detail = dict(ex)

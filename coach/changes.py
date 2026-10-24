@@ -42,7 +42,7 @@ def _require_dict(value, name, errors) -> dict:
 
 
 def validate_change(db, user_id: str, target: str, operations,
-                    base_version) -> dict:
+                    base_version, resolver=None) -> dict:
     """全部确定性校验（结构 / 安全 / 版本），不写库。
     返回 prepared 中间产物；不通过抛 ProposalRejected。"""
     errors: list[str] = []
@@ -62,7 +62,7 @@ def validate_change(db, user_id: str, target: str, operations,
 
     if target == "approach":
         return _validate_approach(db, user_id, profile, operations, base)
-    return _validate_plan(db, user_id, profile, operations, base)
+    return _validate_plan(db, user_id, profile, operations, base, resolver)
 
 
 # ---- approach 目标 ----
@@ -86,19 +86,20 @@ def _validate_approach(db, user_id, profile, operations, base) -> dict:
 
 # ---- plan 目标 ----
 
-def _added_exercise_ids(operations) -> list[str]:
+def _added_exercise_ids(operations, resolver=None) -> list[str]:
     ids = []
     for op in operations:
         if op.get("op") in ("add_exercise", "replace_exercise") and op.get("exercise"):
             try:
-                ex_id, _name = _resolve_exercise(op["exercise"])
+                ex_id, _name = _resolve_exercise(op["exercise"], resolver)
             except ValueError:
                 continue  # 结构校验阶段会给出完整错误
             ids.append(ex_id)
     return ids
 
 
-def _validate_plan(db, user_id, profile, operations, base) -> dict:
+def _validate_plan(db, user_id, profile, operations, base,
+                   resolver=None) -> dict:
     record = db.get_active_plan_record(user_id)
     if not record:
         raise ProposalRejected(["当前没有生效的计划"])
@@ -119,7 +120,7 @@ def _validate_plan(db, user_id, profile, operations, base) -> dict:
     # 伤病关节高压动作注入检查（用户手动编辑也不可绕过安全约束）
     joints, _unknown = _injured_joints((profile.get("conditions") or {}).get("injuries"))
     joints -= _joints_without_data(joints)
-    for ex_id in _added_exercise_ids(operations):
+    for ex_id in _added_exercise_ids(operations, resolver):
         if not joints:
             break
         stress = (library.get(ex_id) or {}).get("joint_stress") or {}
@@ -132,12 +133,13 @@ def _validate_plan(db, user_id, profile, operations, base) -> dict:
         raise ProposalRejected(errors)
 
     try:
-        new_plan, applied = apply_plan_operations(record["content"], operations)
+        new_plan, applied = apply_plan_operations(record["content"], operations,
+                                                  resolver=resolver)
     except ValueError as e:
         raise ProposalRejected([str(e)]) from None
 
     warnings = []
-    for ex_id in _added_exercise_ids(operations):
+    for ex_id in _added_exercise_ids(operations, resolver):
         row = db.get_user_exercise(user_id, ex_id)
         if row and row.get("status") == "avoid":
             ex = library.get(ex_id) or {}
@@ -301,9 +303,10 @@ def restore_plan_version(db, user_id: str, version: int, reason: str = "") -> di
 
 
 def submit_manual(db, user_id: str, target: str, operations,
-                  reason: str, base_version) -> dict:
+                  reason: str, base_version, resolver=None) -> dict:
     """手动修改：校验 → 暂存提案（审计）→ 单事务应用。失败时提案记 rejected。"""
-    prepared = validate_change(db, user_id, target, operations, base_version)
+    prepared = validate_change(db, user_id, target, operations, base_version,
+                               resolver)
     proposal_id = _record_proposal(db, user_id, target, operations,
                                    "user_manual", reason, prepared["base"])
     try:

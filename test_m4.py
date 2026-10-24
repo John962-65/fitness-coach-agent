@@ -60,7 +60,7 @@ def test_segment_reps_counts_cycles():
 def test_process_analysis_deep_vs_shallow(monkeypatch):
     indexed, fps = squat_indexed(reps=2, deep=True)
     monkeypatch.setattr(
-        "coach.vision.extract_keypoints_indexed", lambda p, s=2: (indexed, fps))
+        "coach.vision.extract_keypoints_indexed", lambda p, s=2: (indexed, fps, len(indexed)))
     deep = process_analysis("barbell_back_squat", "v.mp4", "side")
     assert deep["supported"] and deep["frames"] == len(indexed)
     assert len(deep["reps"]) == 2
@@ -69,7 +69,7 @@ def test_process_analysis_deep_vs_shallow(monkeypatch):
     shallow_idx, _ = squat_indexed(reps=2, deep=False)
     monkeypatch.setattr(
         "coach.vision.extract_keypoints_indexed",
-        lambda p, s=2: (shallow_idx, fps))
+        lambda p, s=2: (shallow_idx, fps, len(shallow_idx)))
     shallow = process_analysis("barbell_back_squat", "v.mp4", "side")
     assert any(f["code"] == "SQUAT_SHALLOW" for f in shallow["faults"])
 
@@ -78,7 +78,7 @@ def test_process_analysis_unsupported_and_no_person(monkeypatch):
     unsupported = process_analysis("plank", "v.mp4", "side")
     assert unsupported["supported"] is False and "暂不在" in unsupported["note"]
     monkeypatch.setattr(
-        "coach.vision.extract_keypoints_indexed", lambda p, s=2: ([], 25.0))
+        "coach.vision.extract_keypoints_indexed", lambda p, s=2: ([], 25.0, 100))
     empty = process_analysis("barbell_back_squat", "v.mp4", "side")
     assert empty["frames"] == 0 and "不可判断" in empty["note"]
 
@@ -103,7 +103,7 @@ def test_compare_results_deterministic_diff():
 def m4client(tmp_path, monkeypatch):
     indexed, fps = squat_indexed(reps=2, deep=True)
     monkeypatch.setattr(
-        "coach.vision.extract_keypoints_indexed", lambda p, s=2: (indexed, fps))
+        "coach.vision.extract_keypoints_indexed", lambda p, s=2: (indexed, fps, len(indexed)))
     app = create_app(db_path=tmp_path / "api.db")
     with TestClient(app) as c:
         app.state.db.save_profile("m4u", profile())

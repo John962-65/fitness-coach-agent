@@ -219,6 +219,15 @@ CREATE TABLE IF NOT EXISTS exercise_proposals (
     status      TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected（发起人批）
     created_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS custom_exercises (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    ex_id       TEXT NOT NULL,           -- 用户自定义动作 id（M5.2 P0-1：独立存储，不入全局库）
+    doc         TEXT NOT NULL,           -- JSON：与内置动作同构
+    source      TEXT NOT NULL DEFAULT 'user_created',
+    created_at  TEXT NOT NULL,
+    UNIQUE(user_id, ex_id)
+);
 CREATE TABLE IF NOT EXISTS motion_analyses (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     TEXT NOT NULL,
@@ -1102,6 +1111,40 @@ class Database:
                 d["aliases"] = []
             out.append(d)
         return out
+
+    # ---- M5.2 P0-1：用户自定义动作（custom_exercises）----
+    def add_custom_exercise(self, user_id: str, ex_id: str, doc: dict) -> int | None:
+        """插入自定义动作；同 user 下 id 冲突返回 None。"""
+        try:
+            cur = self.conn.execute(
+                "INSERT INTO custom_exercises(user_id, ex_id, doc, created_at)"
+                " VALUES(?,?,?,?)",
+                (user_id, ex_id, json.dumps(doc, ensure_ascii=False), _now()))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+    def get_custom_exercises(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT ex_id, doc FROM custom_exercises WHERE user_id=?"
+            " ORDER BY id", (user_id,)).fetchall()
+        out = []
+        for r in rows:
+            doc = json.loads(r["doc"])
+            doc["scope"] = "user"
+            out.append(doc)
+        return out
+
+    def get_custom_exercise(self, user_id: str, ex_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT doc FROM custom_exercises WHERE user_id=? AND ex_id=?",
+            (user_id, ex_id)).fetchone()
+        if not row:
+            return None
+        doc = json.loads(row["doc"])
+        doc["scope"] = "user"
+        return doc
 
     # ---- M4：动作视频分析（motion_analyses）----
     def add_motion_analysis(self, user_id: str, exercise_id: str, view: str,

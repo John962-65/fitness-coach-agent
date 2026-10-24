@@ -22,15 +22,17 @@ SPECIALISTS = {
             "基于用户档案与数据给建议。遵守：不承诺具体数字效果；"
             "医疗相关问题一律建议咨询专业人员；建议必须给出适用条件。"
             "只输出 JSON：{\"problem\":str,\"facts\":[str],\"knowledge_basis\":[str],"
-            "\"options\":[{\"title\":str,\"detail\":str}],\"conditions\":[str],"
-            "\"risks\":[str],\"needs_confirmation\":[str]}"),
+            "\"options\":[{\"title\":str,\"detail\":str,\"citations\":[str]}],"
+            "\"conditions\":[str],\"risks\":[str],\"needs_confirmation\":[str]}。"
+            "citations 填你实际依据的上下文 ref（形如 engine:ref）；"
+            "没有依据的判断不要编造引用，留空数组"),
     },
     "nutrition": {
         "label": "营养",
         "prompt": (
             "你是营养专家，负责饮食方式、能量与营养素、个体饮食适配。"
             "不强制所有用户精确计算热量；不提供医学饮食治疗建议。"
-            "只输出与前述相同的 JSON 结构。"),
+            "只输出与前述相同的 JSON 结构（options 每项含 citations：填实际依据的上下文 ref，无依据留空数组，不要编造）。"),
     },
     "recovery": {
         "label": "恢复",
@@ -123,29 +125,37 @@ def parse_advice(raw: str, specialist: str) -> dict:
     for opt in data.get("options") or []:
         if isinstance(opt, dict) and isinstance(opt.get("title"), str):
             options.append({"title": str(opt["title"])[:120],
-                            "detail": str(opt.get("detail", ""))[:400]})
+                            "detail": str(opt.get("detail", ""))[:400],
+                            "citations": _clean_str_list(opt.get("citations"))})
         if len(options) >= 5:
             break
     advice["options"] = options
     return advice
 
 
-def fake_advice(specialist: str) -> dict:
-    """FAKE_LLM 确定性建议（深拷贝避免测试间串改）。"""
+def fake_advice(specialist: str, citation: str = "") -> dict:
+    """FAKE_LLM 确定性建议（深拷贝避免测试间串改）。
+
+    citation：本轮真实检索命中的第一条 ref —— FAKE 也要走证据绑定
+    （第一个 option 引用它），不能凭空造引用。
+    """
     import copy
     advice = copy.deepcopy(_FAKE_ADVICE[specialist])
     advice["specialist"] = specialist
     advice["label"] = SPECIALISTS[specialist]["label"]
+    if citation and advice.get("options"):
+        advice["options"][0]["citations"] = [citation]
     return advice
 
 
-def consult_one(llm, specialist: str, question: str, context_text: str) -> dict:
+def consult_one(llm, specialist: str, question: str, context_text: str,
+                fake_citation: str = "") -> dict:
     """咨询单个专家：一次 LLM 调用 → 结构化建议。"""
     system = SPECIALISTS[specialist]["prompt"]
     user = (f"用户问题：{question}\n\n用户上下文：\n{context_text}\n\n"
             "按系统要求只输出 JSON。")
     if getattr(llm, "fake", False):
-        return fake_advice(specialist)
+        return fake_advice(specialist, fake_citation)
     resp = llm.chat([{"role": "system", "content": system},
                      {"role": "user", "content": user}])
     return parse_advice(resp.get("content") or "", specialist)

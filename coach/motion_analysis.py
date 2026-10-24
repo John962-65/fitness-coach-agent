@@ -124,28 +124,35 @@ def process_analysis(exercise_id: str, video_path: str, view: str,
                 "note": f"动作 {exercise_id} 暂不在视频分析支持范围"
                         f"（首批：深蹲类/硬拉/罗马尼亚硬拉/卧推，侧面为主）"}
     try:
-        indexed, fps = extract_keypoints_indexed(video_path, sample_every)
+        indexed, fps, total_sampled = extract_keypoints_indexed(video_path, sample_every)
     except RuntimeError as e:
         return {"supported": True, "frames": 0, "faults": [], "reps": [],
                 "summary": {}, "note": f"关键点提取不可用：{e}"}
     if not indexed:
         return {"supported": True, "frames": 0, "faults": [], "reps": [],
-                "summary": {},
+                "summary": {}, "detection_ratio": 0.0,
                 "note": "没有检测到人体关键点——检查拍摄规范（全身入镜/光线/固定机位），"
                         "此视频不可判断，不代表动作正常"}
     frames = [kp for _i, kp in indexed]
-    # 质量门：有效帧比例（所需关键点可见）过低 → 如实降级，不把规则结果当结论
+    # 双比例质量门（P1）：detection=检测到人体的采样帧占比；
+    # valid=检测帧中所需关键点完整的占比。任一过低都如实降级。
+    detection_ratio = min(1.0, len(indexed) / max(1, total_sampled))
     valid_ratio = _valid_ratio(name, frames, view)
     faults = rules_analyze(name, frames, view)
     reps = segment_reps(name, indexed, fps, sample_every)
     quality_note = None
     if any(f["code"] == "INSUFFICIENT_DATA" for f in faults):
         quality_note = "可见关键点不足：此视频不可判断，不代表动作正常"
+    elif detection_ratio < 0.5:
+        quality_note = (f"检测覆盖率仅 {int(detection_ratio * 100)}%"
+                        f"（{len(indexed)}/{total_sampled} 采样帧检出人体；"
+                        "遮挡/出镜/光线问题），以下结果仅供参考，建议按拍摄规范重拍")
     elif valid_ratio < 0.5:
-        quality_note = (f"有效帧比例仅 {int(valid_ratio * 100)}%（遮挡/半身出镜？），"
+        quality_note = (f"关键点完整率仅 {int(valid_ratio * 100)}%（遮挡/半身出镜？），"
                         "以下结果仅供参考，建议按拍摄规范重拍")
     return {
         "supported": True, "view": view, "frames": len(indexed),
+        "detection_ratio": round(detection_ratio, 2),
         "valid_ratio": round(valid_ratio, 2),
         "faults": faults, "reps": reps,
         "summary": summary_metric(name, indexed),

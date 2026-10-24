@@ -82,7 +82,8 @@ def _find_day(plan: dict, day_name: str) -> dict:
     raise ValueError(f"计划里没有训练日「{day_name}」（现有：{days}）")
 
 
-def _resolve_exercise(name_or_id: str) -> tuple[str, str]:
+def _resolve_exercise(name_or_id: str,
+                      resolver=None) -> tuple[str, str]:
     """动作名或 id → (id, 官方名)。只接受 id / 官方名 / 精确别名。
 
     计划编辑是结构化操作，不做子串/模糊归一——"量子波动深蹲"会被
@@ -91,6 +92,12 @@ def _resolve_exercise(name_or_id: str) -> tuple[str, str]:
     text = str(name_or_id or "").strip()
     if not text:
         raise ValueError("动作名不能为空")
+    if resolver is not None:
+        rid, official, via = resolver(text)
+        if rid and via:
+            return rid, official
+        raise ValueError(f"动作「{text}」无法精确对上你的动作库；"
+                         "请使用官方动作名/别名，或先从视频创建该动作")
     ex = library.get(text)
     if ex:
         return text, ex["name"]
@@ -117,7 +124,7 @@ def _entry(ex_id: str, official: str, op: dict) -> dict:
     return entry
 
 
-def _locate(day: dict, op: dict) -> int:
+def _locate(day: dict, op: dict, resolver=None) -> int:
     """按 index 或动作名定位条目，返回下标。"""
     exercises = day["exercises"]
     if op.get("index") is not None:
@@ -128,7 +135,7 @@ def _locate(day: dict, op: dict) -> int:
     target = str(op.get("exercise", "")).strip()
     if not target:
         raise ValueError("需要 index 或 exercise 之一来定位动作")
-    ex_id, _official = _resolve_exercise(target)
+    ex_id, _official = _resolve_exercise(target, resolver)
     for i, entry in enumerate(exercises):
         if entry.get("exercise_id") == ex_id or entry.get("name") == target:
             return i
@@ -152,7 +159,8 @@ def _refresh_draft_note(plan: dict) -> None:
     plan["notes"] = notes
 
 
-def apply_plan_operations(plan: dict, operations: list[dict]) -> tuple[dict, list[str]]:
+def apply_plan_operations(plan: dict, operations: list[dict],
+                          resolver=None) -> tuple[dict, list[str]]:
     """按序应用操作，返回 (新计划, 逐操作说明)。调用方传入的 plan 不被修改。"""
     new_plan = copy.deepcopy(plan)
     applied: list[str] = []
@@ -180,7 +188,7 @@ def apply_plan_operations(plan: dict, operations: list[dict]) -> tuple[dict, lis
         if kind == "add_exercise":
             if op.get("sets") is None or op.get("reps") is None:
                 raise ValueError("add_exercise 需要 sets 与 reps")
-            ex_id, official = _resolve_exercise(op.get("exercise", ""))
+            ex_id, official = _resolve_exercise(op.get("exercise", ""), resolver)
             entry = _entry(ex_id, official, op)
             index = op.get("index")
             if index is None or not 0 <= index <= len(day["exercises"]):
@@ -190,14 +198,14 @@ def apply_plan_operations(plan: dict, operations: list[dict]) -> tuple[dict, lis
             applied.append(f"{day['day']} 新增 {official}")
 
         elif kind == "remove_exercise":
-            idx = _locate(day, op)
+            idx = _locate(day, op, resolver)
             removed = day["exercises"].pop(idx)
             applied.append(f"{day['day']} 移除 {removed.get('name')}")
 
         elif kind == "replace_exercise":
-            idx = _locate(day, op)
+            idx = _locate(day, op, resolver)
             old = day["exercises"][idx]
-            ex_id, official = _resolve_exercise(op.get("exercise", ""))
+            ex_id, official = _resolve_exercise(op.get("exercise", ""), resolver)
             entry = _entry(ex_id, official, {**op, "role": op.get("role") or old.get("role"),
                                              "sets": op.get("sets", old.get("sets")),
                                              "reps": op.get("reps", old.get("reps"))})
@@ -218,7 +226,7 @@ def apply_plan_operations(plan: dict, operations: list[dict]) -> tuple[dict, lis
             applied.append(f"{day['day']}：{entry.get('name')} 从第 {src + 1} 位移到第 {dst + 1} 位")
 
         elif kind == "edit_set_prescription":
-            idx = _locate(day, op)
+            idx = _locate(day, op, resolver)
             entry = day["exercises"][idx]
             changes = []
             if op.get("sets") is not None:

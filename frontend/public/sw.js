@@ -1,6 +1,6 @@
 /* 最小 PWA service worker：缓存应用外壳；/api 一律走网络（数据实时性优先，
    离线记录由前端 IndexedDB 队列负责，见 src/offline.ts）。 */
-const CACHE = 'fc-shell-v9'
+const CACHE = 'fc-shell-v10'
 
 self.addEventListener('install', () => self.skipWaiting())
 
