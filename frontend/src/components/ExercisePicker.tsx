@@ -26,10 +26,11 @@ export default function ExercisePicker({ onPick, onClose, uid }: {
   useEffect(() => {
     const t = setTimeout(() => {
       fetch(`/api/exercises?q=${encodeURIComponent(q)}${muscle ? `&muscle=${muscle}` : ''}` + (me ? `&uid=${encodeURIComponent(me)}` : ''), {
+        cache: 'no-store',   // 代理故障期的 HTML 回退响应不允许被 HTTP 缓存复用
         headers: localStorage.getItem('fc-access-token')
           ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
       })
-        .then((r) => r.json()).then((r) => setItems(r.exercises))
+        .then((r) => r.json()).then((r) => { setItems(r.exercises); setError('') })
         .catch((e) => setError(e.message))
     }, 200)
     return () => clearTimeout(t)

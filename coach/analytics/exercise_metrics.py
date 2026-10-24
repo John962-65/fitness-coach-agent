@@ -16,6 +16,41 @@ from ..review import e1rm
 E1RM_MAX_REPS = 12  # Epley 在低-中次数区间才相对可靠
 
 
+def set_volume(log: dict) -> int:
+    """单组容量（kg）——全站唯一公式：
+    weight_reps = 负重×次数；bodyweight_reps = 额外负重×次数（自重不可比，不计入）；
+    assisted_reps / duration / distance_time 不产生 kg 容量。
+    """
+    t = log.get("type") or "weight_reps"
+    if t not in ("weight_reps", "bodyweight_reps"):
+        return 0
+    r = log.get("reps")
+    if not r:
+        return 0
+    w = log.get("weight_kg") if t == "weight_reps" else log.get("added_weight_kg")
+    return int((w or 0) * r)
+
+
+def set_e1rm(log: dict, max_reps: int = E1RM_MAX_REPS):
+    """单组估算 1RM——仅 weight_reps 类型在 1-12 次区间计算；
+    bodyweight/assisted/duration/distance 不适用该口径（返回 None）。"""
+    t = log.get("type") or "weight_reps"
+    reps = log.get("reps")
+    if t != "weight_reps" or not isinstance(reps, int) or not (1 <= reps <= max_reps):
+        return None
+    return e1rm(log.get("weight_kg"), reps)
+
+
+def entry_set_type(logs) -> str | None:
+    """一条动作记录的逐组类型（首个正式组；无 type 返回 None=旧记录 weight_reps 口径）。"""
+    if not isinstance(logs, list):
+        return None
+    for l in logs:
+        if isinstance(l, dict) and not l.get("warmup"):
+            return l.get("type") or "weight_reps"
+    return None
+
+
 def parse_stamp(s: str) -> datetime:
     """解析逐组完成时间（浏览器 ISO 带 Z / 服务端本地 ISO 均支持），统一为 naive UTC。"""
     t = s.strip()
@@ -63,22 +98,13 @@ def _working_sets(set_logs: list) -> list[dict]:
     for log in set_logs:
         if not isinstance(log, dict) or log.get("warmup"):
             continue
-        t = log.get("type") if isinstance(log.get("type"), str) else "weight_reps"
-        weight, reps = log.get("weight_kg"), log.get("reps")
-        est = e1rm(weight, reps) if (t == "weight_reps" and isinstance(reps, int)
-                                     and 1 <= reps <= E1RM_MAX_REPS) else None
-        volume = 0
-        if t == "weight_reps" and weight is not None and reps:
-            volume = weight * reps
-        elif t == "bodyweight_reps" and log.get("added_weight_kg") and reps:
-            volume = log["added_weight_kg"] * reps  # 只计额外负重（自重部分不可比，不计）
         out.append({
-            "type": t,
-            "weight_kg": weight,
-            "reps": reps,
+            "type": log.get("type") or "weight_reps",
+            "weight_kg": log.get("weight_kg"),
+            "reps": log.get("reps"),
             "at": log.get("at"),
-            "e1rm": est,
-            "volume": volume,
+            "e1rm": set_e1rm(log),
+            "volume": set_volume(log),
             "duration_seconds": log.get("duration_seconds"),
             "distance_m": log.get("distance_m"),
             "added_weight_kg": log.get("added_weight_kg"),

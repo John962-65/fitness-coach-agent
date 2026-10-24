@@ -29,6 +29,9 @@ export interface WorkoutSession {
   entries: SessionEntry[]
   started_at: string
   notes: string
+  templateId?: number              // M6.4-A.1：来源模板（纯自由训练无）
+  planId?: number                  // 来源计划与版本（会话级溯源）
+  planVersion?: number
 }
 
 export interface Settings {
@@ -60,9 +63,12 @@ interface AppState {
   session: WorkoutSession | null
   /** 开始计划训练。kept=true 表示未创建新会话：
    *  resumed=true 为同目标恢复（已记录组原样保留）；否则是冲突等待用户选择（P0-1）。 */
-  startSession: (day: string, entries: SessionEntry[]) => { kept: boolean; resumed?: boolean }
-  /** 开始自由训练。语义同上。 */
-  startFreeSession: (label?: string) => { kept: boolean; resumed?: boolean }
+  startSession: (day: string, entries: SessionEntry[],
+                 meta?: { planId?: number; planVersion?: number }) =>
+    { kept: boolean; resumed?: boolean }
+  /** 开始自由/模板训练。templateId 为会话身份：同模板恢复，不同模板视为不同目标。 */
+  startFreeSession: (opts?: { label?: string; templateId?: number }) =>
+    { kept: boolean; resumed?: boolean }
   addFreeExercise: (entry: SessionEntry) => void
   setEntryGroup: (entryIdx: number, group?: string) => void
   removeEntry: (entryIdx: number) => void
@@ -117,12 +123,16 @@ export const useApp = create<AppState>()((set) => ({
                      entries, started_at: new Date().toISOString(), notes: '' } })
     return { kept: false }
   },
-  startFreeSession: (label?: string) => {
+  startFreeSession: (opts) => {
     const cur = useApp.getState().session
-    if (cur && cur.mode === 'free') return { kept: true, resumed: true }
+    // 模板/自由身份一致（含同为"无模板"的自由训练）→ 恢复
+    if (cur && cur.mode === 'free' && cur.templateId === opts?.templateId)
+      return { kept: true, resumed: true }
     if (cur && hasProgress(cur)) return { kept: true }
-    set({ session: { id: newSessionId(), mode: 'free', day: label || 'free', date: today(),
-                     entries: [], started_at: new Date().toISOString(), notes: '' } })
+    set({ session: { id: newSessionId(), mode: 'free', day: opts?.label || 'free',
+                     date: today(), entries: [],
+                     started_at: new Date().toISOString(), notes: '',
+                     templateId: opts?.templateId } })
     return { kept: false }
   },
   addFreeExercise: (entry) =>

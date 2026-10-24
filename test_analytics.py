@@ -189,3 +189,37 @@ def test_session_meta_local_date_and_duration(db):
     assert [c["id"] for c in db.list_checkins(UID, 50, date="2026-10-25")] == [row["id"]]
     # 反向：按服务器创建日期查询查不到（该训练属于用户本地 10-25）
     assert db.list_checkins(UID, 50, date="2026-10-24") == []
+
+
+def test_volume_consistent_across_views_and_typed_recompute(db):
+    """P0-3 回归：同一组负重引体数据在 动作统计/日历/周期/派生状态 遵循同一分型规则。"""
+    doc = {"id": "pull_up", "name": "引体向上", "primary": ["lats"], "status": "approved"}
+    db.add_custom_exercise(UID, "pull_up", doc)  # 占位失败无妨（内置已有）
+    _record(db, [{"name": "引体向上", "exercise_id": "pull_up",
+                  "sets": 1, "weight_kg": 5, "reps": 8,
+                  "set_logs": [{"type": "bodyweight_reps", "reps": 8,
+                                "added_weight_kg": 5, "at": "2026-10-25T10:00:00"},
+                               {"type": "bodyweight_reps", "reps": 6,
+                                "at": "2026-10-25T10:03:00"}]},
+                 {"name": "杠铃平板卧推", "exercise_id": BENCH,
+                  "sets": 1, "weight_kg": 60, "reps": 10,
+                  "set_logs": [{"type": "weight_reps", "weight_kg": 60, "reps": 10,
+                                "at": "2026-10-25T10:05:00"}]}])
+
+    # 动作级：pull_up 容量只计额外负重 5×8=40
+    pull_sessions = exercise_sessions(db, UID, "pull_up")
+    assert pull_sessions[0]["volume"] == 40
+    assert pull_sessions[0]["best_e1rm"] is None            # 不适用 Epley
+    rec = personal_records(pull_sessions)
+    assert rec["heaviest"] is None or rec["heaviest"]["weight_kg"] == 5
+
+    # 日历/周期与动作级一致：600（卧推）+ 40（引体额外负重）= 640
+    cal = month_calendar(db, UID, 2026, 10)
+    assert cal["days"][0]["volume"] == 640
+    summary = period_summary(db, UID, days=30)
+    assert summary["volume"] == 640
+
+    # 派生状态：bodyweight_reps 不产生杠铃式 e1RM（旧实现会算出 Epley(5,8)≈6.3）
+    state = db.get_user_exercise(UID, "pull_up")
+    assert state["best_e1rm"] is None
+    assert state["last_weight"] == 5                        # last_weight = 额外负重

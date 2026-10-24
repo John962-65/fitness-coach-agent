@@ -499,13 +499,23 @@ class Database:
             for ex in payload.get("exercises", []) or []:
                 if not isinstance(ex, dict):
                     continue
+                # M6.4-A.1：分型——仅 weight_reps 口径参与杠铃式 e1RM；
+                # bodyweight_reps 的聚合 weight_kg 是"额外负重"，不能套用 Epley
+                stype = None
+                logs = ex.get("set_logs")
+                if isinstance(logs, list):
+                    for l in logs:
+                        if isinstance(l, dict) and not l.get("warmup"):
+                            stype = l.get("type") or "weight_reps"
+                            break
                 for eid, state in values.items():
                     # M6.3.1：已验证稳定 ID 直接命中（含自定义动作）；旧记录回退名称匹配
                     if ex.get("exercise_id") != eid and not _same_exercise(
                             self._visible_exercise_name(user_id, eid), ex):
                         continue
                     weight, rpe = _to_number(ex.get("weight_kg")), _to_number(ex.get("rpe"))
-                    score = e1rm(weight, _to_reps(ex.get("reps")))
+                    score = (e1rm(weight, _to_reps(ex.get("reps")))
+                             if stype in (None, "weight_reps") else None)
                     if score is not None:
                         state["best"] = max(state["best"] or 0, score)
                     if state["weight"] is None and weight is not None:

@@ -11,7 +11,7 @@ import calendar
 import json
 from datetime import date, datetime, timedelta
 
-from .exercise_metrics import entry_identity, parse_stamp, session_local_date
+from .exercise_metrics import entry_identity, parse_stamp, session_local_date, set_volume
 
 _MAX_SCAN_DAYS = 400  # 周期汇总最多回看范围，防全表滥用
 
@@ -68,9 +68,7 @@ def month_calendar(db, user_id: str, year: int, month: int) -> dict:
         slot["sessions"] += 1
         for _doc, log in _iter_working_sets(db, user_id, data):
             slot["working_sets"] += 1
-            w, r = log.get("weight_kg"), log.get("reps")
-            if w is not None and r:
-                slot["volume"] += w * r
+            slot["volume"] += set_volume(log)
     return {
         "year": year, "month": month,
         "days": [days[k] for k in sorted(days)],
@@ -109,9 +107,7 @@ def period_summary(db, user_id: str, days: int = 30) -> dict:
         stamps: list[str] = []
         for doc, log in _iter_working_sets(db, user_id, data):
             working_sets += 1
-            w, r = log.get("weight_kg"), log.get("reps")
-            if w is not None and r:
-                volume += w * r
+            volume += set_volume(log)
             muscle = (doc.get("primary") or ["other"])[0] if doc else "other"
             by_muscle[muscle] = by_muscle.get(muscle, 0) + 1
             if log.get("at"):

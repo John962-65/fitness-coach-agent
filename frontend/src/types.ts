@@ -89,10 +89,10 @@ export interface SetLog {
   rpe?: number | null
   warmup?: boolean
   at?: string
-  added_weight_kg?: number
-  assistance_kg?: number
-  duration_seconds?: number
-  distance_m?: number
+  added_weight_kg?: number | null
+  assistance_kg?: number | null
+  duration_seconds?: number | null
+  distance_m?: number | null
 }
 
 export interface CheckinExercise {

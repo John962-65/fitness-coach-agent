@@ -5,8 +5,8 @@ import {
   Button, Empty, ErrorBox, Input, PageHeader, Segmented, Select, Sheet,
   Skeleton, Spinner, Stat, Tag, Textarea,
 } from '../components/Bits'
-import { buildCorrectedData, ExerciseEdit, SetEdit } from '../lib/checkin'
-import { parseTrainingNumber, validateSetValues } from '../lib/validate'
+import { buildCorrectedData, initSetEdit, ExerciseEdit, SetEdit } from '../lib/checkin'
+import { parseTrainingNumber, validateSetDraft } from '../lib/validate'
 import { formatSetRecord } from '../lib/setDisplay'
 import { useApp } from '../store'
 import { Checkin, PeriodSummary, TrainingCalendar } from '../types'
@@ -365,11 +365,7 @@ function CorrectModal({ checkin, uid, onClose, onSaved }: {
   // 热身标记与完成时间原样保留；未修改的组按原值回传，绝不丢组。
   const [edits, setEdits] = useState<ExerciseEdit[]>((checkin.data.exercises || []).map((ex) => {
     if (ex.set_logs?.length) {
-      return { logs: ex.set_logs.map((l) => ({
-        weight: l.weight_kg != null ? String(l.weight_kg) : '',
-        reps: l.reps != null ? String(l.reps) : '',
-        rpe: l.rpe != null ? String(l.rpe) : '',
-      })) }
+      return { logs: ex.set_logs.map(initSetEdit) }
     }
     return {
       weight: ex.weight_kg != null ? String(ex.weight_kg) : '',
@@ -403,27 +399,34 @@ function CorrectModal({ checkin, uid, onClose, onSaved }: {
           const l = ex.set_logs[li]
           const e = edit.logs?.[li]
           if (!e) continue
-          const w = parseTrainingNumber(e.weight ?? '')
-          const r = parseTrainingNumber(e.reps ?? '')
-          const p = parseTrainingNumber(e.rpe ?? '')
-          if (w === undefined || r === undefined || p === undefined) {
-            setError({ message: `「${ex.name}」第 ${li + 1} 组存在无效数字，请检查重量/次数/RPE` })
+          // M6.4-A.1：按记录类型构建草稿，与训练执行共用同一套校验规则
+          const n = parseTrainingNumber
+          const draft = {
+            type: l.type || 'weight_reps',
+            weight: n(e.weight ?? ''), reps: n(e.reps ?? ''), rpe: n(e.rpe ?? ''),
+            added: n(e.added ?? ''), assist: n(e.assist ?? ''),
+            minutes: n(e.minutes ?? ''), seconds: n(e.seconds ?? ''),
+            distance: n(e.distance ?? ''),
+          }
+          if (Object.values(draft).some((v) => v === undefined)) {
+            setError({ message: `「${ex.name}」第 ${li + 1} 组存在无效数字` })
             setSaving(false); return
           }
-          const invalid = validateSetValues(w, r, p, !!l.warmup)
+          const invalid = validateSetDraft(draft)
           if (invalid) {
             setError({ message: `「${ex.name}」第 ${li + 1} 组：${invalid}` })
             setSaving(false); return
           }
         }
       } else {
-        const w = parseTrainingNumber(edit.weight ?? '')
-        const r = parseTrainingNumber(edit.reps ?? '')
+        const n = parseTrainingNumber
+        const w = n(edit.weight ?? '')
+        const r = n(edit.reps ?? '')
         if (w === undefined || r === undefined) {
           setError({ message: `「${ex.name}」存在无效数字，请检查重量/次数` })
           setSaving(false); return
         }
-        const invalid = validateSetValues(w, r, null, false)
+        const invalid = validateSetDraft({ type: 'weight_reps', weight: w, reps: r })
         if (invalid) {
           setError({ message: `「${ex.name}」：${invalid}` })
           setSaving(false); return
@@ -477,29 +480,40 @@ function CorrectModal({ checkin, uid, onClose, onSaved }: {
               </p>
               {ex.set_logs?.length ? (
                 <div className="mt-2 space-y-1.5">
-                  {ex.set_logs.map((l, li) => (
-                    <div key={li} className="flex items-center gap-1.5">
-                      <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold ${
-                        l.warmup ? 'bg-amber-100 text-amber-700' : 'bg-accent-soft text-accent-deep'}`}>
-                        {li + 1}
-                      </span>
-                      {l.warmup && <span className="tag shrink-0 bg-amber-50 text-amber-700">热身</span>}
-                      <Input className="input-sm nums flex-1 text-center" inputMode="decimal"
-                             placeholder="kg" aria-label={`第 ${li + 1} 组重量`}
-                             value={edit.logs?.[li]?.weight ?? ''}
-                             onChange={(e) => patchLog(ei, li, { weight: e.target.value })} />
-                      <span className="shrink-0 text-xs text-muted">×</span>
-                      <Input className="input-sm nums flex-1 text-center" inputMode="numeric"
-                             placeholder="次" aria-label={`第 ${li + 1} 组次数`}
-                             value={edit.logs?.[li]?.reps ?? ''}
-                             onChange={(e) => patchLog(ei, li, { reps: e.target.value })} />
-                      <span className="shrink-0 text-xs text-muted">RPE</span>
-                      <Input className="input-sm nums w-14 text-center" inputMode="decimal"
-                             placeholder="—" aria-label={`第 ${li + 1} 组 RPE`}
-                             value={edit.logs?.[li]?.rpe ?? ''}
-                             onChange={(e) => patchLog(ei, li, { rpe: e.target.value })} />
-                    </div>
-                  ))}
+                  {ex.set_logs.map((l, li) => {
+                    const e = edit.logs?.[li] || {}
+                    const set = (k: keyof SetEdit) => (ev: { target: { value: string } }) =>
+                      patchLog(ei, li, { [k]: ev.target.value } as Partial<SetEdit>)
+                    const numInput = (label: string, k: keyof SetEdit, mode: 'decimal' | 'numeric',
+                                      w2 = 'flex-1') => (
+                      <Input className={`input-sm nums ${w2} text-center`} inputMode={mode}
+                             placeholder={label} aria-label={`第 ${li + 1} 组${label}`}
+                             value={e[k] ?? ''} onChange={set(k)} />
+                    )
+                    const t = l.type || 'weight_reps'
+                    return (
+                      <div key={li} className="flex items-center gap-1.5">
+                        <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold ${
+                          l.warmup ? 'bg-amber-100 text-amber-700' : 'bg-accent-soft text-accent-deep'}`}>
+                          {li + 1}
+                        </span>
+                        {l.warmup && <span className="tag shrink-0 bg-amber-50 text-amber-700">热身</span>}
+                        <span className="nums shrink-0 text-xs text-muted">{formatSetRecord(l)}</span>
+                        {t === 'weight_reps' && numInput('重量', 'weight', 'decimal')}
+                        {t === 'bodyweight_reps' && numInput('额外负重', 'added', 'decimal')}
+                        {t === 'assisted_reps' && numInput('辅助', 'assist', 'decimal')}
+                        {(t === 'duration' || t === 'distance_time') && numInput('分', 'minutes', 'numeric', 'w-14')}
+                        {(t === 'duration' || t === 'distance_time') && numInput('秒', 'seconds', 'numeric', 'w-14')}
+                        {t === 'distance_time' && numInput('米', 'distance', 'decimal', 'w-20')}
+                        {t !== 'duration' && t !== 'distance_time' && numInput('次数', 'reps', 'numeric')}
+                        {t !== 'duration' && t !== 'distance_time' && (
+                          <Input className="input-sm nums w-14 shrink-0 text-center" inputMode="decimal"
+                                 placeholder="RPE" aria-label={`第 ${li + 1} 组 RPE`}
+                                 value={e.rpe ?? ''} onChange={set('rpe')} />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="mt-2 grid grid-cols-2 gap-1.5">

@@ -47,12 +47,14 @@ export default function Workout() {
     if (!day && !templateId) return
     // M6.4-A 场景 A：从模板开始（自由会话预填动作，不影响计划与模板本身）
     if (templateId) {
-      if (session && session.mode === 'free') return
+      const tid = Number(templateId)
+      // P0-2：模板会话身份一致才恢复——不同模板必须走切换保护，不能直接显示旧模板
+      if (session && session.mode === 'free' && session.templateId === tid) return
       api.trainingTemplates(uid).then((r) => {
-        const tpl = r.templates.find((t) => String(t.id) === templateId)
+        const tpl = r.templates.find((t) => t.id === tid)
         if (!tpl) { setError('模板不存在或已删除'); return }
         const label = `模板 · ${tpl.name}`
-        const rr = startFreeSession(label)
+        const rr = startFreeSession({ label, templateId: tid })
         if (rr.resumed) return        // 同模板会话恢复：已预填，直接继续
         if (rr.kept) {
           const cur = useApp.getState().session!
@@ -60,7 +62,7 @@ export default function Workout() {
           setSwitchPrompt({
             activeLabel: `${cur.day === 'free' ? '自由训练' : cur.day}（已记录 ${n} 组）`,
             activeHref: '/workout/free',
-            begin: () => startFreeSession(label),
+            begin: () => startFreeSession({ label, templateId: tid }),
           })
           return
         }
@@ -123,7 +125,8 @@ export default function Workout() {
           note: ex.note,
           logged: [],
         }))
-        const r = startSession(decodeURIComponent(day || ""), plannedEntries)
+        const r = startSession(decodeURIComponent(day || ""), plannedEntries,
+                               { planId: p.plan_id, planVersion: p.version })
         if (r.resumed) return                      // 同目标恢复：现有会话原样继续
         if (r.kept) {
           const cur = useApp.getState().session!
@@ -259,7 +262,9 @@ export default function Workout() {
         completed_at: new Date().toISOString(),
         local_date: session!.date,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-        ...(templateId ? { template_id: Number(templateId) } : {}),
+        ...(session!.templateId ? { template_id: session!.templateId } : {}),
+        ...(session!.planId ? { plan_id: session!.planId,
+                                plan_version: session!.planVersion } : {}),
       },
     }
     try {

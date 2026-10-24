@@ -145,3 +145,54 @@ describe('rebuildTrainingRaw', () => {
       .toBe('周六：卧推')
   })
 })
+
+
+describe('M6.4-A.1：分型纠错', () => {
+  const mixed: Checkin['data'] = {
+    exercises: [
+      { name: '杠铃平板卧推', exercise_id: 'barbell_bench_press',
+        sets: 1, weight_kg: 60, reps: 10,
+        set_logs: [{ type: 'weight_reps', weight_kg: 60, reps: 10,
+                     warmup: false, at: '2026-10-25T10:00:00' }] },
+      { name: '引体向上', exercise_id: 'pull_up',
+        sets: 1, weight_kg: 5, reps: 8,
+        set_logs: [{ type: 'bodyweight_reps', reps: 8, added_weight_kg: 5,
+                     warmup: false, at: '2026-10-25T10:03:00' }] },
+      { name: '平板支撑', exercise_id: 'plank',
+        sets: 1,
+        set_logs: [{ type: 'duration', duration_seconds: 90,
+                     warmup: false, at: '2026-10-25T10:06:00' }] },
+    ],
+    raw: '训练：卧推 1 组：60kg×10；引体 1 组：8次+5kg；平板 1 组：1分30秒',
+  }
+
+  it('修改引体额外负重：类型/时间戳保留，聚合按分型重建', () => {
+    const empty = {}
+    const out = buildCorrectedData(checkin(mixed), [
+      empty,
+      { logs: [{ reps: '8', added: '7.5', rpe: '' }] },
+      empty,
+    ] as Parameters<typeof buildCorrectedData>[1])
+    expect(out).not.toBeNull()
+    const pull = out!.exercises![1]
+    expect(pull.set_logs![0].added_weight_kg).toBe(7.5)
+    expect(pull.set_logs![0].type).toBe('bodyweight_reps')
+    expect(pull.set_logs![0].at).toBe('2026-10-25T10:03:00')
+    expect(pull.weight_kg).toBe(7.5)          // 聚合负荷 = 额外负重
+    // 卧推与平板未触碰，原样
+    expect(out!.exercises![0]).toEqual(mixed.exercises![0])
+    expect(out!.exercises![2]).toEqual(mixed.exercises![2])
+  })
+
+  it('修改平板时长：duration_seconds 按分秒重建，raw 同步', () => {
+    const empty = {}
+    const out = buildCorrectedData(checkin(mixed), [
+      empty, empty,
+      { logs: [{ minutes: '2', seconds: '15' }] },
+    ] as Parameters<typeof buildCorrectedData>[1])
+    const plank = out!.exercises![2]
+    expect(plank.set_logs![0].duration_seconds).toBe(135)
+    expect(out!.raw).toContain('2分15秒')
+    expect(out!.raw).toContain('60kg×10')     // 未触碰组原样出现在 raw（紧凑文案）
+  })
+})

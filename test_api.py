@@ -702,3 +702,26 @@ def test_bad_set_type_rejected(client):
         "data": {"exercises": [{"name": "卧推", "set_logs": [
             {"type": "magic", "weight_kg": 60, "reps": 10}]}]}}).json()
     assert any("无法识别" in w for w in body["warnings"])
+
+
+def test_per_type_required_fields_enforced(client):
+    """P1：缺本质量字段的组被剔除并说明（离线恢复/API/导入也走同一清洗）。"""
+    c, app = client
+    body = c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [
+            {"name": "平板支撑", "exercise_id": "plank",
+             "set_logs": [{"type": "duration", "at": "2026-10-25T10:00:00"}]},
+            {"name": "辅助引体", "exercise_id": "assisted_pull_up",
+             "set_logs": [{"type": "assisted_reps", "reps": 8,
+                           "at": "2026-10-25T10:05:00"}]},
+            {"name": "引体向上", "exercise_id": "pull_up",
+             "set_logs": [{"type": "bodyweight_reps", "reps": 6,
+                           "at": "2026-10-25T10:08:00"}]},
+        ]}}).json()
+    assert any("缺少时长" in w for w in body["warnings"])
+    assert any("缺少辅助重量" in w for w in body["warnings"])
+    exs = app.state.db.list_checkins("api_user", 5)[0]["data"]["exercises"]
+    assert exs[0]["set_logs"] == []                    # duration 缺时长 → 剔除
+    assert exs[1]["set_logs"] == []                    # assisted 缺辅助重量 → 剔除
+    assert len(exs[2]["set_logs"]) == 1                # bodyweight 只缺额外负重（可选）→ 保留

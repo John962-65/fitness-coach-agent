@@ -138,6 +138,22 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                             s.pop("warmup", None)
                         if bad:
                             continue
+                        # M6.4-A.1：按记录类型校验必填字段——缺本质量字段的组剔除，
+                        # 不允许"丢字段后继续入库"（数据可能来自离线恢复/API/导入）
+                        t = s.get("type") or "weight_reps"
+                        if t == "duration" and not s.get("duration_seconds"):
+                            warnings.append(f"{ex['name']} 某组时长记录缺少时长，该组剔除")
+                            continue
+                        if t == "distance_time" and (not s.get("distance_m")
+                                                     or not s.get("duration_seconds")):
+                            warnings.append(f"{ex['name']} 某组距离记录缺少距离或用时，该组剔除")
+                            continue
+                        if t == "assisted_reps" and not s.get("assistance_kg"):
+                            warnings.append(f"{ex['name']} 某组辅助记录缺少辅助重量，该组剔除")
+                            continue
+                        if t in ("weight_reps", "bodyweight_reps") and not s.get("reps"):
+                            warnings.append(f"{ex['name']} 某组缺少次数，该组剔除")
+                            continue
                         clean_logs.append(s)
                 else:
                     warnings.append(f"{ex['name']} 的 set_logs 必须是列表，已丢弃")
