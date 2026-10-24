@@ -151,6 +151,38 @@ CREATE TABLE IF NOT EXISTS agent_consultations (
     advices     TEXT NOT NULL,          -- JSON：结构化 AgentAdvice（含知识依据）
     created_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    kind        TEXT NOT NULL,          -- text / markdown / pdf / article（M3 §6.4）
+    origin      TEXT,                   -- URL 或出处说明
+    content_hash TEXT NOT NULL,         -- 同内容重复导入去重
+    status      TEXT NOT NULL,          -- saved（资料已保存≠内容审核通过）
+    created_at  TEXT NOT NULL,
+    UNIQUE(user_id, content_hash)
+);
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id   INTEGER NOT NULL,
+    seq         INTEGER NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS knowledge_claims (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    source_id   INTEGER NOT NULL,
+    chunk_id    INTEGER,
+    content     TEXT NOT NULL,
+    claim_type  TEXT,                   -- 规则粗分类：method/principle/cue/nutrition/other
+    status      TEXT NOT NULL,          -- pending_review / approved / rejected / quarantined
+    risk_flag   TEXT,                   -- 高风险命中原因（隔离：不可作为处方依据）
+    duplicate_of TEXT,                  -- JSON：相似既有内容命中
+    conflict_with TEXT,                 -- JSON：疑似冲突的既有观点
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -787,3 +819,123 @@ class Database:
                         "template": content.get("template"),
                         "days": [d.get("day") for d in content.get("schedule", [])]})
         return out
+
+    # ---- M3：统一知识库（knowledge_sources / chunks / claims）----
+    def add_knowledge_source(self, user_id: str, title: str, kind: str,
+                             origin: str, content_hash: str) -> int | None:
+        """同内容重复导入返回 None（调用方提示已存在）。"""
+        try:
+            cur = self.conn.execute(
+                "INSERT INTO knowledge_sources(user_id, title, kind, origin,"
+                " content_hash, status, created_at) VALUES(?,?,?,?,?,'saved',?)",
+                (user_id, title[:200], kind, origin, content_hash, _now()))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+    def find_knowledge_source(self, user_id: str, content_hash: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT id, title, kind, created_at FROM knowledge_sources"
+            " WHERE user_id=? AND content_hash=?", (user_id, content_hash)).fetchone()
+        return dict(row) if row else None
+
+    def add_knowledge_chunk(self, source_id: int, seq: int, content: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO knowledge_chunks(source_id, seq, content, created_at)"
+            " VALUES(?,?,?,?)", (source_id, seq, content, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def add_knowledge_claim(self, user_id: str, source_id: int, chunk_id: int | None,
+                            content: str, claim_type: str, status: str,
+                            risk_flag: str | None = None,
+                            duplicate_of: str | None = None,
+                            conflict_with: str | None = None) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO knowledge_claims(user_id, source_id, chunk_id, content,"
+            " claim_type, status, risk_flag, duplicate_of, conflict_with,"
+            " created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (user_id, source_id, chunk_id, content[:1000], claim_type, status,
+             risk_flag, duplicate_of, conflict_with, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_knowledge_claims(self, user_id: str, status: str | None = None,
+                              limit: int = 100) -> list[dict]:
+        sql = ("SELECT kc.*, ks.title AS source_title, ks.kind AS source_kind"
+               " FROM knowledge_claims kc JOIN knowledge_sources ks"
+               " ON kc.source_id=ks.id WHERE kc.user_id=?")
+        params: list = [user_id]
+        if status:
+            sql += " AND kc.status=?"
+            params.append(status)
+        sql += " ORDER BY kc.id DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("duplicate_of", "conflict_with"):
+                if d.get(key):
+                    try:
+                        d[key] = json.loads(d[key])
+                    except ValueError:
+                        pass
+            out.append(d)
+        return out
+
+    def get_knowledge_claim(self, user_id: str, claim_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM knowledge_claims WHERE user_id=? AND id=?",
+            (user_id, claim_id)).fetchone()
+        return dict(row) if row else None
+
+    def review_knowledge_claim(self, user_id: str, claim_id: int,
+                               decision: str) -> bool:
+        cur = self.conn.execute(
+            "UPDATE knowledge_claims SET status=?, reviewed_at=?"
+            " WHERE user_id=? AND id=? AND status='pending_review'",
+            (decision, _now(), user_id, claim_id))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def list_knowledge_sources(self, user_id: str, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT s.id, s.title, s.kind, s.origin, s.created_at,"
+            " (SELECT COUNT(*) FROM knowledge_claims c"
+            "  WHERE c.source_id=s.id AND c.status='approved') AS approved,"
+            " (SELECT COUNT(*) FROM knowledge_claims c"
+            "  WHERE c.source_id=s.id AND c.status='pending_review') AS pending,"
+            " (SELECT COUNT(*) FROM knowledge_claims c"
+            "  WHERE c.source_id=s.id AND c.status='quarantined') AS quarantined"
+            " FROM knowledge_sources s WHERE s.user_id=? ORDER BY s.id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_user_knowledge(self, user_id: str, keywords: list[str],
+                              limit: int = 10) -> list[dict]:
+        """用户导入中 approved 的观点检索（pending/quarantined 不进结果）。"""
+        if not keywords:
+            return []
+        rows = self.conn.execute(
+            "SELECT kc.id, kc.content, kc.claim_type, ks.title AS source_title"
+            " FROM knowledge_claims kc JOIN knowledge_sources ks"
+            " ON kc.source_id=ks.id"
+            " WHERE kc.user_id=? AND kc.status='approved' ORDER BY kc.id DESC",
+            (user_id,)).fetchall()
+        out = []
+        for r in rows:
+            text = r["content"]
+            if any(k in text for k in keywords):
+                out.append(dict(r))
+                if len(out) >= limit:
+                    break
+        return out
+
+    def approved_user_claim_texts(self, user_id: str, limit: int = 500) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT content FROM knowledge_claims WHERE user_id=?"
+            " AND status='approved' ORDER BY id DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return [r["content"] for r in rows]

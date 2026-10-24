@@ -135,6 +135,19 @@ export const api = {
 
   trials: (uid: string) => req<{ trials: Trial[] }>(`/users/${uid}/trials`),
 
+  knowledgeSearch: (uid: string, q: string) =>
+    req<unknown>(`/knowledge/search?uid=${encodeURIComponent(uid)}&q=${encodeURIComponent(q)}`),
+  knowledgeImport: (uid: string, payload: { title: string; kind: string; content: string }) =>
+    post<{ source_id: number; chunks: number; claims: number;
+           stats: Record<string, number> }>(`/users/${uid}/knowledge/imports`, payload),
+  knowledgeSources: (uid: string) =>
+    req<{ sources: unknown[] }>(`/users/${uid}/knowledge/imports`),
+  knowledgeClaims: (uid: string) =>
+    req<{ claims: unknown[] }>(`/users/${uid}/knowledge/claims`),
+  knowledgeReview: (uid: string, claimId: number, decision: 'approve' | 'reject') =>
+    post<{ id: number; status: string }>(
+      `/users/${uid}/knowledge/claims/${claimId}/review`, { decision }),
+
   consultations: (uid: string, limit = 5) =>
     req<{ consultations: Consultation[] }>(`/users/${uid}/consultations?limit=${limit}`),
   planRevisions: (uid: string) =>

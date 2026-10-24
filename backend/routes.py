@@ -301,6 +301,76 @@ def register_routes(app) -> None:
         except ProposalRejected as e:
             raise _reject(e) from None
 
+    # ---- M3：统一知识库（检索 / 导入 / 审核）----
+
+    @api.get("/knowledge/search")
+    def knowledge_search(request: Request, uid: str = "",
+                         q: str = Query(..., min_length=1)):
+        from coach.knowledge_search import search as _ksearch
+        return _ksearch(request.app.state.db, uid or None, q)
+
+    @api.post("/users/{uid}/knowledge/imports")
+    def knowledge_import(uid: str, request: Request, payload: dict = Body(...)):
+        from coach.knowledge_import import extract_pdf_text, import_knowledge
+        db = request.app.state.db
+        _user_profile(db, uid)
+        kind = str(payload.get("kind") or "text")
+        content = payload.get("content")
+        if kind == "pdf":
+            import base64
+            raw = str(content or "")
+            try:
+                data = base64.b64decode(raw, validate=False)
+            except Exception:
+                raise HTTPException(status_code=400,
+                                    detail={"error": "pdf 内容需要 base64 编码"}) from None
+            try:
+                content = extract_pdf_text(data)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        result = import_knowledge(db, uid, str(payload.get("title") or "未命名资料"),
+                                  kind, str(content or ""),
+                                  str(payload.get("origin") or ""))
+        if result.get("error"):
+            raise HTTPException(status_code=422, detail={"error": result["error"]})
+        return result
+
+    @api.get("/users/{uid}/knowledge/imports")
+    def knowledge_imports(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"sources": db.list_knowledge_sources(uid)}
+
+    @api.get("/users/{uid}/knowledge/claims")
+    def knowledge_claims(uid: str, request: Request,
+                         status: str | None = Query(None)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"claims": db.list_knowledge_claims(uid, status)}
+
+    @api.post("/users/{uid}/knowledge/claims/{claim_id}/review")
+    def knowledge_review(uid: str, claim_id: int, request: Request,
+                         decision: str = Body(..., embed=True)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if decision not in ("approve", "reject"):
+            raise HTTPException(status_code=400,
+                                detail={"error": "decision 必须是 approve/reject"})
+        claim = db.get_knowledge_claim(uid, claim_id)
+        if not claim:
+            raise HTTPException(status_code=404, detail={"error": "观点不存在"})
+        if claim["status"] == "quarantined":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "该观点已隔离（高风险内容），不能通过审核放行；"
+                                 "它永远不会成为训练处方依据"})
+        if not db.review_knowledge_claim(uid, claim_id,
+                                         "approved" if decision == "approve" else "rejected"):
+            raise HTTPException(status_code=422,
+                                detail={"error": "只有待审核观点能被审核"})
+        return {"id": claim_id,
+                "status": "approved" if decision == "approve" else "rejected"}
+
     # ---- M2：咨询留痕 / 计划版本历史与恢复 ----
 
     @api.get("/users/{uid}/consultations")

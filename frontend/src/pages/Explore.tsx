@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Empty, ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
+import KnowledgePanel from '../components/KnowledgePanel'
 import { ExerciseDetail, ExerciseSummary } from '../types'
+import { useApp } from '../store'
 
 const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps',
   'quads', 'hamstrings', 'glutes', 'calves', 'core']
 
 export default function Explore() {
+  const uid = useApp((s) => s.uid)
+  const [pane, setPane] = useState<'exercises' | 'knowledge'>('exercises')
   const [q, setQ] = useState('')
   const [muscle, setMuscle] = useState('')
   const [items, setItems] = useState<ExerciseSummary[] | null>(null)
@@ -24,7 +28,21 @@ export default function Explore() {
 
   return (
     <div className="space-y-3 pt-4">
-      <PageHeader title="动作库" sub={`${items?.length ?? '…'} 个动作 · 含教学要点与关节压力标注`} />
+      <PageHeader title="探索" sub="动作库与统一知识库（文件/博主观点/教练卡/我的导入）" />
+      <div className="flex gap-2">
+        <button onClick={() => setPane('exercises')}
+                className={`btn flex-1 ${pane === 'exercises' ? 'bg-accent text-neutral-950' : 'bg-neutral-800'}`}>
+          动作库
+        </button>
+        <button onClick={() => setPane('knowledge')}
+                className={`btn flex-1 ${pane === 'knowledge' ? 'bg-accent text-neutral-950' : 'bg-neutral-800'}`}>
+          知识库
+        </button>
+      </div>
+      {pane === 'knowledge' ? <KnowledgePanel uid={uid} /> : null}
+      {pane !== 'exercises' ? null : (
+      <>
+      <p className="text-xs text-neutral-500">{items?.length ?? '…'} 个动作 · 含教学要点与关节压力标注</p>
       <input className="input" placeholder="搜索名称或别名" value={q}
              onChange={(e) => setQ(e.target.value)} />
       <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -103,6 +121,8 @@ export default function Explore() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   )
