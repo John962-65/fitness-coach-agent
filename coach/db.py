@@ -103,6 +103,39 @@ CREATE TABLE IF NOT EXISTS knowledge_discussions (
     created_at  TEXT,
     closed_at   TEXT
 );
+CREATE TABLE IF NOT EXISTS training_approach (
+    user_id     TEXT PRIMARY KEY,
+    content     TEXT NOT NULL,          -- JSON：当前训练方式文档（2.0 B1）
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS approach_revisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    revision    INTEGER NOT NULL,
+    content     TEXT NOT NULL,          -- JSON：该版本完整快照
+    diff        TEXT NOT NULL,          -- JSON：[{field, old, new}]
+    initiator   TEXT NOT NULL,          -- user / ai / system_migration
+    reason      TEXT NOT NULL,
+    confirmed   INTEGER NOT NULL DEFAULT 1,  -- AI 建议经确认后落库的版本记 0→确认时已为 1；手动/system 恒 1
+    proposal_id TEXT,
+    affected_plan_version INTEGER,     -- 变更时生效的计划版本（可空）
+    created_at  TEXT NOT NULL,
+    UNIQUE(user_id, revision)
+);
+CREATE TABLE IF NOT EXISTS change_proposals (
+    id          TEXT PRIMARY KEY,       -- chg-<uuid>
+    user_id     TEXT NOT NULL,
+    target      TEXT NOT NULL,          -- approach / plan（2.0 B2）
+    operations  TEXT NOT NULL,          -- JSON：类型化操作列表（非自由补丁）
+    source      TEXT NOT NULL,          -- user_manual / ai / rule
+    reason      TEXT NOT NULL,
+    base_version TEXT NOT NULL,         -- JSON：{approach_revision} 或 {plan_id, plan_version}
+    status      TEXT NOT NULL,          -- pending / applied / rejected / expired
+    result      TEXT,                   -- JSON：执行结果摘要
+    created_message_id INTEGER,
+    created_at  TEXT NOT NULL,
+    decided_at  TEXT
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -572,3 +605,105 @@ class Database:
             t["due_review"] = bool(t["status"] == "active" and t.get("review_at")
                                    and t["review_at"] <= now)
         return out
+
+    # ---- training_approach / change_proposals（2.0 B1/B2）----
+    def get_approach(self, user_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT content FROM training_approach WHERE user_id=?", (user_id,)).fetchone()
+        return json.loads(row["content"]) if row else None
+
+    def save_approach(self, user_id: str, content: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO training_approach(user_id, content, updated_at)"
+            " VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET content=?, updated_at=?",
+            (user_id, json.dumps(content, ensure_ascii=False), _now(),
+             json.dumps(content, ensure_ascii=False), _now()))
+        self.conn.commit()
+
+    def add_approach_revision(self, user_id: str, revision: int, content: dict,
+                              diff: list, initiator: str, reason: str,
+                              confirmed: bool = True, proposal_id: str | None = None,
+                              affected_plan_version: int | None = None) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO approach_revisions(user_id, revision, content, diff,"
+            " initiator, reason, confirmed, proposal_id, affected_plan_version,"
+            " created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (user_id, revision, json.dumps(content, ensure_ascii=False),
+             json.dumps(diff, ensure_ascii=False), initiator, reason,
+             int(confirmed), proposal_id, affected_plan_version, _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_approach_revision(self, user_id: str, revision: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM approach_revisions WHERE user_id=? AND revision=?",
+            (user_id, revision)).fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        out["content"] = json.loads(out["content"])
+        out["diff"] = json.loads(out["diff"])
+        return out
+
+    def list_approach_revisions(self, user_id: str, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT revision, initiator, reason, confirmed, proposal_id,"
+            " affected_plan_version, created_at, diff FROM approach_revisions"
+            " WHERE user_id=? ORDER BY revision DESC LIMIT ?",
+            (user_id, limit)).fetchall()
+        return [{**dict(r), "diff": json.loads(r["diff"])} for r in rows]
+
+    def insert_proposal(self, proposal: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO change_proposals(id, user_id, target, operations, source,"
+            " reason, base_version, status, created_message_id, created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (proposal["id"], proposal["user_id"], proposal["target"],
+             json.dumps(proposal["operations"], ensure_ascii=False),
+             proposal["source"], proposal["reason"],
+             json.dumps(proposal["base_version"], ensure_ascii=False),
+             proposal["status"], proposal.get("created_message_id"), _now()))
+        self.conn.commit()
+
+    def get_proposal(self, user_id: str, proposal_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM change_proposals WHERE user_id=? AND id=?",
+            (user_id, proposal_id)).fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        out["operations"] = json.loads(out["operations"])
+        out["base_version"] = json.loads(out["base_version"])
+        if out.get("result"):
+            out["result"] = json.loads(out["result"])
+        return out
+
+    def list_proposals(self, user_id: str, status: str | None = None,
+                       limit: int = 20) -> list[dict]:
+        sql = ("SELECT id, target, source, reason, status, base_version, result,"
+               " created_at, decided_at FROM change_proposals WHERE user_id=?")
+        params: list = [user_id]
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        sql += " ORDER BY rowid DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["base_version"] = json.loads(d["base_version"])
+            if d.get("result"):
+                d["result"] = json.loads(d["result"])
+            out.append(d)
+        return out
+
+    def decide_proposal(self, user_id: str, proposal_id: str, status: str,
+                        result: dict | None = None) -> bool:
+        cur = self.conn.execute(
+            "UPDATE change_proposals SET status=?, result=?, decided_at=?"
+            " WHERE user_id=? AND id=? AND status='pending'",
+            (status, json.dumps(result, ensure_ascii=False) if result is not None else None,
+             _now(), user_id, proposal_id))
+        self.conn.commit()
+        return cur.rowcount > 0

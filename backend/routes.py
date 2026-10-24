@@ -1,0 +1,435 @@
+"""/api 路由（2.0 B4）：薄层，全部委托 coach/ 域函数。
+
+错误约定：
+- 404：用户/资源不存在；
+- 422：确定性校验未通过（ProposalRejected 等，details 带原因列表）；
+- 400：请求形状不对。
+"""
+from __future__ import annotations
+
+import json
+from datetime import date, datetime, timedelta
+
+from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi.responses import FileResponse
+
+from coach.agent import CoachAgent
+from coach.approach import approach_view, initialize_approach, restore_revision
+from coach.changes import (ProposalRejected, confirm_proposal, stage_ai,
+                           submit_manual)
+from coach.exercises import library
+from coach.goals import SUPPORTED_GOALS
+from coach.medical import training_permission
+from coach.plan import generate_plan, plan_to_text
+from coach.profile import merge_patch, open_pain_flags, profile_summary
+from coach.validate import coerce_checkin
+
+
+def _reject(e: ProposalRejected) -> HTTPException:
+    return HTTPException(status_code=422, detail={"error": str(e), "details": e.errors})
+
+
+def _user_profile(db, uid: str) -> dict:
+    profile = db.get_existing_profile(uid)
+    if not profile:
+        raise HTTPException(status_code=404, detail={"error": f"用户 {uid} 不存在"})
+    return profile
+
+
+def _agent(request: Request, uid: str) -> CoachAgent:
+    agents: dict = request.app.state.agents
+    if uid not in agents:
+        agents[uid] = CoachAgent(uid, db_path=request.app.state.db_path)
+    return agents[uid]
+
+
+def _log_unmatched(request: Request, uid: str, raw_name: str) -> None:
+    """未识别动作进待补队列（与 agent 行为一致：不静默丢弃，20.4）。"""
+    path = request.app.state.db.path.parent / "unmatched_exercises.jsonl"
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"user": uid, "name": raw_name,
+                            "at": datetime.now().isoformat(timespec="seconds")},
+                           ensure_ascii=False) + "\n")
+
+
+def register_routes(app) -> None:
+    api = APIRouter(prefix="/api")
+
+    # ---- 基础 ----
+
+    @api.get("/health")
+    def health():
+        return {"status": "ok", "exercises": len(library)}
+
+    # ---- 档案 ----
+
+    @api.get("/users/{uid}/profile")
+    def get_profile(uid: str, request: Request):
+        db = request.app.state.db
+        profile = _user_profile(db, uid)
+        return {
+            "user_id": uid,
+            "profile": profile,
+            "summary": profile_summary(profile),
+            "plan_fenced": bool(profile.get("plan_fence")),
+            "medical": {"status": training_permission(profile).status,
+                        "allows_prescription":
+                            training_permission(profile).allows_prescription},
+        }
+
+    # ---- 表单化建档（2.0 M1：建档不要求经过 LLM）----
+    #
+    # 确定性路径：表单文本即用户本人的自述（比 agent 转述更强的依据），
+    # 校验完全对齐 onboarding 门槛（健康筛查四项必答、伤病必答）；
+    # PAR-Q 阳性时 generate_plan 自动落到医疗暂停模板，前端如实展示。
+
+    @api.post("/users/{uid}/onboarding")
+    def onboard(uid: str, request: Request, payload: dict = Body(...)):
+        db = request.app.state.db
+        profile = db.get_profile(uid)
+        if profile.get("onboarding_done"):
+            raise HTTPException(status_code=409,
+                                detail={"error": "该用户已完成建档；修改请走档案更新"})
+        errors: list[str] = []
+
+        def _num(value, lo, hi):
+            return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and lo <= value <= hi)
+
+        basic = payload.get("basic") or {}
+        if not _num(basic.get("age"), 10, 100):
+            errors.append("basic.age 必须是 10-100 的数字")
+        if not _num(basic.get("height_cm"), 100, 250):
+            errors.append("basic.height_cm 必须是 100-250 的数字")
+        if not _num(basic.get("weight_kg"), 25, 300):
+            errors.append("basic.weight_kg 必须是 25-300 的数字")
+        if basic.get("gender") not in ("男", "女", "其他"):
+            errors.append("basic.gender 必须是 男/女/其他")
+
+        goal = payload.get("goal") or {}
+        if goal.get("primary") not in SUPPORTED_GOALS:
+            errors.append(f"goal.primary 必须是 {SUPPORTED_GOALS} 之一")
+
+        resources = payload.get("resources") or {}
+        if not _num(resources.get("days_per_week"), 1, 7) \
+                or float(resources["days_per_week"]).is_integer() is False:
+            errors.append("resources.days_per_week 必须是 1-7 的整数")
+        if resources.get("location") not in ("gym", "home"):
+            errors.append("resources.location 必须是 gym/home")
+        if not _num(resources.get("session_minutes"), 10, 240):
+            errors.append("resources.session_minutes 必须是 10-240 的数字")
+
+        conditions = payload.get("conditions") or {}
+        injuries = conditions.get("injuries")
+        if not isinstance(injuries, list) or not all(
+                isinstance(i, str) and i.strip() for i in injuries):
+            errors.append("conditions.injuries 必须是伤病描述列表（可为空列表）")
+        if not str(conditions.get("injuries_evidence") or "").strip():
+            errors.append("conditions.injuries_evidence 必填（例如「没有伤病」或伤病史描述）")
+        screen = conditions.get("health_screen") or {}
+        for key in ("heart", "pregnancy", "medication", "clearance"):
+            if not str(screen.get(key) or "").strip():
+                errors.append(f"conditions.health_screen.{key} 必答（PAR-Q 四项不可跳过）")
+        if not str(conditions.get("health_screen_evidence") or "").strip():
+            errors.append("conditions.health_screen_evidence 必填")
+        if errors:
+            raise HTTPException(status_code=422, detail={"error": "建档信息不完整",
+                                                         "details": errors})
+
+        experience = payload.get("experience") or {}
+        patch = {
+            "basic": basic,
+            "goal": goal,
+            "experience": experience,
+            "resources": resources,
+            "conditions": conditions,
+        }
+        merged, _report = merge_patch(profile, patch)
+        merged["onboarding_done"] = True
+        plan = generate_plan(merged, exercise_states=db.all_exercise_states(uid))
+        merged.setdefault("experience", {})["level"] = plan["level"]
+        plan_id = db.create_plan(uid, plan, profile=merged)
+        return {
+            "plan_id": plan_id, "version": db.get_active_plan_record(uid)["version"],
+            "medical_status": plan.get("medical_status"),
+            "suspended": not plan.get("schedule"),
+            "level": plan["level"],
+            "text": plan_to_text(plan),
+        }
+
+    # ---- 训练执行辅助：上次重量/派生状态（M1「自动读取上次训练重量」）----
+
+    @api.get("/users/{uid}/exercise-states")
+    def exercise_states(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        out = []
+        for s in db.all_exercise_states(uid):
+            out.append({
+                "exercise_id": s.get("exercise_id"),
+                "last_weight": s.get("last_weight"), "last_rpe": s.get("last_rpe"),
+                "best_e1rm": s.get("best_e1rm"), "status": s.get("status"),
+                "discomfort": s.get("discomfort"), "preference": s.get("preference"),
+            })
+        return {"states": out}
+
+    # ---- 个人尝试列表（我的页）----
+
+    @api.get("/users/{uid}/trials")
+    def trials(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"trials": db.personal_trials(uid, limit=20)}
+
+    # ---- 今日简报（确定性，无 LLM）----
+
+    @api.get("/users/{uid}/today")
+    def today(uid: str, request: Request):
+        db = request.app.state.db
+        profile = _user_profile(db, uid)
+        plan_record = db.get_active_plan_record(uid)
+        permission = training_permission(profile)
+        flags = open_pain_flags(profile)
+        due_notes = [n for n in db.open_coach_notes(uid) if n.get("due_review")]
+        stale_notes = db.notes_for_reconfirm(uid)
+        trials = [t for t in db.personal_trials(uid) if t.get("due_review")]
+        rows = db.conn.execute(
+            "SELECT created_at FROM checkins WHERE user_id=? AND type='training'"
+            " ORDER BY id DESC", (uid,)).fetchall()
+        last_training = rows[0]["created_at"][:10] if rows else None
+        days_since = (date.fromisoformat(date.today().isoformat())
+                      - date.fromisoformat(last_training)).days if last_training else None
+        week_ago = (date.today() - timedelta(days=7)).isoformat()
+        sessions_this_week = sum(
+            1 for r in rows if (r["created_at"] or "")[:10] >= week_ago)
+        approach = db.get_approach(uid)
+        plan_stale = bool(
+            approach and plan_record
+            and plan_record["content"].get("approach_revision", 0) < approach["revision"])
+        return {
+            "user_id": uid,
+            "medical": {"status": permission.status,
+                        "allows_prescription": permission.allows_prescription},
+            "plan_fenced": bool(profile.get("plan_fence")),
+            "open_pain_flags": len(flags),
+            "due_review_notes": [n["id"] for n in due_notes + stale_notes],
+            "due_review_trials": [t["id"] for t in trials],
+            "last_training_date": last_training,
+            "days_since_last_training": days_since,
+            "sessions_last_7_days": sessions_this_week,
+            "plan_days_per_week": (plan_record["content"].get("requested_days_per_week")
+                                   if plan_record else None),
+            "plan": ({"id": plan_record["id"], "version": plan_record["version"],
+                      "template": plan_record["content"].get("template"),
+                      "days": [{"day": d["day"], "focus": d.get("focus"),
+                                "exercises": [e["name"] for e in d.get("exercises", [])]}
+                               for d in plan_record["content"].get("schedule", [])]}
+                     if plan_record else None),
+            "plan_stale_vs_approach": plan_stale,
+            "onboarding_done": bool(profile.get("onboarding_done")),
+        }
+
+    # ---- 训练方式 ----
+
+    @api.get("/users/{uid}/approach")
+    def get_approach(uid: str, request: Request):
+        return approach_view(request.app.state.db, uid)
+
+    @api.post("/users/{uid}/approach/initialize")
+    def init_approach(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        initialize_approach(db, uid)
+        return approach_view(db, uid)
+
+    @api.get("/users/{uid}/approach/revisions")
+    def approach_revisions(uid: str, request: Request,
+                           limit: int = Query(50, ge=1, le=200)):
+        return {"revisions": request.app.state.db.list_approach_revisions(uid, limit)}
+
+    @api.post("/users/{uid}/approach/revisions/{revision}/restore")
+    def approach_restore(uid: str, revision: int, request: Request,
+                         reason: str = Body("", embed=True)):
+        try:
+            doc = restore_revision(request.app.state.db, uid, revision,
+                                   initiator="user", reason=reason)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return {"restored_from": revision, "approach": doc}
+
+    # ---- 统一修改协议 ----
+
+    @api.post("/users/{uid}/changes")
+    def submit_change(uid: str, request: Request,
+                      payload: dict = Body(...)):
+        db = request.app.state.db
+        target = payload.get("target")
+        operations = payload.get("operations")
+        base_version = payload.get("base_version")
+        reason = str(payload.get("reason") or "")
+        if not isinstance(operations, list):
+            raise HTTPException(status_code=400, detail={"error": "operations 必须是列表"})
+        try:
+            result = submit_manual(db, uid, target, operations, reason, base_version)
+        except ProposalRejected as e:
+            raise _reject(e) from None
+        return result
+
+    @api.post("/users/{uid}/changes/ai")
+    def stage_change(uid: str, request: Request, payload: dict = Body(...)):
+        """AI 建议暂存（pending，等用户确认）。本轮主要为协议完整性预留。"""
+        db = request.app.state.db
+        try:
+            result = stage_ai(db, uid, payload.get("target"),
+                              payload.get("operations"),
+                              str(payload.get("reason") or ""),
+                              payload.get("base_version"))
+        except ProposalRejected as e:
+            raise _reject(e) from None
+        return result
+
+    @api.get("/users/{uid}/changes")
+    def list_changes(uid: str, request: Request,
+                     status: str | None = Query(None), limit: int = Query(20, ge=1, le=100)):
+        return {"proposals": request.app.state.db.list_proposals(uid, status, limit)}
+
+    @api.post("/users/{uid}/changes/{proposal_id}/confirm")
+    def confirm_change(uid: str, proposal_id: str, request: Request,
+                       message: str = Body(..., embed=True)):
+        try:
+            return confirm_proposal(request.app.state.db, uid, proposal_id, message)
+        except ProposalRejected as e:
+            raise _reject(e) from None
+
+    # ---- 计划 ----
+
+    @api.get("/users/{uid}/plan")
+    def get_plan(uid: str, request: Request):
+        db = request.app.state.db
+        profile = _user_profile(db, uid)
+        record = db.get_active_plan_record(uid)
+        if not record:
+            raise HTTPException(status_code=404, detail={"error": "当前没有生效的计划"})
+        return {
+            "plan_id": record["id"], "version": record["version"],
+            "fenced": bool(profile.get("plan_fence")),
+            "base_version": {"plan_id": record["id"], "plan_version": record["version"]},
+            "content": record["content"],
+            "text": plan_to_text(record["content"]),
+        }
+
+    @api.post("/users/{uid}/plan/edits")
+    def plan_edits(uid: str, request: Request, payload: dict = Body(...)):
+        """计划手动编辑（2.0 §4.1：常规编辑不需 AI 批准，安全校验不豁免）。"""
+        db = request.app.state.db
+        record = db.get_active_plan_record(uid)
+        if not record:
+            raise HTTPException(status_code=404, detail={"error": "当前没有生效的计划"})
+        base = payload.get("base_version") or {
+            "plan_id": record["id"], "plan_version": record["version"]}
+        try:
+            return submit_manual(db, uid, "plan", payload.get("operations"),
+                                 str(payload.get("reason") or "手动编辑计划"), base)
+        except ProposalRejected as e:
+            raise _reject(e) from None
+
+    # ---- 打卡 ----
+
+    @api.get("/users/{uid}/checkins")
+    def list_checkins(uid: str, request: Request, limit: int = Query(10, ge=1, le=20)):
+        _user_profile(request.app.state.db, uid)
+        return {"checkins": request.app.state.db.list_checkins(uid, limit)}
+
+    @api.post("/users/{uid}/checkins")
+    def save_checkin(uid: str, request: Request, payload: dict = Body(...)):
+        """确定性打卡落库（与 agent save_checkin 同一套清洗与归一，不经 LLM）。"""
+        db = request.app.state.db
+        ctype = payload.get("type", "training")
+        if ctype not in ("training", "body", "diet"):
+            raise HTTPException(status_code=400,
+                                detail={"error": "type 必须是 training/body/diet"})
+        data, warnings = coerce_checkin(ctype, payload.get("data", {}))
+        notes = list(warnings)
+        if ctype == "training":
+            for ex in data.get("exercises", []):
+                ex["exercise_id"] = None            # 动作 ID 是系统判定
+                raw_name = ex.get("name", "")
+                ex_id, official, _via = library.normalize(raw_name)
+                if ex_id:
+                    ex["exercise_id"] = ex_id
+                    if official != raw_name:
+                        ex["name_raw"] = raw_name
+                    ex["name"] = official
+                else:
+                    _log_unmatched(request, uid, raw_name)
+                    notes.append(f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
+        checkin_id = db.record_checkin(uid, ctype, data)
+        return {"id": checkin_id, "type": ctype, "warnings": notes}
+
+    @api.post("/users/{uid}/checkins/{checkin_id}/correct")
+    def correct_checkin(uid: str, checkin_id: int, request: Request,
+                        payload: dict = Body(...)):
+        try:
+            updated = request.app.state.db.revise_checkin(
+                uid, checkin_id, int(payload.get("expected_revision", 0)),
+                payload.get("data", {}), str(payload.get("reason") or ""),
+                str(payload.get("evidence") or ""))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return updated
+
+    # ---- 动作库 ----
+
+    @api.get("/exercises")
+    def exercises(q: str = "", muscle: str = "", equipment: str = "",
+                  status: str = ""):
+        items = library.all()
+        if status:
+            items = [e for e in items if e.get("status") == status]
+        if muscle:
+            items = [e for e in items if muscle in set(e.get("primary") or [])
+                     | set(e.get("secondary") or [])]
+        if equipment:
+            items = [e for e in items
+                     if equipment in (e.get("equipment") or [])]
+        if q:
+            matched = set()
+            ql = q.lower()
+            for e in items:
+                if ql in e["name"].lower() or ql == e["id"].lower() or any(
+                        ql in str(a).lower() for a in (e.get("aliases") or [])):
+                    matched.add(e["id"])
+            ex_id, official, _via = library.normalize(q)
+            if ex_id:
+                matched.add(ex_id)
+            items = [e for e in items if e["id"] in matched]
+        return {"count": len(items),
+                "exercises": [{"id": e["id"], "name": e["name"],
+                               "aliases": e.get("aliases") or [],
+                               "pattern": e.get("pattern"),
+                               "primary": e.get("primary") or [],
+                               "equipment": e.get("equipment") or [],
+                               "location": e.get("location") or [],
+                               "status": e.get("status")} for e in items]}
+
+    @api.get("/exercises/{ex_id}")
+    def exercise_detail(ex_id: str):
+        ex = library.get(ex_id)
+        if not ex:
+            raise HTTPException(status_code=404, detail={"error": f"动作 {ex_id} 不存在"})
+        detail = dict(ex)
+        if detail.get("status") != "approved":
+            detail.setdefault("notes", [])
+            detail["notes"] = list(detail["notes"]) + [
+                "该动作的结构化属性（关节压力/替代关系）尚未经审核"]
+        return detail
+
+    # ---- AI 教练对话 ----
+
+    @api.post("/users/{uid}/chat")
+    def chat(uid: str, request: Request, message: str = Body(..., embed=True)):
+        if not str(message).strip():
+            raise HTTPException(status_code=400, detail={"error": "消息不能为空"})
+        return {"user_id": uid, "reply": _agent(request, uid).chat(message)}
+
+    app.include_router(api)

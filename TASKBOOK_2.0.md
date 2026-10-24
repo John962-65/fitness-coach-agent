@@ -1,0 +1,216 @@
+# 任务书 2.0 —— 后端做扎实（2026-10-24）
+
+> 依据：发起人 2026-10-24 提供《Fitness Coach 2.0 最终产品设计与工程改造计划》V1.0，
+> 原文已逐字节归档为 `DESIGN_2.0.md`（下称"2.0 标准"）。
+> 发起人本轮指令：**"按照现在给你的 2.0 为标准，根据现在项目情况形成新的任务书 2.0 版，
+> 按照新的任务书完成，暂时不做前端，把后端做扎实。"**
+>
+> 本文件是本轮开发的范围契约与验收依据；与 1.0 时代的差异以此为准。
+> 沿用既有纪律：离线回归（临时库 / FAKE_LLM / 禁网）、冻结评测集不动、
+> 真实 LLM 调用数为零、留痕写入 `PROGRESS.md`。
+
+---
+
+## 一、范围裁定
+
+### 1.1 本轮做（后端）
+
+对应 2.0 标准 §十六 任务 1–5、8 的后端部分，即 M0 全部 + M1 的服务层：
+
+| 任务 | 2.0 出处 | 本轮交付 |
+|---|---|---|
+| B0 标准与契约落库 | §十六任务1 | `DESIGN_2.0.md` 归档 + 本任务书 + `DESIGN.md` 第 28 章指针 |
+| B1 TrainingApproach 域模型 | §二、§十一、M0 任务2/3 | 新表 `training_approach` / `approach_revisions`，维度独立修改，版本历史可恢复，从现有数据受测迁移 |
+| B2 统一修改协议 | §四、M0 任务4 | `ChangeProposal → Validation → Commit`：手动直通、AI 需确认，同套校验，单事务提交，版本冲突拒绝 |
+| B3 计划手动编辑后端 | §4.1、M1 计划编辑器（无 UI） | 增/删/替换动作、组次/重量/备注编辑、排序、改日名，走 B2 协议出计划新版本 |
+| B4 FastAPI 服务层 | §10.2、§十六任务5 | `backend/` 封装现有核心：档案 / 今日 / 训练方式 / 计划与编辑 / 打卡与纠错 / 动作库 / AI 对话；CLI 保留为调试入口 |
+| B5 验证与留痕 | §十四 | 新增测试 + 全量回归全绿 + PROGRESS/README/requirements 同步 |
+
+### 1.2 本轮不做（留待后续轮次）
+
+- **前端全部**：React/TS/Vite/PWA、五页导航、训练执行界面（M1 的 UI 部分）——发起人明示暂缓。
+- **多智能体**（M2）：专业 Agent 拆分与编排。本轮统一协议已为 AI 来源修改预留 `source=ai` 通道，agent 工具迁移到统一服务属 M2。
+- **统一知识检索与导入**（M3）：向量检索、PDF/文章导入、从视频建动作。
+- **视频分析深化**（M4）：时间轴标注、两次对比、人工标注集。现有 `vision*.py` 原样保留。
+- 三维人体、实时纠偏、外部设备（§十五第三优先级全部）。
+- PostgreSQL、Redis/任务队列（§10.3/10.4：SQLite + 进程内服务在本阶段足够）。
+
+### 1.3 必须保护的现有资产（2.0 §十二"必须保护的资产"）
+
+443 项离线回归及其覆盖的安全语义（红旗拦截、医疗准入、伤病隔离、两步确认、
+evidence 绑定、打卡事务）**不因本轮改造退化**。本轮不重写 `coach/agent.py`、
+不动冻结评测 YAML、不迁移现有表数据（只增表）。`coach/` 现有模块只做**增量**修改。
+
+---
+
+## 二、B1 TrainingApproach（我的训练方式）
+
+### 2.1 数据模型（2.0 §2.1/§十一）
+
+单一事实来源原则：**已在档案/计划/尝试表中存在的信息不在 approach 里复制品**，
+approach 文档只拥有"训练方式选择"类维度；对外呈现时引用维度从现有数据动态拼装。
+
+approach 文档（JSON，存 `training_approach.content`，按 user 一行）：
+
+```text
+{
+  "revision": 3,                      # 版本号，每次修改 +1
+  "structure":        {"value": "ppl"|"full_body"|"upper_lower"|"circuit"|"custom",
+                        "note": "...", "status": "active"|"trialing"|"stopped"|"to_review"},
+  "intensity_style":  {"value": "linear"|"rpe_based"|"periodized"|"flexible",
+                        "note": "...", "status": ...},
+  "exercise_selection": [             # 当前采用/替代动作（自有维度）
+      {"exercise_id": "...", "role": "main"|"secondary"|"accessory"|"cardio"|null,
+       "alternatives": ["..."], "status": "active"|"trialing"|"stopped"|"to_review",
+       "note": "选择依据"}],
+  "execution_choices": [              # 动作执行的个人选择（幅度/节奏/站距/握距）
+      {"exercise_id": "...", "choices": {"tempo": "...", "stance": "...", ...},
+       "note": "..."}],
+  "diet_approach":     {"strategy": "...", "note": "...", "status": ...},
+  "recovery_approach": {"note": "...", "deload_policy": "..."},
+  "preferences":       {"liked": [], "disliked": [], "structure_notes": "..."}
+}
+```
+
+引用维度（GET 时拼装、不落库）：个人目标（`profile.goal`，含目标版本）、
+现实条件（`profile.resources`）、身体状况（`profile.conditions`）、
+进行中的个人尝试（`personal_trials`）、选择依据的可追溯记录
+（`coach_notes` / 打卡派生数据）。频率（每周几天）仍以
+`profile.resources.days_per_week` 为准，approach 不另存副本。
+
+### 2.2 版本历史（2.0 §2.2）
+
+`approach_revisions` 每次修改一行：完整快照 + 逐字段 diff + 发起者（user/ai/system_migration）
++ 原因 + 是否确认 + 变更时生效的计划版本 + 时间。恢复历史版本 = 以新版本落库快照
+（不删历史、不回滚指针）。
+
+### 2.3 受测迁移（2.0 §十二"不直接清空"）
+
+`initialize_approach(db, user_id)`：从现有档案 + 当前生效计划推导 v1
+（结构按计划模板推断、动作选择从 schedule 提取），幂等（已有 approach 不覆盖），
+推导规则全部有测试。老用户零感知——不迁移任何既有表数据。
+
+### 2.4 验收（2.0 M0 验收原文对照）
+
+- 能创建、修改、查看和恢复训练方式版本 ✅（API + 域函数 + 测试）
+- 能独立修改训练方式的部分字段（改一个动作不动整个方式）✅（维度独立 set/remove）
+- 不影响已有计划、打卡和安全功能 ✅（全量回归 443 项保持全绿）
+- 核心数据模型具有自动化测试 ✅（test_approach.py）
+
+---
+
+## 三、B2 统一修改协议（ChangeProposal → Validation → Commit）
+
+### 3.1 协议要素（2.0 §4.2/4.3）
+
+新表 `change_proposals`（id / user_id / target / operations / source / reason /
+base_version / status / result / created_at / decided_at）。
+
+- **target**：`approach` 或 `plan`（本轮支持的两类目标）。
+- **operations**：类型化的操作列表（见 B1/B3），不是自由 JSON 补丁。
+- **source**：`user_manual`（手动，2.0 §4.1 常规编辑不需 AI 批准）/
+  `ai`（建议，必须经用户明确确认，2.0 §4.2）/ `rule`（预留）。
+- **base_version**：approach_revision 或 plan_id+plan_version，提交时校验，
+  不匹配即拒绝（2.0 §4.3"避免覆盖用户后续操作"）。
+
+### 3.2 校验（确定性代码，同套用于两条路径）
+
+1. 结构校验：operations 形状、枚举值、动作 id 必须在库内（未识别动作拒绝并提示）。
+2. 安全校验（手动编辑也不可绕过，2.0 §1.4"用户自主≠绕过安全限制"）：
+   - `plan_fence` 活跃（伤病/红旗隔离）→ 拒绝 plan 编辑，唯一出路是确认重排；
+   - 医疗许可不允许处方 → 拒绝 plan 编辑；
+   - 有伤病关节时，向计划加入该关节压力 ≥2 的动作 → 拒绝；
+   - 用户 avoid 状态的动作 → 允许但警告（偏好可由用户本人改变）；
+   - draft 动作 → 允许，计划备注保留"属性未审核"披露。
+3. 版本校验：base_version 与当前不一致 → 拒绝。
+
+### 3.3 提交（单事务，失败不部分生效）
+
+- approach：应用操作 → 新 revision 快照 + diff → proposal 标记 applied。
+- plan：应用操作 → `db.create_plan(expected_plan_id=...)` 出新版本
+  （`adjust_action="manual_edit"` / `"approach_change"`，清空旧 pending 建议，
+  记录 `approach_revision` 关联）→ proposal 标记 applied。
+- AI 来源：先落 pending（记 created_message_id，同轮不可确认），
+  `confirm(proposal_id, user_message)` 用现有 `confirmation.classify_decision`
+  语义门判定 accept/reject/unclear（unclear 保持 pending），accept 后走同一 commit。
+
+### 3.4 验收
+
+- 手动修改直接生效、AI 修改未经确认不生效（测试覆盖两种来源）；
+- 版本冲突、隔离期编辑、医疗暂停期编辑、伤病高压动作注入均被拒绝（对抗测试）；
+- 提交失败无部分生效（事务回滚测试）。
+
+---
+
+## 四、B3 计划手动编辑后端
+
+操作集（作用于当前生效计划，全部走 B2 协议）：
+
+| 操作 | 参数 |
+|---|---|
+| `add_exercise` | day, exercise(名/id), sets, reps, weight_kg?, role?, note?, index? |
+| `remove_exercise` | day, index 或 exercise |
+| `replace_exercise` | day, index 或 exercise, 新动作(+可选 sets/reps 继承) |
+| `reorder_exercise` | day, from, to |
+| `edit_set_prescription` | day, index, sets?/reps?/weight_kg?/note?（部分修改） |
+| `rename_day` | day, new_name |
+
+约束：日名必须存在；index 越界拒绝；一次 proposal 可含多个操作，按序应用，
+任一失败整体拒绝（先校验后提交）。编辑产生的新计划版本保留未涉及部分原样
+（含处方重量、卸载状态、notes 中的既有披露）。
+
+---
+
+## 五、B4 FastAPI 服务层
+
+`backend/`（新增包，不移动 `coach/`）：
+
+```text
+backend/
+├── __init__.py
+├── app.py          # create_app(db_path=None) 应用工厂；python3 -m backend 启动 uvicorn
+└── routes.py       # /api 路由（薄层，全部委托 coach/ 域函数）
+```
+
+端点（v1，全部离线可测，TestClient 不出进程）：
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/users/{uid}/profile` | 档案（含目标版本/隔离状态摘要） |
+| `GET /api/users/{uid}/today` | 今日简报（确定性：医疗状态/隔离/待跟进安全记录/到期笔记与尝试/距上次训练天数/本周执行率/当前计划摘要） |
+| `GET/POST /api/users/{uid}/approach(/initialize)` | 查看（含引用维度拼装）/ 初始化迁移（幂等） |
+| `GET /api/users/{uid}/approach/revisions` | 版本历史 |
+| `POST /api/users/{uid}/approach/revisions/{rev}/restore` | 恢复历史版本 |
+| `POST /api/users/{uid}/changes` | 提交手动修改提案（approach/plan） |
+| `GET /api/users/{uid}/changes?status=` | 提案列表（含 pending 的 AI 建议） |
+| `POST /api/users/{uid}/changes/{id}/confirm` | 确认/拒绝 AI 提案（语义门） |
+| `GET /api/users/{uid}/plan` | 当前计划 + 版本元信息 |
+| `POST /api/users/{uid}/plan/edits` | 计划手动编辑（走统一协议） |
+| `GET/POST /api/users/{uid}/checkins`；`POST .../checkins/{id}/correct` | 打卡落库（确定性校验+归一）/ 纠错（复用 revise_checkin） |
+| `GET /api/exercises` | 动作库检索（名称/别名/肌群/器械/状态过滤） |
+| `POST /api/users/{uid}/chat` | AI 教练对话（复用 CoachAgent，测试用 FAKE_LLM） |
+
+服务边界：每用户复用一个 `CoachAgent` 实例（进程内缓存）；应用工厂接受
+`db_path` 注入（测试用临时库）。CLI `main.py` 保留不动（2.0 §十二）。
+
+---
+
+## 六、验证与完成定义
+
+1. 新增测试文件：`test_approach.py` / `test_changes.py` / `test_plan_edit.py` / `test_api.py`，
+   覆盖上述每条验收；全部离线（临时库、FAKE_LLM、禁网，conftest 现有约束不放宽）。
+2. **全量离线回归 443 项保持全绿**（现有测试不改语义；如确需触碰，逐处留痕说明）。
+3. 零真实 LLM 调用、零付费额度；冻结评测 YAML 不动；`data/` 真实库不被测试触碰。
+4. `requirements.txt` 增加服务层依赖（fastapi/uvicorn，注释标明用途）。
+5. 留痕：PROGRESS.md 新节、README 组成更新、DESIGN.md 第 28 章指针。
+6. 本轮改动**不自动提交 git**——提交与推送等发起人指令。
+
+## 七、已知边界（不冒充完成）
+
+- 统一协议本轮只接管"手动编辑 + AI 提案确认"两条新路径；`coach/agent.py` 现有
+  工具（apply_adjustment / confirm_profile_change / 重排）**继续按原机制运行**，
+  迁移到统一服务属 M2，本轮不做（避免重写冻结架构）。
+- approach 与计划的关联：经协议提交的计划版本带 `approach_revision` 戳；
+  agent 旧路径生成的计划不带该戳（GET 时如实标注），不做回填。
+- 多设备并发：本轮以 base_version 乐观锁防覆盖（单机单进程足够）；
+  完整冲突合并留待多端同步需求出现。

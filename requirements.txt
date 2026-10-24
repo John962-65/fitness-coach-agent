@@ -2,6 +2,10 @@ openai>=1.30.0
 python-dotenv>=1.0.0
 pyyaml>=6.0
 
+# ---- 2.0 B4 服务层（backend/，FastAPI 封装现有核心，TASKBOOK_2.0 §五）----
+fastapi>=0.115
+uvicorn>=0.30
+
 # ---- R4 一手素材流水线（tools/fetch_transcript.py，可选）----
 yt-dlp>=2026.8          # B 站视频/字幕（2022 版提取器已失效，必须新版）
 faster-whisper>=1.2     # 无字幕时的本地中文转写（CPU int8 即可）

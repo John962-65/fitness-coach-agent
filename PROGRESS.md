@@ -1169,3 +1169,15 @@ P1（槽位模板默认动作）共 17 个动作，其中 12 个已有批准卡�
 - **现象**：交互 shell 带代理软件导出的 `ALL_PROXY=socks://127.0.0.1:7897` 时，`python3 main.py` 在 `LLMClient` 构造 OpenAI 客户端即抛 `ValueError: Unknown scheme for proxy URL`——httpx2 只接受 `http/https/socks5/socks5h`，且本机未装 `socksio`（socks5 到请求时同样会挂）。与 §18.2 评测初始化失败同源，当时只在验收子进程移除了该变量，交互入口无防护。
 - **修复**：`coach/llm.py` 新增 `_drop_unusable_proxy_env()`，构造客户端前剔除用不了的代理变量（未知 scheme；未装 socksio 时的 socks5/socks5h），http/https 代理原样保留。
 - **验证**：新增 `test_llm_env.py` 4 项（含带 `socks://` 变量直接构造客户端的复现用例）；带故障变量真实调用 DeepSeek 通过；全量离线回归 443 passed。另将环境内过旧的 Brotli 1.0.9 升级到 1.2.1（httpx2 解压需要 `output_buffer_limit` 参数，属机器环境不属于仓库）。
+
+## 三十七、2.0 后端任务书落地：训练方式模型 + 统一修改协议 + FastAPI 服务层（2026-10-24）
+
+发起人提供《Fitness Coach 2.0 产品设计与工程改造计划》并指示"暂时不做前端，把后端做扎实"。
+
+- **标准与契约落库（B0）**：2.0 原文逐字节归档 `DESIGN_2.0.md`；`TASKBOOK_2.0.md` 为本轮范围契约（B0–B5、验收标准、不做清单：前端/多智能体/知识检索/视频深化全部留后续轮次）；DESIGN.md 增第 28 章指针。
+- **TrainingApproach（B1）**：新表 `training_approach` / `approach_revisions`；`coach/approach.py` 维度独立修改（改一个动作不动整个方式）、版本快照+diff+发起者/原因/关联计划版本、受测迁移（从现有档案+生效计划推导 v1，幂等，老库零感知）、`approach_view` 引用维度（目标/条件/尝试）从现有数据拼装不存副本——单一事实来源。
+- **统一修改协议（B2）**：`coach/changes.py` + `change_proposals` 表：`ChangeProposal → Validation → Commit`，手动直通 / AI 先 pending 经语义门确认（复用 `confirmation.classify_decision`，多条待确认需点名 ID，base 漂移判 expired）；同套确定性校验（结构枚举 / base_version 乐观锁 / plan_fence 隔离拒编辑 / 医疗暂停拒编辑 / 伤病关节压力 ≥2 拒注入，avoid 仅警告）；单事务提交（数据+版本+提案状态一起成功/回滚，有事务回滚测试）。
+- **计划手动编辑（B3）**：`coach/plan_edit.py` 六种操作（增/删/替换/排序/组次处方/改日名），先校验后提交、任一失败整体作废；动作只接受 id/官方名/精确别名（"量子波动深蹲"不能被子串归一混进计划）；draft 披露备注随内容刷新；同动作替换沿用处方重量。
+- **FastAPI 服务层（B4）**：`backend/`（app 工厂 + /api 路由，薄层全部委托 coach/ 域函数）：health / 档案 / 今日简报（确定性）/ 训练方式（查看/初始化/版本/恢复）/ 统一修改（手动/AI 暂存/确认/列表）/ 计划（查看/手动编辑）/ 打卡（落库走与 agent 同套清洗归一 + 纠错）/ 动作库检索（名称/别名/id/肌群/器械/状态）/ AI 对话（复用 CoachAgent）。`python3 -m backend` 启动，uvicorn 真实冒烟通过（临时库）；CLI 保留。
+- **验证**：新增 test_approach.py 16 + test_changes.py 13 + test_plan_edit.py 12 + test_api.py 10；全量离线回归 **494 passed**（443 基线零退化 + 51 新增）。本轮零真实 LLM 调用、冻结评测 YAML 未动、真实库未触碰（新表为增量 schema，下次打开自动补建）。
+- **边界（不冒充完成）**：agent 既有工具（apply_adjustment/confirm_profile_change/重排）按原冻结机制运行，迁移到统一服务属 M2；经协议提交的计划带 `approach_revision` 戳、agent 旧路径不带（GET 如实标注）；多设备并发本轮仅 base_version 乐观锁。改动待发起人授权后提交 git。
