@@ -1,7 +1,10 @@
 // M3 知识库面板：统一检索（md/博主观点/教练卡/我的导入）+ 导入 + 待审核
 import { useCallback, useEffect, useState } from 'react'
+import { BookOpenText, ShieldAlert, Upload } from 'lucide-react'
 import { api, ApiError } from '../api'
-import { Card, Empty, ErrorBox, Spinner, Tag } from './Bits'
+import {
+  Button, Card, Empty, ErrorBox, Field, Input, Segmented, Spinner, Tag, Textarea,
+} from './Bits'
 
 interface SearchHit {
   engine: string
@@ -38,6 +41,8 @@ const ENGINE_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   method: '方法', principle: '原理', cue: '发力', nutrition: '营养', other: '其他',
 }
+
+const PATTERNS = ['squat','hinge','lunge','h_push','v_push','h_pull','v_pull','isolation','core','carry']
 
 export default function KnowledgePanel({ uid }: { uid: string }) {
   const [tab, setTab] = useState<'search' | 'import'>('search')
@@ -98,51 +103,47 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <button onClick={() => setTab('search')}
-                className={`btn flex-1 ${tab === 'search' ? 'bg-accent text-neutral-950' : 'bg-neutral-800'}`}>
-          知识检索
-        </button>
-        <button onClick={() => setTab('import')}
-                className={`btn flex-1 ${tab === 'import' ? 'bg-accent text-neutral-950' : 'bg-neutral-800'}`}>
-          导入知识
-        </button>
-      </div>
+      <Segmented
+        options={[
+          { value: 'search', label: '知识检索' },
+          { value: 'import', label: '导入知识' },
+        ]}
+        value={tab} onChange={setTab} />
       {error && <ErrorBox message={error.message} details={error.details} />}
 
       {tab === 'search' && (
         <>
           <div className="flex gap-2">
-            <input className="input" placeholder="搜索全部知识来源（如：平台期 蛋白）"
+            <Input placeholder="搜索全部知识来源（如：平台期 蛋白）"
                    value={q} onChange={(e) => setQ(e.target.value)}
                    onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
-            <button className="btn-primary shrink-0" disabled={searching} onClick={doSearch}>
+            <Button className="shrink-0" disabled={searching} onClick={doSearch}>
               {searching ? '…' : '搜索'}
-            </button>
+            </Button>
           </div>
           {searching && <Spinner />}
           {result && result.keywords.length === 0 && (
-            <Empty>关键词太短，换更具体的词试试</Empty>
+            <Empty title="没有关键词">关键词太短，换更具体的词试试。</Empty>
           )}
           {result && result.keywords.length > 0 && Object.entries(result.engines).map(([key, engine]) => (
             <Card key={key} title={ENGINE_LABEL[key] || key}
                   right={<Tag>{engine.hits.length} 条</Tag>}>
               {engine.hits.length === 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs leading-relaxed text-muted">
                   {engine.note || '无命中'}
                   {engine.draft_matches ? `（另有 ${engine.draft_matches} 条草稿命中，审核前不展示）` : ''}
                 </p>
               )}
-              <ul className="space-y-2">
+              <ul className="rows">
                 {engine.hits.map((h, i) => (
-                  <li key={i} className="text-sm">
+                  <li key={i} className="py-2.5 first:pt-0 last:pb-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate font-medium">{h.title}</span>
+                      <span className="truncate text-sm font-medium">{h.title}</span>
                       <Tag tone={h.provenance.includes('blogger') ? 'blue' : 'neutral'}>
                         {h.provenance}
                       </Tag>
                     </div>
-                    <p className="text-xs text-neutral-400">{h.snippet}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted">{h.snippet}</p>
                   </li>
                 ))}
               </ul>
@@ -153,17 +154,19 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
 
       {tab === 'import' && (
         <>
-          <Card title="粘贴文本/笔记导入">
-            <input className="input mb-2" placeholder="资料标题" value={title}
-                   onChange={(e) => setTitle(e.target.value)} />
-            <textarea className="input min-h-32" placeholder="粘贴文章、笔记或教程内容……"
+          <Card title="粘贴文本/笔记导入" sub="提取为规则草稿（非模型提炼），全部进入待审核。">
+            <Field label="资料标题">
+              <Input placeholder="未命名资料" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </Field>
+            <Textarea className="mt-2.5 min-h-32" placeholder="粘贴文章、笔记或教程内容……"
                       value={content} onChange={(e) => setContent(e.target.value)} />
-            <button className="btn-primary mt-2 w-full" disabled={content.trim().length < 20}
-                    onClick={doImport}>导入并提取观点草稿</button>
-            {importResult && <p className="mt-2 text-xs text-accent">{importResult}</p>}
-            <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
-              提取为规则草稿（非模型提炼），全部进入待审核；审核通过≠科学验证，
-              高风险内容自动隔离且不可放行。
+            <Button className="mt-2.5 w-full" disabled={content.trim().length < 20}
+                    onClick={doImport}>
+              <Upload size={15} /> 导入并提取观点草稿
+            </Button>
+            {importResult && <p className="mt-2 text-xs leading-relaxed text-accent-deep">{importResult}</p>}
+            <p className="mt-2 text-2xs leading-relaxed text-faint">
+              审核通过≠科学验证，高风险内容自动隔离且不可放行。
             </p>
           </Card>
 
@@ -171,17 +174,17 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
             <Card title={`待审核观点（${pending.length}）`}>
               <ul className="space-y-2">
                 {pending.map((c) => (
-                  <li key={c.id} className="rounded-lg bg-neutral-800/60 p-2.5 text-sm">
+                  <li key={c.id} className="rounded-xl border border-line bg-canvas p-3 text-sm leading-relaxed">
                     <div className="flex items-start justify-between gap-2">
                       <p className="flex-1">{c.content}</p>
                       <div className="flex shrink-0 gap-1.5">
-                        <button className="tag bg-emerald-900/60 text-emerald-300"
+                        <button className="tag min-h-8 bg-accent-soft text-accent-deep"
                                 onClick={() => review(c.id, 'approve')}>通过</button>
-                        <button className="tag bg-red-900/60 text-red-300"
+                        <button className="tag min-h-8 bg-red-50 text-red-600"
                                 onClick={() => review(c.id, 'reject')}>拒绝</button>
                       </div>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
                       <Tag>{TYPE_LABEL[c.claim_type] || c.claim_type}</Tag>
                       {c.duplicate_of && (
                         <Tag tone="amber">疑似重复 {c.duplicate_of.ref}（{c.duplicate_of.similarity}）</Tag>
@@ -197,12 +200,15 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
           )}
 
           {quarantined.length > 0 && (
-            <Card title={<span><Tag tone="red">已隔离</Tag> <span className="ml-1">高风险内容（{quarantined.length}）</span></span>}>
+            <Card title={<span className="flex items-center gap-1.5">
+              <ShieldAlert size={15} className="text-red-500" /> 已隔离 · 高风险内容（{quarantined.length}）
+            </span>}>
               <ul className="space-y-1.5">
                 {quarantined.map((c) => (
-                  <li key={c.id} className="rounded-lg bg-red-950/30 p-2 text-xs text-red-300">
+                  <li key={c.id} className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs
+                                            leading-relaxed text-red-700">
                     {c.content}
-                    <span className="ml-1">（命中：{c.risk_flag}；不可审核放行，不作为处方依据）</span>
+                    <span className="text-red-600/70">（命中：{c.risk_flag}；不可审核放行，不作为处方依据）</span>
                   </li>
                 ))}
               </ul>
@@ -210,26 +216,26 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
           )}
 
           {claims && pending.length === 0 && quarantined.length === 0 && (
-            <Empty>暂无待审核观点；导入内容后在这里逐条审核。</Empty>
+            <Empty icon={<BookOpenText size={20} />} title="暂无待审核观点">
+              导入内容后在这里逐条审核。
+            </Empty>
           )}
 
           {proposals.length > 0 && (
             <Card title={`新动作提案（${proposals.length}）待审核入库`}>
-              <ul className="space-y-2">
+              <ul className="space-y-2.5">
                 {proposals.map((pr) => (
-                  <li key={pr.id} className="rounded-lg bg-neutral-800/60 p-2.5 text-sm">
+                  <li key={pr.id} className="rounded-xl border border-line bg-canvas p-3 text-sm">
                     <p className="font-medium">{pr.name}</p>
-                    {pr.sentence && <p className="text-xs text-neutral-500">依据：{pr.sentence}</p>}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                      <label className="text-neutral-400">模式
-                        <select id={`pat-${pr.id}`} className="input ml-1 !w-28 !py-1 text-xs">
-                          {['squat','hinge','lunge','h_push','v_push','h_pull','v_pull','isolation','core','carry']
-                            .map((x) => <option key={x}>{x}</option>)}
-                        </select>
-                      </label>
-                      <input id={`eid-${pr.id}`} className="input !w-40 !py-1 text-xs"
+                    {pr.sentence && <p className="mt-0.5 text-xs text-muted">依据：{pr.sentence}</p>}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <select id={`pat-${pr.id}`} className="input input-sm !w-28"
+                              defaultValue="isolation">
+                        {PATTERNS.map((x) => <option key={x}>{x}</option>)}
+                      </select>
+                      <input id={`eid-${pr.id}`} className="input input-sm !w-44"
                              placeholder="动作 id（英文，如 kettlebell_swing）" />
-                      <button className="tag bg-emerald-900/60 text-emerald-300"
+                      <button className="tag min-h-8 bg-accent-soft text-accent-deep"
                               onClick={async () => {
                                 const pattern = (document.getElementById(`pat-${pr.id}`) as HTMLSelectElement).value
                                 const exId = (document.getElementById(`eid-${pr.id}`) as HTMLInputElement).value.trim()
@@ -245,7 +251,7 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
                                 setPropNote(res.ok ? `已入库：${body.exercise_id}（draft，可搜索/可加入计划）` : body.detail?.error || '失败')
                                 loadClaims()
                               }}>审核通过并入库</button>
-                      <button className="tag bg-red-900/60 text-red-300"
+                      <button className="tag min-h-8 bg-red-50 text-red-600"
                               onClick={async () => {
                                 await fetch(`/api/users/${uid}/exercise-proposals/${pr.id}/review`, {
                                   method: 'POST',
@@ -260,8 +266,8 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
                   </li>
                 ))}
               </ul>
-              {propNote && <p className="mt-2 text-xs text-accent">{propNote}</p>}
-              <p className="mt-2 text-[11px] text-neutral-500">
+              {propNote && <p className="mt-2 text-xs text-accent-deep">{propNote}</p>}
+              <p className="mt-2 text-2xs leading-relaxed text-faint">
                 入库动作 status=draft（结构化属性未审核）；伤病用户的计划筛选不会依赖其空压力数据。
               </p>
             </Card>
@@ -379,88 +385,85 @@ export function VideoImportPanel({ uid }: { uid: string }) {
   }
 
   return (
-    <Card title="视频导入">
-      <input className="input mb-2 text-sm" placeholder="视频标题（如：深蹲教学）"
+    <Card title="视频导入" sub="可选：先选字幕再解析；无字幕时服务器本地转写（较慢）。识别不强行匹配：无候选时如实显示。">
+      <Input className="mb-2.5" placeholder="视频标题（如：深蹲教学）"
              value={title} onChange={(e) => setTitle(e.target.value)} />
-      <div className="space-y-1.5 text-sm">
+      <div className="space-y-2 text-sm">
         <div className="flex items-center gap-2">
-          <span className="w-10 shrink-0 text-xs text-neutral-500">① 视频</span>
+          <span className="w-12 shrink-0 text-xs text-muted">① 视频</span>
           <input type="file" disabled={busy} accept="video/mp4,video/webm,video/quicktime,.mkv"
+                 className="w-full text-xs text-muted file:mr-2 file:rounded-lg file:border-0
+                            file:bg-canvas file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-ink"
                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)} />
-          {videoFile && <span className="shrink-0 text-xs text-accent">{videoFile.name}</span>}
+          {videoFile && <span className="shrink-0 text-xs text-accent-deep">{videoFile.name}</span>}
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-10 shrink-0 text-xs text-neutral-500">② 字幕</span>
+          <span className="w-12 shrink-0 text-xs text-muted">② 字幕</span>
           <input type="file" accept=".srt,.vtt" disabled={busy}
+                 className="w-full text-xs text-muted file:mr-2 file:rounded-lg file:border-0
+                            file:bg-canvas file:px-2.5 file:py-1.5 file:text-xs file:font-medium file:text-ink"
                  onChange={(e) => setSubtitleFile(e.target.files?.[0] || null)} />
-          {subtitleFile && <span className="shrink-0 text-xs text-accent">{subtitleFile.name}</span>}
+          {subtitleFile && <span className="shrink-0 text-xs text-accent-deep">{subtitleFile.name}</span>}
         </div>
-        <button className="btn-primary w-full !py-2 text-xs"
-                disabled={busy || !videoFile}
+        <Button className="w-full" disabled={busy || !videoFile}
                 onClick={() => upload(videoFile, subtitleFile)}>
           ③ 开始解析{subtitleFile ? '（视频+字幕）' : '（无字幕，本地转写较慢）'}
-        </button>
+        </Button>
       </div>
-      <p className="mt-1 text-[11px] text-neutral-500">
-        可选：先选字幕（srt/vtt）再选"字幕+视频"第二栏；无字幕时服务器本地转写（较慢）。
-        识别不强行匹配：无候选时如实显示。
-      </p>
-      {note && <p className="mt-1 text-xs text-accent">{note}</p>}
+      {note && <p className="mt-2 text-xs text-accent-deep">{note}</p>}
 
       {(assets || []).map((a) => (
-        <div key={a.id} className="mt-3 rounded-xl bg-neutral-800/60 p-2.5">
+        <div key={a.id} className="mt-3 rounded-xl border border-line bg-canvas p-3">
           <div className="flex items-center justify-between text-sm">
-            <span>{a.title}</span>
+            <span className="font-medium">{a.title}</span>
             <Tag tone={a.status === 'ready' ? 'green' : a.status === 'failed' ? 'red' : 'amber'}>
               {{ ready: '已处理', failed: '失败', processing: '处理中' }[a.status] || a.status}
             </Tag>
           </div>
-          {a.error && <p className="mt-1 text-xs text-red-400">{a.error}</p>}
+          {a.error && <p className="mt-1 text-xs text-red-600">{a.error}</p>}
           {a.status === 'ready' && (a.candidates.length === 0
-            ? (<div className="mt-1 text-xs">
-                 <p className="text-neutral-500">未识别到库内动作候选——可以手动创建新动作提案：</p>
+            ? (<div className="mt-1.5 text-xs">
+                 <p className="text-muted">未识别到库内动作候选——可以手动创建新动作提案：</p>
                  {manualFor === a.id ? (
-                   <div className="mt-1.5 space-y-1.5 rounded-lg bg-neutral-900/70 p-2">
-                     <input className="input !py-1.5 text-xs" placeholder="动作名称（必填）"
+                   <div className="mt-2 space-y-2 rounded-xl border border-line bg-surface p-3">
+                     <Input className="input-sm" placeholder="动作名称（必填）"
                             value={manual.name}
                             onChange={(e) => setManual({ ...manual, name: e.target.value })} />
-                     <input className="input !py-1.5 text-xs" placeholder="别名（顿号分隔，可选）"
+                     <Input className="input-sm" placeholder="别名（顿号分隔，可选）"
                             value={manual.aliases}
                             onChange={(e) => setManual({ ...manual, aliases: e.target.value })} />
-                     <select className="input !py-1.5 text-xs" value={manual.pattern}
+                     <select className="input input-sm" value={manual.pattern}
                              onChange={(e) => setManual({ ...manual, pattern: e.target.value })}>
-                       {['squat','hinge','lunge','h_push','v_push','h_pull','v_pull','isolation','core','carry']
-                         .map((x) => <option key={x}>{x}</option>)}
+                       {PATTERNS.map((x) => <option key={x}>{x}</option>)}
                      </select>
                      <div className="flex gap-2">
-                       <button className="btn-primary flex-1 !py-1.5 text-xs"
-                               disabled={!manual.name.trim()}
-                               onClick={() => createManualProposal(a.id)}>创建提案</button>
-                       <button className="btn-ghost flex-1 !py-1.5 text-xs"
-                               onClick={() => setManualFor(null)}>取消</button>
+                       <Button className="flex-1" disabled={!manual.name.trim()}
+                               onClick={() => createManualProposal(a.id)}>创建提案</Button>
+                       <Button variant="ghost" className="flex-1"
+                               onClick={() => setManualFor(null)}>取消</Button>
                      </div>
                    </div>
                  ) : (
-                   <button className="mt-1 text-accent underline"
+                   <button className="mt-1 font-medium text-accent-deep hover:underline"
                            onClick={() => { setManualFor(a.id); setManualNote('') }}>手动创建动作提案</button>
                  )}
-                 {manualNote && <p className="mt-1 text-accent">{manualNote}</p>}
+                 {manualNote && <p className="mt-1 text-accent-deep">{manualNote}</p>}
                </div>)
             : a.candidates.map((c, i) => (
-              <div key={i} className="mt-1.5 rounded-lg bg-neutral-900/70 p-2 text-xs">
-                <p className="text-neutral-200">
+              <div key={i} className="mt-2 rounded-xl border border-line bg-surface p-2.5 text-xs leading-relaxed">
+                <p className="text-ink">
                   {c.name}
-                  <span className="ml-1 text-neutral-500">（{c.match} 匹配 @ {Math.round(c.start)}s）</span>
-                  {c.status !== 'pending' && <Tag>{c.status}</Tag>}
+                  <span className="ml-1 text-muted">（{c.match} 匹配 @ {Math.round(c.start)}s）</span>
+                  {c.status !== 'pending' && <Tag className="ml-1.5">{c.status}</Tag>}
                 </p>
-                <p className="text-neutral-500">"{c.sentence}"</p>
+                <p className="mt-0.5 text-muted">"{c.sentence}"</p>
                 {c.status === 'pending' && (
-                  <div className="mt-1 flex gap-2">
-                    <button className="tag bg-emerald-900/60 text-emerald-300"
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <button className="tag min-h-8 bg-accent-soft text-accent-deep"
                             onClick={() => confirm(a.id, i, 'link')}>关联该动作</button>
-                    <button className="tag bg-sky-900/60 text-sky-300"
+                    <button className="tag min-h-8 bg-sky-50 text-sky-700"
                             onClick={() => confirm(a.id, i, 'new')}>新动作候选</button>
-                    <button className="tag bg-neutral-800 text-neutral-400"
+                    <button className="tag min-h-8 border border-line bg-surface text-muted"
                             onClick={() => confirm(a.id, i, 'reject')}>忽略</button>
                   </div>
                 )}

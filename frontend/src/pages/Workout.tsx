@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  BookOpen, Check, ChevronDown, ChevronUp, Minus, Plus, Repeat2, Timer,
+} from 'lucide-react'
 import { api, ApiError } from '../api'
-import { ErrorBox, PageHeader, Spinner, Tag } from '../components/Bits'
+import { Button, ErrorBox, Spinner, SuccessBlock } from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { SessionEntry, useApp } from '../store'
@@ -10,8 +13,8 @@ export default function Workout() {
   const { day } = useParams()
   const uid = useApp((s) => s.uid)
   const session = useApp((s) => s.session)
-  const { startSession, logSet, removeLastSet, replaceExercise, setSessionNotes,
-          clearSession, startRest, restEndsAt, settings } = useApp((s) => s)
+  const { startSession, replaceExercise, setSessionNotes,
+          clearSession, restEndsAt, settings } = useApp((s) => s)
   const [error, setError] = useState('')
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -64,16 +67,31 @@ export default function Workout() {
   const entries = session?.day === decodeURIComponent(day || '') ? session.entries : null
   const restLeft = useMemo(() =>
     restEndsAt ? Math.max(0, Math.ceil((restEndsAt - now) / 1000)) : 0, [restEndsAt, now])
+  const restTotal = settings.restSeconds
 
-  if (error) return <div className="pt-4"><ErrorBox message={error} /></div>
+  if (error) {
+    return (
+      <div className="mx-auto min-h-dvh w-full max-w-xl px-4 pt-6">
+        <button className="btn-plain mb-3" onClick={() => navigate(-1)}>← 返回</button>
+        <ErrorBox message={error} />
+      </div>
+    )
+  }
   // 保存成功后会清空会话：成功页与空会话守卫必须先于使用 entries 的计算
   if (saved) {
     return (
-      <div className="space-y-4 pt-10 text-center">
-        <p className="text-4xl">🎉</p>
-        <p className="text-lg font-semibold">{saved}</p>
-        <button className="btn-primary w-full" onClick={() => navigate('/history')}>查看训练历史</button>
-        <button className="btn-ghost w-full" onClick={() => navigate('/today')}>回今日</button>
+      <div className="mx-auto min-h-dvh w-full max-w-xl px-4 pb-10 pt-16">
+        <SuccessBlock title="训练已保存">
+          <p className="max-w-72 text-sm leading-relaxed text-muted">{saved}</p>
+        </SuccessBlock>
+        <div className="space-y-3">
+          <Button block onClick={() => navigate(offlineSaved.current ? '/today' : '/history')}>
+            {offlineSaved.current ? '回今日' : '查看训练历史'}
+          </Button>
+          <Button block variant="ghost" onClick={() => navigate(offlineSaved.current ? '/history' : '/today')}>
+            {offlineSaved.current ? '查看今日' : '回今日'}
+          </Button>
+        </div>
       </div>
     )
   }
@@ -109,7 +127,7 @@ export default function Workout() {
       const result = await api.saveCheckin(uid, 'training', data, submissionId)
       const warn = result.warnings.length ? `（${result.warnings.join('；')}）` : ''
       clearSession()
-      setSaved(`已保存 ${exercises.length} 个动作、${totalSets} 组${warn}`)
+      setSaved(`共 ${exercises.length} 个动作、${totalSets} 组${warn}`)
       offlineSaved.current = false
     } catch (e) {
       const err = e as ApiError
@@ -117,7 +135,7 @@ export default function Workout() {
         await enqueueCheckin(uid, 'training', data, submissionId)
         useApp.getState().setOfflineCount(await queuedCount())
         clearSession()
-        setSaved('当前离线：训练已暂存到本机，恢复网络后自动同步。')
+        setSaved('当前离线：训练已暂存到本机，恢复网络后自动同步，不会丢失。')
         offlineSaved.current = true
       } else {
         setSaveError({ message: err.message, details: err.details })
@@ -128,71 +146,82 @@ export default function Workout() {
   }
 
   return (
-    <div className={`space-y-3 pt-4 ${restLeft > 0 ? 'pb-28' : ''}`}>
-      <PageHeader title={session!.day} sub={`训练日 · 已完成 ${totalSets} 组 · 计量 ${Math.round(volume)} kg`} />
-
-      {saveError && <ErrorBox message={saveError.message} details={saveError.details} />}
-
-      {entries.map((e, idx) => {
-        const isWarmupOnly = e.logged.length > 0 && e.logged.every((l) => l.warmup)
-        return (
-          <div key={idx} className="card">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold">{e.replaced_with || e.name}</h3>
-                <p className="text-xs text-neutral-500">
-                  目标 {e.target.sets}×{e.target.reps}
-                  {e.target.weight != null ? ` · 上次 ${e.target.weight}kg` : ''}
-                  {e.note ? ` · ${e.note}` : ''}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {isWarmupOnly && <Tag tone="amber">仅热身</Tag>}
-                <button className="text-xs text-neutral-400 underline"
-                        onClick={() => setPickerIdx(idx)}>替换</button>
-              </div>
-            </div>
-
-            {e.logged.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {e.logged.map((l, i) => (
-                  <span key={i} className={`tag ${l.warmup ? 'bg-amber-900/50 text-amber-300' : 'bg-neutral-800 text-neutral-300'}`}>
-                    {l.warmup ? '热身 ' : ''}{l.weight ?? '?'}kg×{l.reps ?? '?'}{l.rpe ? ` RPE${l.rpe}` : ''}
-                  </span>
-                ))}
-                <button className="tag text-neutral-500 underline"
-                        onClick={() => removeLastSet(idx)}>撤销</button>
-              </div>
-            )}
-
-            <SetForm onDone={(s) => { logSet(idx, s); if (!s.warmup) startRest() }} />
+    <div className="min-h-dvh bg-canvas">
+      {/* 沉浸式顶栏（深色，含进度） */}
+      <header className="sticky top-0 z-30 bg-night text-white"
+              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-3">
+          <button className="-ml-2 flex size-9 items-center justify-center rounded-full
+                             text-white/80 transition-colors hover:bg-white/10"
+                  onClick={() => navigate('/today')} aria-label="结束并返回今日">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[17px] font-bold leading-tight">{session!.day}</h1>
+            <p className="nums text-xs text-white/60">
+              已完成 {totalSets} 组 · 计量 {Math.round(volume)} kg
+            </p>
           </div>
-        )
-      })}
+          {restLeft > 0 && (
+            <span className="nums flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5
+                             text-sm font-bold text-ink">
+              <Timer size={15} /> {restLeft}s
+            </span>
+          )}
+        </div>
+      </header>
 
-      <div className="card">
-        <label className="label">训练感受 / 备注</label>
-        <textarea className="input min-h-16" value={session!.notes}
-                  onChange={(ev) => setSessionNotes(ev.target.value)}
-                  placeholder="例如：深蹲膝盖有点紧，重量保守" />
-      </div>
+      <main className="mx-auto w-full max-w-xl space-y-4 px-4 pb-52 pt-4">
+        {saveError && <ErrorBox message={saveError.message} details={saveError.details} />}
 
-      <button className="btn-primary w-full" disabled={saving || totalSets === 0} onClick={save}>
-        {saving ? '保存中…' : `完成训练（${totalSets} 组）`}
-      </button>
-      <p className="text-center text-[11px] text-neutral-600">
-        断网时记录会暂存本机（IndexedDB），恢复网络自动同步，不会丢失。
-      </p>
+        {entries.map((e, idx) => (
+          <ExerciseBlock key={idx} idx={idx} entry={e}
+                         onPickReplace={() => setPickerIdx(idx)} />
+        ))}
 
-      {restLeft > 0 && (
-        <div className="fixed inset-x-0 bottom-16 z-40 mx-auto flex max-w-lg items-center justify-between
-                        border-t border-neutral-800 bg-neutral-900 px-4 py-3">
-          <span className="text-sm text-neutral-300">休息 {restLeft}s</span>
-          <button className="btn-ghost !py-1.5 text-xs" onClick={() => useApp.getState().stopRest()}>
-            跳过（默认 {settings.restSeconds}s）
+        {/* 训练感受 */}
+        <div className="card">
+          <label className="label" htmlFor="session-notes">训练感受 / 备注</label>
+          <textarea id="session-notes" className="input min-h-20"
+                    value={session!.notes}
+                    onChange={(ev) => setSessionNotes(ev.target.value)}
+                    placeholder="例如：深蹲膝盖有点紧，重量保守" />
+        </div>
+
+        <p className="text-center text-xs leading-relaxed text-muted">
+          断网时记录会暂存本机（IndexedDB），恢复网络自动同步，不会丢失。
+        </p>
+      </main>
+
+      {/* 固定底部：休息计时器 + 完成训练入口 */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur"
+           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="mx-auto w-full max-w-xl space-y-2.5 px-4 pb-3 pt-3">
+          {restLeft > 0 && (
+            <div className="flex items-center gap-3 rounded-2xl bg-night px-4 py-3 text-white">
+              <Timer size={18} className="shrink-0 text-accent" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium">休息中</span>
+                  <span className="nums text-lg font-bold text-accent">{restLeft}s</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/15">
+                  <div className="h-full rounded-full bg-accent transition-[width] duration-1000 ease-linear"
+                       style={{ width: `${(restLeft / restTotal) * 100}%` }} />
+                </div>
+              </div>
+              <button className="btn-sm btn shrink-0 bg-white/10 text-white hover:bg-white/20"
+                      onClick={() => useApp.getState().stopRest()}>
+                跳过
+              </button>
+            </div>
+          )}
+          <button className="btn-primary w-full text-base" disabled={saving || totalSets === 0} onClick={save}>
+            {saving ? '保存中…' : `完成训练（${totalSets} 组）`}
           </button>
         </div>
-      )}
+      </div>
 
       {pickerIdx !== null && (
         <ExercisePicker
@@ -204,32 +233,178 @@ export default function Workout() {
   )
 }
 
-function SetForm({ onDone }: { onDone: (s: { weight: number | null; reps: number | null; rpe: number | null; warmup: boolean; at?: string }) => void }) {
-  const [weight, setWeight] = useState('')
-  const [reps, setReps] = useState('')
+/** 单个动作卡：大标题 + 教学入口 + 组记录表 + 快速输入 */
+function ExerciseBlock({ idx, entry, onPickReplace }: {
+  idx: number; entry: SessionEntry; onPickReplace: () => void
+}) {
+  const logSet = useApp((s) => s.logSet)
+  const removeLastSet = useApp((s) => s.removeLastSet)
+  const startRest = useApp((s) => s.startRest)
+  const [rpeOpen, setRpeOpen] = useState(false)
+  const done = entry.logged.filter((l) => !l.warmup).length
+  const targetSets = Number(entry.target.sets) || 0
+  const isWarmupOnly = entry.logged.length > 0 && entry.logged.every((l) => l.warmup)
+  const prevWeight = entry.target.weight
+
+  return (
+    <div className="card !p-0 overflow-hidden">
+      {/* 动作头 */}
+      <div className="flex items-start justify-between gap-3 px-4 pb-3 pt-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="nums flex size-6 shrink-0 items-center justify-center rounded-full
+                             bg-ink/6 text-xs font-bold text-muted">{idx + 1}</span>
+            <h2 className="truncate text-xl font-bold leading-tight">
+              {entry.replaced_with || entry.name}
+            </h2>
+          </div>
+          <p className="nums mt-1.5 text-[13px] text-muted">
+            目标 {targetSets}×{entry.target.reps}
+            {prevWeight != null && ` · 上次 ${prevWeight}kg`}
+            {entry.note && ` · ${entry.note}`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {entry.exercise_id && (
+            <Link to={`/explore/${encodeURIComponent(entry.exercise_id)}`}
+                  className="btn-plain" aria-label={`查看 ${entry.name} 教学`}>
+              <BookOpen size={15} /> 教学
+            </Link>
+          )}
+          <button className="btn-plain" onClick={onPickReplace}>
+            <Repeat2 size={15} /> 替换
+          </button>
+        </div>
+      </div>
+
+      {/* 已记录组 */}
+      {entry.logged.length > 0 && (
+        <div className="mx-4 mb-3 overflow-hidden rounded-xl border border-line">
+          {entry.logged.map((l, i) => (
+            <div key={i}
+                 className={`nums flex items-center gap-2 px-3 py-2 text-sm ${
+                   i % 2 === 0 ? 'bg-surface' : 'bg-canvas'}`}>
+              <span className={`flex size-5 items-center justify-center rounded-full text-2xs font-bold ${
+                l.warmup ? 'bg-amber-100 text-amber-700' : 'bg-accent-soft text-accent-deep'}`}>
+                {i + 1}
+              </span>
+              {l.warmup && <span className="tag bg-amber-50 text-amber-700">热身</span>}
+              <span className="ml-auto font-medium">
+                {l.weight ?? '?'} <span className="text-xs text-muted">kg</span>
+                <span className="mx-1 text-muted">×</span>
+                {l.reps ?? '?'} <span className="text-xs text-muted">次</span>
+              </span>
+              {l.rpe != null && <span className="text-xs text-muted">RPE {l.rpe}</span>}
+              <Check size={14} className="text-accent-deep" />
+            </div>
+          ))}
+        </div>
+      )}
+      {isWarmupOnly && (
+        <p className="mx-4 mb-2 text-xs text-amber-700">仅记录了热身组，尚无正式组。</p>
+      )}
+      {done > 0 && done < targetSets && (
+        <p className="mx-4 mb-2 text-xs text-muted">
+          已完成 {done}/{targetSets} 组，还差 {targetSets - done} 组。
+        </p>
+      )}
+
+      <SetForm onDone={(s) => { logSet(idx, s); if (!s.warmup) startRest() }}
+               onUndo={() => removeLastSet(idx)}
+               canUndo={entry.logged.length > 0}
+               rpeOpen={rpeOpen} setRpeOpen={setRpeOpen}
+               suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined} />
+    </div>
+  )
+}
+
+/** 逐组快速输入：重量/次数大输入区 + 热身区分 + 可展开 RPE；完成组为拇指可达大按钮 */
+function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, suggestReps }: {
+  onDone: (s: { weight: number | null; reps: number | null; rpe: number | null; warmup: boolean; at?: string }) => void
+  onUndo: () => void; canUndo: boolean
+  rpeOpen: boolean; setRpeOpen: (v: boolean) => void
+  suggestWeight?: number | null; suggestReps?: number
+}) {
+  const [weight, setWeight] = useState(suggestWeight != null ? String(suggestWeight) : '')
+  const [reps, setReps] = useState(suggestReps ? String(suggestReps) : '')
   const [rpe, setRpe] = useState('')
   const [warmup, setWarmup] = useState(false)
+
+  const submit = () => {
+    onDone({
+      weight: weight === '' ? null : Number(weight),
+      reps: reps === '' ? null : Number(reps),
+      rpe: rpe === '' ? null : Number(rpe),
+      warmup,
+      at: new Date().toISOString(),
+    })
+    // 连续记录：重量与次数保留（多为组间不变），RPE/热身复位
+    setRpe(''); setWarmup(false)
+  }
+
+  const bump = (setter: (v: string) => void, cur: string, step: number) => {
+    const n = Number(cur)
+    setter(Number.isFinite(n) && cur !== '' ? String(Math.round((n + step) * 100) / 100) : String(step > 0 ? step : ''))
+  }
+
   return (
-    <div className="mt-2.5 flex items-center gap-1.5">
-      <input className="input !px-2 text-center text-sm" placeholder="kg" inputMode="decimal"
-             value={weight} onChange={(e) => setWeight(e.target.value)} />
-      <input className="input !px-2 text-center text-sm" placeholder="次" inputMode="numeric"
-             value={reps} onChange={(e) => setReps(e.target.value)} />
-      <input className="input !px-2 text-center text-sm" placeholder="RPE" inputMode="decimal"
-             value={rpe} onChange={(e) => setRpe(e.target.value)} />
-      <button className={`shrink-0 rounded-lg px-2 py-2 text-xs ${warmup ? 'bg-amber-800 text-amber-200' : 'bg-neutral-800 text-neutral-400'}`}
-              onClick={() => setWarmup((w) => !w)}>热身</button>
-      <button className="btn-primary shrink-0 !px-3"
-              onClick={() => {
-                onDone({
-                  weight: weight === '' ? null : Number(weight),
-                  reps: reps === '' ? null : Number(reps),
-                  rpe: rpe === '' ? null : Number(rpe),
-                  warmup,
-                  at: new Date().toISOString(),
-                })
-                setWeight(''); setReps(''); setRpe(''); setWarmup(false)
-              }}>✓</button>
+    <div className="border-t border-line bg-canvas/60 px-4 pb-4 pt-3">
+      <div className="flex items-center gap-2">
+        <button
+          className={`tag h-11 shrink-0 px-3 transition-colors ${
+            warmup ? 'bg-amber-400 text-amber-950' : 'border border-line bg-surface text-muted'}`}
+          onClick={() => setWarmup((w) => !w)}
+          aria-pressed={warmup}>
+          热身
+        </button>
+        <div className="relative flex-1">
+          <input className="input nums h-12 rounded-xl text-center text-lg font-semibold" placeholder="重量"
+                 inputMode="decimal" value={weight}
+                 onChange={(e) => setWeight(e.target.value)} />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">kg</span>
+        </div>
+        <div className="relative flex-1">
+          <input className="input nums h-12 rounded-xl text-center text-lg font-semibold" placeholder="次数"
+                 inputMode="numeric" value={reps}
+                 onChange={(e) => setReps(e.target.value)} />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">次</span>
+        </div>
+        <button className={`flex size-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+          rpeOpen ? 'border-accent-deep/40 bg-accent-soft text-accent-deep'
+                  : 'border-line bg-surface text-muted'}`}
+                onClick={() => setRpeOpen(!rpeOpen)}
+                aria-expanded={rpeOpen} aria-label="展开 RPE">
+          {rpeOpen ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+        </button>
+      </div>
+
+      {rpeOpen && (
+        <div className="mt-2 flex items-center gap-2 animate-fade-up">
+          <div className="relative flex-1">
+            <input className="input nums input-sm text-center" placeholder="RPE（可选，1-10）"
+                   inputMode="decimal" value={rpe} onChange={(e) => setRpe(e.target.value)} />
+          </div>
+          <div className="flex shrink-0 gap-1">
+            {([1, 0.5] as const).map((step) => (
+              <button key={step} className="flex size-9 items-center justify-center rounded-lg border
+                                             border-line bg-surface text-muted hover:border-lineStrong"
+                      aria-label={`${step > 0 ? '增加' : '减少'}重量 ${Math.abs(step)}`}
+                      onClick={() => bump(setWeight, weight, step === 1 ? 2.5 : -2.5)}>
+                {step === 1 ? <Plus size={15} /> : <Minus size={15} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-2.5 flex gap-2">
+        <button className="btn-plain shrink-0" disabled={!canUndo} onClick={onUndo}>
+          撤销上一组
+        </button>
+        <button className="btn-primary flex-1" onClick={submit}>
+          <Check size={17} strokeWidth={2.5} /> 完成本组
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ArrowDown, ArrowUp, Plus, Repeat2, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../api'
-import { ErrorBox, PageHeader, Spinner } from '../components/Bits'
+import {
+  Button, ErrorBox, Input, PlainButton, Spinner, SubHeader, Textarea,
+} from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
 import { addExercise, editPrescription, removeByIndex, renameDay,
          replaceByIndex, reorder } from '../lib/protocol'
@@ -43,7 +46,14 @@ export default function PlanEditor() {
 
   useEffect(() => { load() }, [load])
 
-  if (error && !plan) return <div className="pt-4"><ErrorBox message={error.message} details={error.details} /></div>
+  if (error && !plan) {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        <SubHeader title="编辑计划" onBack={() => navigate('/training')} />
+        <ErrorBox message={error.message} details={error.details} />
+      </div>
+    )
+  }
   if (!plan) return <Spinner />
 
   const days = plan.content.schedule.map((d) => d.day)
@@ -101,103 +111,110 @@ export default function PlanEditor() {
   }
 
   return (
-    <div className="space-y-3 pt-4">
-      <PageHeader title="编辑计划"
-        sub={`基于 v${plan.version} · ${ops.length} 项待保存修改`} />
+    <div className="mx-auto w-full max-w-3xl">
+      <SubHeader title="编辑计划" sub={`基于 v${plan.version} · ${ops.length} 项待保存修改`}
+                 onBack={() => navigate('/training')} />
 
-      {error && <ErrorBox message={error.message} details={error.details} />}
+      {error && <div className="mb-3"><ErrorBox message={error.message} details={error.details} /></div>}
 
-      {days.map((day) => (
-        <div key={day} className="card">
-          {renaming === day ? (
-            <div className="mb-2 flex gap-2">
-              <input className="input" value={newName} autoFocus
-                     onChange={(e) => setNewName(e.target.value)} placeholder="新训练日名" />
-              <button className="btn-primary shrink-0"
-                      onClick={() => {
-                        if (newName.trim() && newName !== day) {
-                          setDraft((d) => {
-                            const nd = { ...d, [newName.trim()]: d[day] }
-                            delete nd[day]
-                            return nd
-                          })
-                          pushOp(renameDay(day, newName.trim()))
-                        }
-                        setRenaming(null)
-                      }}>确定</button>
-            </div>
-          ) : (
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="font-semibold">{day}</h3>
-              <div className="flex gap-2 text-xs">
-                <button className="text-neutral-400 underline"
-                        onClick={() => { setRenaming(day); setNewName(day) }}>改名</button>
-                <button className="text-accent underline"
-                        onClick={() => setPicker({ day })}>+ 加动作</button>
+      <div className="space-y-3">
+        {days.map((day) => (
+          <div key={day} className="card">
+            {renaming === day ? (
+              <div className="mb-3 flex gap-2">
+                <Input value={newName} autoFocus
+                       onChange={(e) => setNewName(e.target.value)} placeholder="新训练日名" />
+                <Button className="shrink-0"
+                        onClick={() => {
+                          if (newName.trim() && newName !== day) {
+                            setDraft((d) => {
+                              const nd = { ...d, [newName.trim()]: d[day] }
+                              delete nd[day]
+                              return nd
+                            })
+                            pushOp(renameDay(day, newName.trim()))
+                          }
+                          setRenaming(null)
+                        }}>确定</Button>
               </div>
-            </div>
-          )}
-          <ul className="space-y-2">
-            {(draft[day] || []).map((row, idx) => (
-              <li key={idx} className="rounded-xl bg-neutral-800/60 p-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{row.name}</span>
-                  <div className="flex gap-2 text-xs text-neutral-400">
-                    <button disabled={idx === 0}
-                            onClick={() => {
-                              const list = draft[day]
-                              const moved = [...list]
-                              ;[moved[idx - 1], moved[idx]] = [moved[idx], moved[idx - 1]]
-                              setDraft((d) => ({ ...d, [day]: moved }))
-                              pushOp(reorder(day, idx, idx - 1))
-                            }}>↑</button>
-                    <button disabled={idx === draft[day].length - 1}
-                            onClick={() => {
-                              const list = draft[day]
-                              const moved = [...list]
-                              ;[moved[idx + 1], moved[idx]] = [moved[idx], moved[idx + 1]]
-                              setDraft((d) => ({ ...d, [day]: moved }))
-                              pushOp(reorder(day, idx, idx + 1))
-                            }}>↓</button>
-                    <button className="text-sky-400 underline"
-                            onClick={() => setPicker({ day, replaceIndex: idx })}>替换</button>
-                    <button className="text-red-400 underline"
-                            onClick={() => {
-                              setDraft((d) => ({ ...d, [day]: d[day].filter((_, i) => i !== idx) }))
-                              pushOp(removeByIndex(day, idx))
-                            }}>删除</button>
+            ) : (
+              <div className="mb-2.5 flex items-center justify-between">
+                <h3 className="text-[17px] font-bold">{day}</h3>
+                <div className="flex gap-1">
+                  <PlainButton onClick={() => { setRenaming(day); setNewName(day) }}>改名</PlainButton>
+                  <button className="btn-plain text-accent-deep" onClick={() => setPicker({ day })}>
+                    <Plus size={15} /> 加动作
+                  </button>
+                </div>
+              </div>
+            )}
+            <ul className="space-y-2">
+              {(draft[day] || []).map((row, idx) => (
+                <li key={idx} className="rounded-xl border border-line bg-canvas p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-sm font-semibold">{row.name}</span>
+                    <div className="flex shrink-0 gap-0.5 text-muted">
+                      <button className="flex size-8 items-center justify-center rounded-lg transition-colors
+                                         hover:bg-ink/5 disabled:opacity-30"
+                              disabled={idx === 0} aria-label="上移"
+                              onClick={() => {
+                                const list = draft[day]
+                                const moved = [...list]
+                                ;[moved[idx - 1], moved[idx]] = [moved[idx], moved[idx - 1]]
+                                setDraft((d) => ({ ...d, [day]: moved }))
+                                pushOp(reorder(day, idx, idx - 1))
+                              }}><ArrowUp size={15} /></button>
+                      <button className="flex size-8 items-center justify-center rounded-lg transition-colors
+                                         hover:bg-ink/5 disabled:opacity-30"
+                              disabled={idx === draft[day].length - 1} aria-label="下移"
+                              onClick={() => {
+                                const list = draft[day]
+                                const moved = [...list]
+                                ;[moved[idx + 1], moved[idx]] = [moved[idx], moved[idx + 1]]
+                                setDraft((d) => ({ ...d, [day]: moved }))
+                                pushOp(reorder(day, idx, idx + 1))
+                              }}><ArrowDown size={15} /></button>
+                      <button className="flex size-8 items-center justify-center rounded-lg text-sky-600
+                                         transition-colors hover:bg-sky-50" aria-label="替换"
+                              onClick={() => setPicker({ day, replaceIndex: idx })}><Repeat2 size={15} /></button>
+                      <button className="flex size-8 items-center justify-center rounded-lg text-red-500
+                                         transition-colors hover:bg-red-50" aria-label="删除"
+                              onClick={() => {
+                                setDraft((d) => ({ ...d, [day]: d[day].filter((_, i) => i !== idx) }))
+                                pushOp(removeByIndex(day, idx))
+                              }}><Trash2 size={15} /></button>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
-                  <input className="input !px-2 text-xs" value={row.sets} placeholder="组数"
-                         onChange={(e) => mutate(day, idx, { sets: e.target.value })}
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    <Input className="input-sm" value={row.sets} placeholder="组数" inputMode="numeric"
+                           onChange={(e) => mutate(day, idx, { sets: e.target.value })}
+                           onBlur={() => commitEdits(day, idx)} />
+                    <Input className="input-sm" value={row.reps} placeholder="次数" inputMode="numeric"
+                           onChange={(e) => mutate(day, idx, { reps: e.target.value })}
+                           onBlur={() => commitEdits(day, idx)} />
+                    <Input className="input-sm" value={row.weight} placeholder="kg" inputMode="decimal"
+                           onChange={(e) => mutate(day, idx, { weight: e.target.value })}
+                           onBlur={() => commitEdits(day, idx)} />
+                  </div>
+                  <Input className="input-sm mt-1.5" value={row.note} placeholder="备注"
+                         onChange={(e) => mutate(day, idx, { note: e.target.value })}
                          onBlur={() => commitEdits(day, idx)} />
-                  <input className="input !px-2 text-xs" value={row.reps} placeholder="次数"
-                         onChange={(e) => mutate(day, idx, { reps: e.target.value })}
-                         onBlur={() => commitEdits(day, idx)} />
-                  <input className="input !px-2 text-xs" value={row.weight} placeholder="kg"
-                         inputMode="decimal"
-                         onChange={(e) => mutate(day, idx, { weight: e.target.value })}
-                         onBlur={() => commitEdits(day, idx)} />
-                </div>
-                <input className="input mt-1.5 !px-2 text-xs" value={row.note} placeholder="备注"
-                       onChange={(e) => mutate(day, idx, { note: e.target.value })}
-                       onBlur={() => commitEdits(day, idx)} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
 
-      <div className="card">
-        <label className="label">修改原因（会记录进版本历史）</label>
-        <input className="input" value={reason} placeholder="例如：膝盖不适，换掉深蹲"
-               onChange={(e) => setReason(e.target.value)} />
-        <button className="btn-primary mt-3 w-full" disabled={saving || !ops.length}
-                onClick={save}>
+      <div className="card mt-4">
+        <label className="label" htmlFor="plan-edit-reason">修改原因（会记录进版本历史）</label>
+        <Textarea id="plan-edit-reason" className="min-h-14" value={reason}
+                  placeholder="例如：膝盖不适，换掉深蹲"
+                  onChange={(e) => setReason(e.target.value)} />
+        <Button className="mt-3 w-full" disabled={saving || !ops.length} onClick={save}>
           {saving ? '保存中…' : `保存 ${ops.length} 项修改`}
-        </button>
-        <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+        </Button>
+        <p className="mt-2.5 text-xs leading-relaxed text-muted">
           修改走统一安全校验：隔离/医疗暂停期会拒绝保存；伤病部位的高压力动作会被拒绝加入。
           若提示版本冲突，说明计划刚被其他端修改过，已自动刷新。
         </p>

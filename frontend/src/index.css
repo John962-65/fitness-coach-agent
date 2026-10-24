@@ -3,16 +3,77 @@
 @tailwind utilities;
 
 html { -webkit-tap-highlight-color: transparent; }
-body { @apply bg-neutral-950 text-neutral-100 antialiased; }
+
+body {
+  @apply bg-canvas font-sans text-ink antialiased;
+  font-size: 15px;
+  text-rendering: optimizeLegibility;
+}
+
+::placeholder { @apply text-muted/70; }
+
+/* 数字统一等宽对齐（训练数据可读性） */
+.nums { font-variant-numeric: tabular-nums; }
 
 @layer components {
-  .card { @apply rounded-2xl bg-neutral-900 p-4 border border-neutral-800; }
-  .btn { @apply rounded-xl px-4 py-2.5 text-sm font-medium transition-colors; }
-  .btn-primary { @apply btn bg-accent text-neutral-950 active:bg-accent-dim; }
-  .btn-ghost { @apply btn bg-neutral-800 text-neutral-100 active:bg-neutral-700; }
-  .btn-danger { @apply btn bg-neutral-800 text-red-400 active:bg-neutral-700; }
-  .input { @apply w-full rounded-xl bg-neutral-800 px-3 py-2.5 text-sm text-neutral-100
-           placeholder-neutral-500 outline-none border border-neutral-700 focus:border-accent; }
-  .tag { @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium; }
-  .label { @apply text-xs text-neutral-400 mb-1 block; }
+  /* ---- 卡片 ---- */
+  .card {
+    @apply rounded-2xl border border-line bg-surface p-4 shadow-card;
+  }
+  .card-night {
+    @apply rounded-2xl bg-night p-4 text-white;
+  }
+
+  /* ---- 按钮：点击区 ≥44px（sm 用于行内次要操作） ---- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold
+           transition-colors duration-150 select-none
+           disabled:pointer-events-none disabled:opacity-45;
+    min-height: 44px;
+  }
+  .btn-sm { @apply rounded-lg px-3 text-[13px] font-medium; min-height: 34px; }
+  .btn-primary { @apply btn bg-accent text-ink hover:bg-accent-dim active:bg-accent-dim; }
+  .btn-night { @apply btn bg-night text-white hover:bg-night/90 active:bg-night; }
+  .btn-ghost { @apply btn border border-line bg-surface text-ink hover:bg-canvas active:bg-line/50; }
+  .btn-soft { @apply btn bg-accent-soft text-accent-deep hover:bg-accent/40 active:bg-accent/50; }
+  .btn-danger { @apply btn bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-100; }
+  .btn-plain { @apply inline-flex min-h-[34px] items-center gap-1 rounded-lg px-1.5 text-[13px]
+                      font-medium text-muted transition-colors hover:bg-canvas hover:text-ink; }
+
+  /* ---- 表单 ---- */
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 text-sm text-ink outline-none
+           transition-colors placeholder:text-muted/70 focus:border-accent-deep/50
+           focus:ring-2 focus:ring-accent/35;
+    min-height: 44px;
+  }
+  .input-sm { @apply rounded-lg px-2.5 text-[13px]; min-height: 36px; }
+  .select { @apply input appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2368756D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); }
+  .label { @apply mb-1.5 block text-[13px] font-medium text-muted; }
+
+  /* ---- 标签 ---- */
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+
+  /* ---- 分割列表 ---- */
+  .rows { @apply divide-y divide-line; }
+}
+
+/* 滚动条（桌面） */
+@media (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-lineStrong; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* 系统减少动画偏好：全部动画降为瞬时 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
