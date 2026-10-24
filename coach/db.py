@@ -367,8 +367,11 @@ class Database:
                 "INSERT INTO checkins(user_id,type,data,created_at) VALUES(?,?,?,?)",
                 (user_id, type_, json.dumps(data, ensure_ascii=False), _now()))
             if type_ == "training":
+                # M6.3.1：自定义动作同样进入派生状态（用户可见动作统一定位）
                 ids = {ex["exercise_id"] for ex in data.get("exercises", [])
-                       if ex.get("exercise_id") and library.get(ex["exercise_id"])}
+                       if ex.get("exercise_id")
+                       and (library.get(ex["exercise_id"])
+                            or self.get_custom_exercise(user_id, ex["exercise_id"]))}
                 self._recompute_exercise_states(user_id, ids)
             if type_ in ("training", "body"):
                 profile = self.get_existing_profile(user_id)
@@ -386,15 +389,21 @@ class Database:
         self.conn.commit()
         return cur.lastrowid
 
-    def list_checkins(self, user_id: str, limit: int = 20) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT c.id,c.type,c.data,c.created_at,"
-            " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision,"
-            " (SELECT reason FROM checkin_revisions r WHERE r.checkin_id=c.id"
-            "  ORDER BY r.revision DESC LIMIT 1) AS last_reason"
-            " FROM checkins c WHERE c.user_id=? ORDER BY c.id DESC LIMIT ?",
-            (user_id, limit),
-        ).fetchall()
+    def list_checkins(self, user_id: str, limit: int = 20, offset: int = 0,
+                      date: str | None = None) -> list[dict]:
+        sql = ("SELECT c.id,c.type,c.data,c.created_at,"
+               " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision,"
+               " (SELECT reason FROM checkin_revisions r WHERE r.checkin_id=c.id"
+               "  ORDER BY r.revision DESC LIMIT 1) AS last_reason"
+               " FROM checkins c WHERE c.user_id=?")
+        params: list = [user_id]
+        if date:
+            # M6.3.1：按日期查询（服务端 created_at 前缀匹配；与日历聚合同源）
+            sql += " AND substr(c.created_at,1,10)=?"
+            params.append(date)
+        sql += " ORDER BY c.id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = self.conn.execute(sql, params).fetchall()
         return [{"id": r["id"], "revision": r["revision"], "last_reason": r["last_reason"],
                  "type": r["type"], "data": json.loads(r["data"]), "at": r["created_at"]}
                 for r in rows]
@@ -417,7 +426,9 @@ class Database:
             for ex in payload.get("exercises", []) if isinstance(payload, dict) else []:
                 if isinstance(ex, dict):
                     eid = ex.get("exercise_id") if "exercise_id" in ex else library.normalize(ex.get("name", ""))[0]
-                    if isinstance(eid, str) and library.get(eid):
+                    # M6.3.1：自定义动作同样参与派生状态（按用户可见动作统一定位）
+                    if isinstance(eid, str) and (library.get(eid)
+                                                 or self.get_custom_exercise(user_id, eid)):
                         result.add(eid)
             return result
         with self.conn:
@@ -444,6 +455,15 @@ class Database:
                 self._write_profile(user_id, profile)
         return self.get_checkin(user_id, checkin_id)
 
+    def _visible_exercise_name(self, user_id: str, eid: str) -> str:
+        """用户可见动作的名称（内置优先，回退本人自定义）。"""
+        from .exercises import library
+        doc = library.get(eid)
+        if doc:
+            return doc["name"]
+        custom = self.get_custom_exercise(user_id, eid)
+        return str(custom.get("name") or eid) if custom else eid
+
     def _recompute_exercise_states(self, user_id: str, exercise_ids: set[str]) -> None:
         from .exercises import library
         from .review import _same_exercise, e1rm
@@ -460,7 +480,9 @@ class Database:
                 if not isinstance(ex, dict):
                     continue
                 for eid, state in values.items():
-                    if not _same_exercise(library.get(eid)["name"], ex):
+                    # M6.3.1：已验证稳定 ID 直接命中（含自定义动作）；旧记录回退名称匹配
+                    if ex.get("exercise_id") != eid and not _same_exercise(
+                            self._visible_exercise_name(user_id, eid), ex):
                         continue
                     weight, rpe = _to_number(ex.get("weight_kg")), _to_number(ex.get("rpe"))
                     score = e1rm(weight, _to_reps(ex.get("reps")))

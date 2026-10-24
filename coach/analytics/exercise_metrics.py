@@ -1,11 +1,17 @@
-"""动作级历史与个人纪录：从 checkins 的逐组记录直接计算。"""
+"""动作级历史与个人纪录：从 checkins 的逐组记录直接计算。
+
+M6.3.1 统一身份解析：动作匹配直接比较"用户可见的稳定动作 ID"（内置 + 本人
+自定义，与 exercise_service.get_exercise 同口径）；只有旧记录缺少 ID 时才
+按名称/别名回退解析（本人自定义动作同样参与）。
+"""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 
-from ..exercises import library as exercise_lib
-from ..review import _same_exercise, e1rm
+from .. import exercise_service
+from ..review import e1rm
 
 E1RM_MAX_REPS = 12  # Epley 在低-中次数区间才相对可靠
 
@@ -19,6 +25,32 @@ def parse_stamp(s: str) -> datetime:
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
+
+
+def session_local_date(row_created_at: str, data: dict) -> str:
+    """训练所属日期：优先会话元数据里的用户本地日期，旧记录回退服务器时间。"""
+    meta = data.get("session_meta") if isinstance(data, dict) else None
+    ld = meta.get("local_date") if isinstance(meta, dict) else None
+    if isinstance(ld, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", ld):
+        return ld
+    return row_created_at[:10]
+
+
+def entry_identity(db, user_id: str | None, ex: dict) -> str | None:
+    """一条动作记录的身份：已验证稳定 ID 优先；旧记录按名称/别名回退解析。"""
+    ex_id = ex.get("exercise_id")
+    if isinstance(ex_id, str) and ex_id and exercise_service.get_exercise(db, user_id, ex_id):
+        return ex_id
+    name = str(ex.get("name") or "")
+    got, _, _ = exercise_service.library.normalize(name)
+    if got:
+        return got
+    n = exercise_service._norm(name)
+    for doc in (db.get_custom_exercises(user_id) if user_id else []):
+        if n == exercise_service._norm(str(doc.get("name") or "")) or n in {
+                exercise_service._norm(a) for a in (doc.get("aliases") or [])}:
+            return doc.get("id")
+    return None
 
 
 def _working_sets(set_logs: list) -> list[dict]:
@@ -38,24 +70,29 @@ def _working_sets(set_logs: list) -> list[dict]:
     return out
 
 
-def _iter_exercise_checkins(db, user_id: str, exercise_id: str):
-    """按时间倒序遍历训练记录，产出 (row, working_sets)。匹配规则与复盘一致（ID 优先）。"""
-    lib_name = exercise_lib.get(exercise_id)["name"] if exercise_lib.get(exercise_id) else exercise_id
+def _iter_user_training(db, user_id: str):
+    """按时间倒序产出 (row, data)。坏行跳过。"""
     rows = db.conn.execute(
         "SELECT id, data, created_at FROM checkins WHERE user_id=? AND type='training'"
         " ORDER BY created_at DESC, id DESC", (user_id,)).fetchall()
     for row in rows:
-        data = json.loads(row["data"])
-        if not isinstance(data, dict):
+        try:
+            data = json.loads(row["data"])
+        except (ValueError, TypeError):
             continue
-        for ex in data.get("exercises", []) or []:
-            if not isinstance(ex, dict) or not _same_exercise(lib_name, ex):
-                continue
-            logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else []
-            yield row, [l for l in logs if isinstance(l, dict)]
+        if isinstance(data, dict):
+            yield row, data
 
 
-def _duration_min(working: list[dict]) -> int | None:
+def _duration_min(working: list[dict], data: dict) -> int | None:
+    # 会话元数据（真实起止，含休息）优先；旧记录回退逐组完成时间跨度
+    meta = data.get("session_meta") if isinstance(data.get("session_meta"), dict) else {}
+    if meta.get("started_at") and meta.get("completed_at"):
+        try:
+            span = (parse_stamp(meta["completed_at"]) - parse_stamp(meta["started_at"])).total_seconds()
+            return max(0, round(span / 60))
+        except ValueError:
+            pass
     stamps = sorted(parse_stamp(l["at"]) for l in working if l.get("at"))
     if len(stamps) < 2:
         return None
@@ -63,27 +100,36 @@ def _duration_min(working: list[dict]) -> int | None:
 
 
 def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
-    """某动作的历史训练会话（新→旧），指标全部来自逐组记录。"""
+    """某动作的历史训练会话（新→旧），指标全部来自逐组记录。
+
+    exercise_id 必须是用户可见动作（内置或本人自定义）；自定义动作同样可查。
+    """
+    if not exercise_service.get_exercise(db, user_id, exercise_id):
+        return []
     sessions: list[dict] = []
-    for row, logs in _iter_exercise_checkins(db, user_id, exercise_id):
-        working = _working_sets(logs)
-        if not working:
-            continue
-        heavy = max((s for s in working if s["weight_kg"] is not None),
-                    key=lambda s: s["weight_kg"], default=None)
-        sessions.append({
-            "checkin_id": row["id"],
-            "date": row["created_at"][:10],
-            "working_sets": len(working),
-            "reps_total": sum(s["reps"] or 0 for s in working),
-            # 自重组（无外部负重）容量贡献 0，如实呈现
-            "volume": round(sum(s["volume"] for s in working)),
-            "best_set": ({"weight_kg": heavy["weight_kg"], "reps": heavy["reps"]}
-                         if heavy else None),
-            "best_e1rm": max((s["e1rm"] for s in working if s["e1rm"]), default=None),
-            "duration_min": _duration_min(working),
-            "sets": working,
-        })
+    for row, data in _iter_user_training(db, user_id):
+        for ex in data.get("exercises", []) or []:
+            if not isinstance(ex, dict) or entry_identity(db, user_id, ex) != exercise_id:
+                continue
+            logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else []
+            working = _working_sets([l for l in logs if isinstance(l, dict)])
+            if not working:
+                continue
+            heavy = max((s for s in working if s["weight_kg"] is not None),
+                        key=lambda s: s["weight_kg"], default=None)
+            sessions.append({
+                "checkin_id": row["id"],
+                "date": session_local_date(row["created_at"], data),
+                "working_sets": len(working),
+                "reps_total": sum(s["reps"] or 0 for s in working),
+                # 自重组（无外部负重）容量贡献 0，如实呈现
+                "volume": round(sum(s["volume"] for s in working)),
+                "best_set": ({"weight_kg": heavy["weight_kg"], "reps": heavy["reps"]}
+                             if heavy else None),
+                "best_e1rm": max((s["e1rm"] for s in working if s["e1rm"]), default=None),
+                "duration_min": _duration_min(working, data),
+                "sets": working,
+            })
     return sessions
 
 

@@ -937,9 +937,15 @@ def register_routes(app) -> None:
     # ---- 打卡 ----
 
     @api.get("/users/{uid}/checkins")
-    def list_checkins(uid: str, request: Request, limit: int = Query(20, ge=1, le=50)):
+    def list_checkins(uid: str, request: Request, limit: int = Query(20, ge=1, le=50),
+                      offset: int = Query(0, ge=0), date: str = ""):
+        # M6.3.1：date=YYYY-MM-DD 供训练日历查看当天完整记录（不受列表窗口限制）
+        import re as _re
+        if date and not _re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise HTTPException(status_code=422, detail={"error": "date 需为 YYYY-MM-DD"})
         _user_profile(request.app.state.db, uid)
-        return {"checkins": request.app.state.db.list_checkins(uid, limit)}
+        return {"checkins": request.app.state.db.list_checkins(
+            uid, limit, offset=offset, date=date or None)}
 
     @api.post("/users/{uid}/checkins")
     def save_checkin(uid: str, request: Request, payload: dict = Body(...)):

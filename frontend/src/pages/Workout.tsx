@@ -4,7 +4,7 @@ import {
   BookOpen, Check, ChevronDown, ChevronUp, Plus, Repeat2, Timer,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
-import { Button, ErrorBox, Spinner, SuccessBlock } from '../components/Bits'
+import { Button, ErrorBox, Sheet, Spinner, SuccessBlock } from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { parseTrainingNumber, validateSetValues } from '../lib/validate'
@@ -19,6 +19,11 @@ export default function Workout() {
   const [error, setError] = useState('')
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
   const [addingFree, setAddingFree] = useState(false)
+  // P0-1：会话切换提示（store 保留现有会话后，由用户明确选择恢复或放弃）
+  const [switchPrompt, setSwitchPrompt] = useState<{
+    activeLabel: string; activeHref: string; begin: () => void
+  } | null>(null)
+  const switchBeginRef = useRef<(() => void) | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<{ message: string; details?: string[] } | null>(null)
@@ -37,11 +42,16 @@ export default function Workout() {
     // M6.3 自由训练：不依赖计划，进入即建空会话，动作随加随练
     if (isFree) {
       if (session && session.mode === 'free') return
-      if (session && session.entries.some((e) => e.logged.length)) {
-        setError('有一个进行中的训练且已记录组数。请先完成它，再开始自由训练。')
-        return
+      const r = startFreeSession()
+      if (r.kept) {
+        const cur = useApp.getState().session!
+        const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)
+        switchBeginRef.current = () => startFreeSession()
+        setSwitchPrompt({
+          activeLabel: `自由训练（已记录 ${n} 组）`, activeHref: '/workout/free',
+          begin: () => startFreeSession(),
+        })
       }
-      startFreeSession()
       return
     }
     // 已有当天的进行中会话直接恢复（刷新不丢）
@@ -65,13 +75,25 @@ export default function Workout() {
       // 上次重量是辅助信息:断网降级为空(不阻塞训练执行)
       return api.exerciseStates(uid).catch(() => ({ states: [] })).then((states) => {
         const last = new Map(states.states.map((s) => [s.exercise_id, s.last_weight]))
-        startSession(decodeURIComponent(day), planDay.exercises.map((ex) => ({
+        const plannedEntries = planDay.exercises.map((ex) => ({
           exercise_id: ex.exercise_id,
           name: ex.name,
           target: { sets: ex.sets, reps: ex.reps, weight: last.get(ex.exercise_id) ?? ex.weight_kg ?? null },
           note: ex.note,
           logged: [],
-        })))
+        }))
+        const r = startSession(decodeURIComponent(day), plannedEntries)
+        if (r.kept) {
+          const cur = useApp.getState().session!
+          const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)
+          const begin = () => startSession(decodeURIComponent(day), plannedEntries)
+          switchBeginRef.current = begin
+          setSwitchPrompt({
+            activeLabel: `${cur.mode === 'free' ? '自由训练' : cur.day}（已记录 ${n} 组）`,
+            activeHref: cur.mode === 'free' ? '/workout/free' : `/workout/${encodeURIComponent(cur.day)}`,
+            begin,
+          })
+        }
       })
     }).catch((e) => setError(e.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +130,34 @@ export default function Workout() {
       </div>
     )
   }
+  // P0-1：会话切换需用户明确选择，绝不静默覆盖（在会话未就绪时也要可见）
+  if (switchPrompt) {
+    return (
+      <div className="mx-auto min-h-dvh w-full max-w-xl px-4">
+        <Sheet open
+               onClose={() => { setSwitchPrompt(null); navigate(switchPrompt.activeHref) }}
+               title="有一个进行中的训练">
+          <p className="text-sm leading-relaxed text-muted">
+            你有一个未完成的训练：<b className="text-ink">{switchPrompt.activeLabel}</b>。
+            已为你保留，不会因为开始新训练而丢失。
+          </p>
+          <div className="mt-4 space-y-2.5">
+            <Button block onClick={() => { setSwitchPrompt(null); navigate(switchPrompt.activeHref) }}>
+              回到进行中的训练
+            </Button>
+            <Button block variant="danger"
+                    onClick={() => {
+                      clearSession()
+                      switchBeginRef.current?.()
+                      setSwitchPrompt(null)
+                    }}>
+              放弃已记录的组，开始新的
+            </Button>
+          </div>
+        </Sheet>
+      </div>
+    )
+  }
   if (!entries) return <Spinner />
 
   const totalSets = entries.reduce((n, e) => n + e.logged.filter((l) => !l.warmup).length, 0)
@@ -138,6 +188,15 @@ export default function Workout() {
     const data = {
       exercises,
       raw: `${label}：${lines.join('；')}${session!.notes ? `。备注：${session!.notes}` : ''}`,
+      // M6.3.1：会话元数据随记录入库（自由/计划执行比例、真实时长、时区口径的基础）
+      session_meta: {
+        session_id: session!.id,
+        mode: session!.mode,
+        started_at: session!.started_at,
+        completed_at: new Date().toISOString(),
+        local_date: session!.date,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+      },
     }
     try {
       const result = await api.saveCheckin(uid, 'training', data, submissionId)

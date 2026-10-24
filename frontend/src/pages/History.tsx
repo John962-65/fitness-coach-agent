@@ -61,7 +61,7 @@ export default function History() {
         value={view} onChange={setView} />
 
       {view === 'calendar'
-        ? <CalendarView uid={uid} checkins={checkins} onCorrect={setCorrecting} />
+        ? <CalendarView uid={uid} onCorrect={setCorrecting} />
         : (
           <>
             <div className="mb-3 flex gap-2">
@@ -170,14 +170,15 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
 
 /* ---------------- 日历与周期统计（M6.3） ---------------- */
 
-function CalendarView({ uid, checkins, onCorrect }: {
-  uid: string; checkins: Checkin[]; onCorrect: (c: Checkin) => void
+function CalendarView({ uid, onCorrect }: {
+  uid: string; onCorrect: (c: Checkin) => void
 }) {
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [cal, setCal] = useState<TrainingCalendar | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [dayCheckins, setDayCheckins] = useState<Checkin[] | null>(null)
   const [periodDays, setPeriodDays] = useState<7 | 30 | 90>(30)
   const [summary, setSummary] = useState<PeriodSummary | null>(null)
 
@@ -189,6 +190,16 @@ function CalendarView({ uid, checkins, onCorrect }: {
     api.periodSummary(uid, periodDays)
       .then(setSummary).catch(() => setSummary(null))
   }, [uid, periodDays])
+  // 当日记录按日期向服务端查询（M6.3.1：不受列表 50 条窗口限制）
+  useEffect(() => {
+    if (!selected) { setDayCheckins(null); return }
+    let alive = true
+    setDayCheckins(null)
+    api.checkins(uid, 50, selected)
+      .then((r) => { if (alive) setDayCheckins(r.checkins) })
+      .catch(() => { if (alive) setDayCheckins([]) })
+    return () => { alive = false }
+  }, [uid, selected])
 
   const byDate = useMemo(() => {
     const m = new Map<string, TrainingCalendar['days'][number]>()
@@ -212,7 +223,7 @@ function CalendarView({ uid, checkins, onCorrect }: {
     setYear(d.getFullYear()); setMonth(d.getMonth() + 1); setSelected(null)
   }
 
-  const dayCheckins = selected ? checkins.filter((c) => (c.at || '').slice(0, 10) === selected) : []
+  const dayCheckinsList = selected ? (dayCheckins || []).filter((c) => (c.at || '').slice(0, 10) === selected) : []
   const maxMuscle = summary ? Math.max(1, ...Object.values(summary.by_muscle)) : 1
 
   return (
@@ -308,13 +319,17 @@ function CalendarView({ uid, checkins, onCorrect }: {
         )}
       </div>
 
-      {/* 选中日期的完整记录 */}
+      {/* 选中日期的完整记录（服务端按日期查询，不受列表窗口限制） */}
       {selected && (
         <div className="space-y-3">
           <h3 className="nums px-1 text-[15px] font-bold">{selected} 的记录</h3>
-          {dayCheckins.length === 0
-            ? <Empty title="本地列表中无当日记录">日历数据来自服务端全量统计；更早记录可在列表视图翻看最近 50 条。</Empty>
-            : dayCheckins.map((c) => <CheckinCard key={c.id} c={c} onCorrect={() => onCorrect(c)} />)}
+          {dayCheckins === null ? (
+            <Skeleton className="h-24" />
+          ) : dayCheckinsList.length === 0 ? (
+            <Empty title="该日期没有训练记录" />
+          ) : (
+            dayCheckinsList.map((c) => <CheckinCard key={c.id} c={c} onCorrect={() => onCorrect(c)} />)
+          )}
         </div>
       )}
     </div>

@@ -606,3 +606,21 @@ def test_exercise_stats_calendar_period_endpoints(client):
     summary = c.get("/api/users/api_user/period-summary", params={"days": 30}).json()
     assert summary["sessions"] >= 1
     assert summary["by_muscle"].get("chest") == 2
+
+
+def test_checkins_filter_by_date(client):
+    """M6.3.1：日历当日详情按日期查询（带非法日期 422）。"""
+    c, app = client
+    c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [{"name": "卧推", "set_logs": [{"weight_kg": 60, "reps": 10}]}]}})
+    day = app.state.db.list_checkins("api_user", 1)[0]["at"][:10]
+    hit = c.get("/api/users/api_user/checkins", params={"limit": 50, "date": day}).json()
+    assert len(hit["checkins"]) == 1
+    miss = c.get("/api/users/api_user/checkins", params={"limit": 50, "date": "1999-01-01"}).json()
+    assert miss["checkins"] == []
+    assert c.get("/api/users/api_user/checkins",
+                 params={"limit": 50, "date": "not-a-date"}).status_code == 422
+    # offset 分页
+    page2 = c.get("/api/users/api_user/checkins", params={"limit": 1, "offset": 1}).json()
+    assert isinstance(page2["checkins"], list)

@@ -38,6 +38,15 @@ export interface Settings {
 const newSessionId = (): string =>
   `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
+/** 用户本地日期（复查 P1：UTC ISO 日期在临近午夜时不是用户所在日期） */
+const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const hasProgress = (s: WorkoutSession | null) =>
+  !!s && s.entries.some((e) => e.logged.length > 0)
+
 /** 兼容旧持久化数据：补 id / mode（升级前创建的进行中会话） */
 function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
   if (!s) return null
@@ -49,8 +58,10 @@ interface AppState {
   setUid: (uid: string) => void
 
   session: WorkoutSession | null
-  startSession: (day: string, entries: SessionEntry[]) => void
-  startFreeSession: () => void
+  /** 开始计划训练。返回 kept=true 表示已有未完成记录的会话被保留（P0-1 防静默覆盖），未创建新会话。 */
+  startSession: (day: string, entries: SessionEntry[]) => { kept: boolean }
+  /** 开始自由训练。保护语义同上。 */
+  startFreeSession: () => { kept: boolean }
   addFreeExercise: (entry: SessionEntry) => void
   removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
@@ -73,8 +84,6 @@ interface AppState {
 const STORAGE_KEY = 'fc-app-v1'
 const PERSISTED_KEYS = ('uid session settings offlineCount').split(' ')
 
-const today = () => new Date().toISOString().slice(0, 10)
-
 function loadPersisted(): Partial<AppState> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -96,12 +105,21 @@ export const useApp = create<AppState>()((set) => ({
   setUid: (uid) => set({ uid, session: null }),
 
   session: null,
-  startSession: (day, entries) =>
+  startSession: (day, entries) => {
+    const cur = useApp.getState().session
+    // P0-1：已有含记录的进行中会话且目标不同 → 保留现有会话，由调用方提示用户选择
+    if (cur && hasProgress(cur) && !(cur.mode === 'planned' && cur.day === day)) return { kept: true }
     set({ session: { id: newSessionId(), mode: 'planned', day, date: today(),
-                     entries, started_at: new Date().toISOString(), notes: '' } }),
-  startFreeSession: () =>
+                     entries, started_at: new Date().toISOString(), notes: '' } })
+    return { kept: false }
+  },
+  startFreeSession: () => {
+    const cur = useApp.getState().session
+    if (cur && hasProgress(cur) && cur.mode !== 'free') return { kept: true }
     set({ session: { id: newSessionId(), mode: 'free', day: 'free', date: today(),
-                     entries: [], started_at: new Date().toISOString(), notes: '' } }),
+                     entries: [], started_at: new Date().toISOString(), notes: '' } })
+    return { kept: false }
+  },
   addFreeExercise: (entry) =>
     set((st) => (st.session && st.session.mode === 'free'
       ? { session: { ...st.session, entries: [...st.session.entries, entry] } } : st)),
