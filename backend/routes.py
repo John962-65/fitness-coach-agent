@@ -1134,17 +1134,52 @@ def register_routes(app) -> None:
     @api.get("/exercises/{ex_id}")
     def exercise_detail(request: Request, ex_id: str, uid: str = ""):
         from coach import exercise_service as _svc
+        from coach import teaching_content, teaching_media
         ex = _svc.get_exercise(request.app.state.db, uid or None, ex_id)
         if not ex:
             raise HTTPException(status_code=404, detail={"error": f"动作 {ex_id} 不存在"})
         detail = dict(ex)
         # M6.2：教学文档（knowledge_refs 指向的人工整理内容，含来源；无关联为空表）
         detail["teaching"] = _svc.teaching_for(ex_id)
+        # M6.4-B B1：结构化教学（teaching/*.yaml，逐节审核状态）+ 演示可用性。
+        # 三维入口只按稳定 exercise_id 关联；自定义动作无公共三维，绝不按名称
+        # 相似自动挂到内置模型。
+        structured = teaching_content.public_teaching(ex_id)
+        detail["teaching_content"] = structured
+        demo_3d = (teaching_media.demo_3d(ex_id)
+                   if detail.get("scope") == "builtin" else None)
+        if demo_3d:
+            base = f"/api/assets/exercise-3d/{ex_id}/"
+            demo_3d["model_url"] = base + Path(demo_3d["model_path"]).name
+            if demo_3d.get("preview_path"):
+                demo_3d["preview_url"] = base + Path(demo_3d["preview_path"]).name
+        detail["demos"] = {
+            "model_3d": demo_3d,
+            "text": bool(structured or detail["teaching"]),
+            # 视频演示：公共视频暂无授权素材（B0 缺口如实记录）；入口仅由
+            # 用户自己导入关联的 exercise_media_links 决定（前端已有数据）。
+            "public_video": False,
+        }
         if detail.get("status") != "approved":
             detail.setdefault("notes", [])
             detail["notes"] = list(detail["notes"]) + [
                 "该动作的结构化属性（关节压力/替代关系）尚未经审核"]
         return detail
+
+    # ---- M6.4-B B2/B3：公共三维教学资产（只下发 manifest 已授权文件）----
+
+    @api.get("/assets/exercise-3d/{ex_id}/{name}")
+    def exercise_3d_asset(ex_id: str, name: str):
+        from coach import teaching_media
+        f = teaching_media.asset_file_for_serving(ex_id, name)
+        if not f:
+            raise HTTPException(status_code=404,
+                                detail={"error": "教学资源不存在或未授权发布"})
+        media_type = "model/gltf-binary" if f.suffix == ".glb" else None
+        # 文件内容受 manifest sha256 约束；带版本号缓存键可安全长缓存
+        return FileResponse(f, media_type=media_type, headers={
+            "Cache-Control": "public, max-age=3600"})
+
 
     # ---- AI 教练对话 ----
 

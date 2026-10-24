@@ -1,0 +1,60 @@
+{
+  "exercise_id": "dumbbell_shoulder_press",
+  "asset_id": "3d_dumbbell_shoulder_press_v1",
+  "model_path": "exercise_3d/exports/dumbbell_shoulder_press.glb",
+  "preview_path": "exercise_3d/exports/preview_dumbbell_shoulder_press.png",
+  "animation_name": "db_shoulder_press",
+  "duration": 3.6,
+  "loop": true,
+  "supported_views": [
+    "front",
+    "side",
+    "back"
+  ],
+  "teaching_phases": [
+    {
+      "key": "prep",
+      "label": "准备（哑铃在耳侧）",
+      "t": [
+        0.0,
+        0.5
+      ]
+    },
+    {
+      "key": "press",
+      "label": "上推（弧线汇聚）",
+      "t": [
+        0.5,
+        1.5
+      ]
+    },
+    {
+      "key": "top",
+      "label": "顶峰（肘不锁死）",
+      "t": [
+        1.5,
+        1.9
+      ]
+    },
+    {
+      "key": "lower",
+      "label": "下降（回耳侧）",
+      "t": [
+        1.9,
+        3.1
+      ]
+    },
+    {
+      "key": "finish",
+      "label": "结束",
+      "t": [
+        3.1,
+        3.6
+      ]
+    }
+  ],
+  "license": "project-internal",
+  "review_status": "draft",
+  "version": 1,
+  "note": "教学示例动画：坐姿哑铃肩推演示（弧线上推、小臂垂直、顶峰不碰撞），非个体化动作诊断。"
+}

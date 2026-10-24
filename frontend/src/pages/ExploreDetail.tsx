@@ -1,18 +1,26 @@
 // 动作详情独立页：教学 / 技术分析 / 知识依据 三个标签页（M3.2 + M4 能力全保留）
-import { useCallback, useEffect, useState } from 'react'
+// M6.4-B：教学标签顶部演示切换（视频 / 3D / 图文，仅展示已有资源的选项）。
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PlayCircle, Upload, TriangleAlert } from 'lucide-react'
 import { api } from '../api'
 import {
-  Chip, Empty, ErrorBox, Segmented, Spinner, SubHeader, Tag,
+  Button, Chip, Empty, ErrorBox, Segmented, Spinner, SubHeader, Tag,
 } from '../components/Bits'
 import { Markdown } from '../components/Markdown'
 import { formatSetRecord } from '../lib/setDisplay'
 import { Sparkline } from '../components/charts'
 import { CoverPlaceholder, useSignedMedia } from '../components/media'
-import { ExerciseDetail, ExerciseRecords, ExerciseSession } from '../types'
+import { ModelFallback } from '../components/exercise3d/ModelFallback'
+import { ExerciseDetail, ExerciseRecords, ExerciseSession, TeachingContent } from '../types'
 import { useApp } from '../store'
 import { PATTERN_LABEL } from './Explore'
+import {
+  TEACHING_SECTION_LABEL, TEACHING_STATUS, defaultDemoMode, demoOptions, type DemoMode,
+} from '../lib/demo'
+
+// 三维查看器按需加载：three/r3f 只在用户选择 3D 演示后才进入（B2.5）
+const Exercise3DViewer = lazy(() => import('../components/exercise3d/Exercise3DViewer'))
 
 interface MotionFault { code: string; label?: string; value?: number; hint?: string }
 
@@ -50,6 +58,8 @@ export default function ExploreDetail() {
   const [detail, setDetail] = useState<ExerciseDetail | null>(null)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<'teach' | 'analysis' | 'basis' | 'mine'>('teach')
+  // M6.4-B：教学标签演示模式（视频/3D/图文，仅展示已有资源选项）
+  const [demoMode, setDemoMode] = useState<DemoMode | null>(null)
 
   // M3.2：用户教学媒体（封面/演示片段）
   const [media, setMedia] = useState<{ cover_path: string | null; clip_path: string | null; sentence: string }[]>([])
@@ -76,6 +86,7 @@ export default function ExploreDetail() {
 
   useEffect(() => {
     if (!exerciseId) return
+    setDemoMode(null)
     api.exerciseDetail(exerciseId).then(setDetail).catch((e) => setError(e.message))
     fetch(`/api/users/${uid}/exercise-media?exercise_id=${exerciseId}`, { headers: authHeaders() })
       .then((r) => r.json())
@@ -121,6 +132,11 @@ export default function ExploreDetail() {
 
   const muscles = (detail.primary as string[] | undefined) || []
   const teaching = ((detail.teaching as TeachingDoc[] | undefined) || [])
+  const teachingContent = detail.teaching_content || null
+  const demo3d = detail.demos?.model_3d || null
+  const demoOpts = demoOptions(media.length > 0, demo3d)
+  const mode: DemoMode = demoMode
+    && demoOpts.some((o) => o.value === demoMode) ? demoMode : defaultDemoMode(media.length > 0, demo3d)
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -168,63 +184,86 @@ export default function ExploreDetail() {
         ]}
         value={tab} onChange={setTab} />
 
-      {/* ---- 教学 ---- */}
+      {/* ---- 教学（M6.4-B：顶部演示切换 + 结构化图文教学） ---- */}
       {tab === 'teach' && (
         <div className="space-y-4">
-          {media.length > 0 && (
+          {/* 演示切换区：仅展示已有资源对应的选项（视频=用户导入关联；3D=公共授权模型）。
+              只剩图文一种模式时不显示切换条。 */}
+          {demoOpts.length > 1 && (
             <div className="card">
-              <h3 className="mb-2.5 text-[15px] font-semibold">我的教学媒体（视频导入关联）</h3>
-              <div className="space-y-3">
-                {media.map((m, i) => (
-                  <div key={i} className="overflow-hidden rounded-xl border border-line">
-                    {m.clip_path && <ClipPlayer uid={uid} path={m.clip_path} />}
-                    {!m.clip_path && m.cover_path && <DetailCover uid={uid} path={m.cover_path} name={detail.name} />}
-                    <p className="px-3 py-2 text-xs leading-relaxed text-muted">依据：{m.sentence}</p>
-                  </div>
-                ))}
+              <Segmented options={demoOpts} value={mode} onChange={setDemoMode} />
+              <div className="mt-3">
+                {mode === 'model3d' && demo3d && (
+                  <Suspense fallback={<ModelFallback mode="loading" />}>
+                    <Exercise3DViewer key={detail.id} demo={demo3d}
+                                      onFallback={() => setDemoMode('text')} />
+                  </Suspense>
+                )}
+                {mode === 'video' && (
+                  media.length > 0 ? (
+                    <div className="space-y-3">
+                      {media.map((m, i) => (
+                        <div key={i} className="overflow-hidden rounded-xl border border-line">
+                          {m.clip_path && <ClipPlayer uid={uid} path={m.clip_path} poster={m.cover_path} name={detail.name} />}
+                          {!m.clip_path && m.cover_path && <DetailCover uid={uid} path={m.cover_path} name={detail.name} />}
+                          <p className="px-3 py-2 text-xs leading-relaxed text-muted">依据：{m.sentence}</p>
+                        </div>
+                      ))}
+                      <p className="text-2xs leading-relaxed text-faint">
+                        以上视频来自你自己的导入关联（个人媒体仅本人可见）。
+                        公共演示视频暂无已确认授权的素材，缺口在覆盖报告中如实记录。
+                      </p>
+                    </div>
+                  ) : (
+                    <Empty title="还没有关联的教学视频">
+                      在「我的 → 视频导入」上传训练教学视频并关联该动作后，这里会显示演示片段。
+                    </Empty>
+                  )
+                )}
               </div>
             </div>
           )}
-          {typeof detail.setup === 'string' && detail.setup && (
-            <div className="card">
-              <h3 className="mb-1.5 text-[15px] font-semibold">准备</h3>
-              <p className="text-sm leading-relaxed text-ink/90">{detail.setup}</p>
-            </div>
+
+          {/* 结构化图文教学（teaching/*.yaml，逐节审核状态；缺失时回退旧字段） */}
+          {teachingContent ? (
+            <StructuredTeaching content={teachingContent} />
+          ) : (
+            <>
+              {typeof detail.setup === 'string' && detail.setup && (
+                <div className="card">
+                  <h3 className="mb-1.5 text-[15px] font-semibold">准备</h3>
+                  <p className="text-sm leading-relaxed text-ink/90">{detail.setup}</p>
+                </div>
+              )}
+              {Array.isArray(detail.cues) && detail.cues.length > 0 && (
+                <div className="card">
+                  <h3 className="mb-2 text-[15px] font-semibold">执行要点</h3>
+                  <ul className="space-y-1.5">
+                    {detail.cues.map((c, i) => (
+                      <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink/90">
+                        <span className="nums mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full
+                                         bg-accent-soft text-2xs font-bold text-accent-deep">{i + 1}</span>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {Array.isArray(detail.errors) && detail.errors.length > 0 && (
+                <div className="card">
+                  <h3 className="mb-2 text-[15px] font-semibold">常见错误</h3>
+                  <ul className="space-y-1.5">
+                    {detail.errors.map((c, i) => (
+                      <li key={i} className="flex gap-2 text-sm leading-relaxed text-muted">
+                        <TriangleAlert size={15} className="mt-0.5 shrink-0 text-amber-500" />{c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
-          {Array.isArray(detail.cues) && detail.cues.length > 0 && (
-            <div className="card">
-              <h3 className="mb-2 text-[15px] font-semibold">执行要点</h3>
-              <ul className="space-y-1.5">
-                {detail.cues.map((c, i) => (
-                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink/90">
-                    <span className="nums mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full
-                                     bg-accent-soft text-2xs font-bold text-accent-deep">{i + 1}</span>
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(detail.errors) && detail.errors.length > 0 && (
-            <div className="card">
-              <h3 className="mb-2 text-[15px] font-semibold">常见错误</h3>
-              <ul className="space-y-1.5">
-                {detail.errors.map((c, i) => (
-                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-muted">
-                    <TriangleAlert size={15} className="mt-0.5 shrink-0 text-amber-500" />{c}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(detail.self_check) && detail.self_check.length > 0 && (
-            <div className="card">
-              <h3 className="mb-2 text-[15px] font-semibold">自查</h3>
-              <ul className="list-disc space-y-1 pl-4 text-sm leading-relaxed text-muted">
-                {detail.self_check.map((c, i) => <li key={i}>{c}</li>)}
-              </ul>
-            </div>
-          )}
+
           {/* M6.2：人工整理教学文档（内容与展示分离；来源可追溯） */}
           {teaching.map((doc) => (
             <div key={doc.path} className="card">
@@ -242,13 +281,14 @@ export default function ExploreDetail() {
               </p>
             </div>
           ))}
-          {media.length === 0 && !detail.setup && !(detail.cues?.length) && !teaching.length && (
+          {media.length === 0 && !teachingContent && !(detail.cues?.length) && !teaching.length && (
             <Empty title="教学指导尚未完善">
               {detail.status === 'approved'
                 ? '该动作的结构化资料（关节压力/替代关系）已通过审核；图文教学要点尚未录入。可先用「动作分析」上传训练视频，或查看「知识依据」。'
                 : '该动作的图文教学要点尚未录入，且结构化属性还未审核。'}
             </Empty>
           )}
+          <Button variant="soft" block onClick={() => setTab('mine')}>查看我的表现</Button>
         </div>
       )}
 
@@ -411,6 +451,99 @@ export default function ExploreDetail() {
   )
 }
 
+/** 结构化图文教学（M6.4-B：六节 + 逐节审核状态；呼吸节允许"资料不全"如实展示） */
+function StructuredTeaching({ content }: { content: TeachingContent }) {
+  const order = ['setup', 'execution', 'breathing', 'common_errors', 'cautions', 'conditions'] as const
+  const overall = TEACHING_STATUS[content.review_status]
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {overall && (
+          <Tag tone={overall.tone}>教学内容：{overall.label}</Tag>
+        )}
+        {content.updated && <Tag>更新 {content.updated}</Tag>}
+        <Tag tone="neutral">内容版本 v{content.content_version}</Tag>
+        {overall?.tone === 'amber' && (
+          <span className="text-2xs leading-relaxed text-faint">
+            AI 依据仓库知识库整理，尚未人工复核
+          </span>
+        )}
+      </div>
+      {order.map((key) => {
+        const sec = content.sections[key]
+        if (!sec) return null
+        const st = TEACHING_STATUS[sec.status] || TEACHING_STATUS.incomplete
+        const label = TEACHING_SECTION_LABEL[key] || key
+        const items = (sec.items || []) as {
+          error?: string; consequence?: string; fix?: string; [k: string]: unknown
+        }[]
+        return (
+          <div key={key} className="card">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-[15px] font-semibold">{label}</h3>
+              <Tag tone={st.tone}>{st.label}</Tag>
+            </div>
+            {items.length === 0 ? (
+              <p className="text-xs leading-relaxed text-muted">
+                {sec.note || '资料不全，待补充可靠来源后录入。'}
+              </p>
+            ) : key === 'execution' ? (
+              <ul className="space-y-1.5">
+                {items.map((it, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed text-ink/90">
+                    <span className="nums mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full
+                                     bg-accent-soft text-2xs font-bold text-accent-deep">{i + 1}</span>
+                    {String(it.error ?? it)}
+                  </li>
+                ))}
+              </ul>
+            ) : key === 'common_errors' ? (
+              <ul className="space-y-2">
+                {items.map((it, i) => (
+                  <li key={i} className="rounded-xl bg-canvas p-2.5">
+                    <p className="flex items-start gap-1.5 text-sm font-medium leading-relaxed text-ink">
+                      <TriangleAlert size={14} className="mt-0.5 shrink-0 text-amber-500" />
+                      {String(it.error ?? it)}
+                    </p>
+                    {(it.consequence || it.fix) && (
+                      <p className="mt-1 pl-5 text-xs leading-relaxed text-muted">
+                        {it.consequence && <>后果：{it.consequence}</>}
+                        {it.consequence && it.fix && <> · </>}
+                        {it.fix && <>纠正：{it.fix}</>}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="list-disc space-y-1 pl-4 text-sm leading-relaxed text-ink/90">
+                {items.map((it, i) => <li key={i}>{String(it.error ?? it)}</li>)}
+              </ul>
+            )}
+            {sec.note && items.length > 0 && (
+              <p className="mt-2 text-2xs leading-relaxed text-faint">{sec.note}</p>
+            )}
+          </div>
+        )
+      })}
+      <div className="card">
+        <h3 className="mb-2 text-[15px] font-semibold">知识来源</h3>
+        <ul className="space-y-1.5">
+          {content.sources.map((s, i) => (
+            <li key={i} className="text-[13px] leading-relaxed text-muted">
+              · {s.ref && <code className="rounded bg-canvas px-1 text-2xs">{s.ref}</code>}
+              {s.note && <span className="ml-1">{s.note}</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-2xs leading-relaxed text-faint">
+          教学内容与动作库结构化属性的审核相互独立；此处状态为教学内容自身的审核状态。
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /** 我的表现：PR 摘要 + 逐会话历史表 + e1RM 趋势（估算值，明示口径） */
 function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string }) {
   const [data, setData] = useState<{ sessions: ExerciseSession[]; records: ExerciseRecords } | null>(null)
@@ -531,9 +664,26 @@ function DetailCover({ uid, path, name }: { uid: string; path: string; name: str
   return <img alt={`${name} 封面`} src={src} className="max-h-72 w-full object-cover" />
 }
 
-/** 演示片段（签名加载） */
-function ClipPlayer({ uid, path }: { uid: string; path: string }) {
+/** 演示片段（签名加载；原生 video 提供 播放/进度/倍速/静音；封面/失败提示） */
+function ClipPlayer({ uid, path, poster, name }: {
+  uid: string; path: string; poster?: string | null; name?: string
+}) {
   const src = useSignedMedia(uid, path)
+  const posterSrc = useSignedMedia(uid, poster || undefined)
+  const [failed, setFailed] = useState(false)
   if (!src) return <div className="aspect-video w-full animate-pulse-soft bg-ink/6" />
-  return <video controls preload="metadata" src={src} className="aspect-video w-full bg-black" />
+  if (failed) {
+    return (
+      <div className="flex aspect-video w-full flex-col items-center justify-center gap-1.5
+                      bg-canvas px-6 text-center text-xs text-muted">
+        视频加载失败（可能已删除或格式不支持）。
+      </div>
+    )
+  }
+  return (
+    <video controls preload="metadata" src={src} poster={posterSrc || undefined}
+           onError={() => setFailed(true)}
+           aria-label={`${name || ''}教学视频`}
+           className="aspect-video w-full bg-black" />
+  )
 }

@@ -1,0 +1,60 @@
+{
+  "exercise_id": "barbell_bench_press",
+  "asset_id": "3d_barbell_bench_press_v1",
+  "model_path": "exercise_3d/exports/barbell_bench_press.glb",
+  "preview_path": "exercise_3d/exports/preview_barbell_bench_press.png",
+  "animation_name": "bench_press",
+  "duration": 3.6,
+  "loop": true,
+  "supported_views": [
+    "front",
+    "side",
+    "back"
+  ],
+  "teaching_phases": [
+    {
+      "key": "prep",
+      "label": "准备（直臂支撑）",
+      "t": [
+        0.0,
+        0.5
+      ]
+    },
+    {
+      "key": "descend",
+      "label": "下放（离心）",
+      "t": [
+        0.5,
+        1.5
+      ]
+    },
+    {
+      "key": "bottom",
+      "label": "底部（触胸）",
+      "t": [
+        1.5,
+        1.9
+      ]
+    },
+    {
+      "key": "press",
+      "label": "推起（向心）",
+      "t": [
+        1.9,
+        3.1
+      ]
+    },
+    {
+      "key": "finish",
+      "label": "结束（锁定）",
+      "t": [
+        3.1,
+        3.6
+      ]
+    }
+  ],
+  "license": "project-internal",
+  "review_status": "draft",
+  "version": 1,
+  "note": "教学示例动画：常见比例的平板卧推演示（仰卧平凳、杠铃触胸位），非个体化动作诊断。"
+}

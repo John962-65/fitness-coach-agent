@@ -1,0 +1,51 @@
+# 结构化动作教学（M6.4-B B1.3 首批五动作之五）。
+# 内容整理自仓库 knowledge/20_exercises/shoulder/db_shoulder_press.md
+# （谭成义-肩部教学，公开视频整理稿）；AI 辅助整理，未人工复核。
+exercise_id: dumbbell_shoulder_press
+content_version: 1
+updated: 2026-10-25
+review_status: draft
+sources:
+  - type: knowledge
+    ref: 20_exercises/shoulder/db_shoulder_press.md
+    note: 谭成义-肩部教学（公开视频）整理稿，来源元数据见该文档 frontmatter
+sections:
+  setup:
+    status: draft
+    items:
+      - 坐在 80-90° 靠背的凳子上，臀部贴紧凳面，核心收紧。
+      - 起始时哑铃在肩部两侧，小臂垂直地面。
+  execution:
+    status: draft
+    items:
+      - 推肩不是「推起来」，是「举起来」：小臂始终垂直地面，哑铃轨迹是弧线而非直线。
+      - 弧线推起：哑铃从肩部两侧向头顶上方汇聚。
+      - 顶峰肘关节保持微屈不锁死；两铃不碰撞。
+      - 下放到耳朵高度即可，不过度下放。
+  breathing:
+    status: incomplete
+    items: []
+    note: 仓库知识来源未覆盖呼吸与节奏细节，待补充可靠依据后再录入。
+  common_errors:
+    status: draft
+    items:
+      - error: 小臂前倾
+        consequence: 肩关节压力增大
+        fix: 减重，从侧面确认小臂垂直地面
+      - error: 锁死肘关节
+        consequence: 肘关节受伤风险
+        fix: 顶峰保持微屈
+      - error: 腰部反弓
+        consequence: 下背代偿
+        fix: 臀部贴紧凳面，核心收紧；也可背靠墙做
+  cautions:
+    status: draft
+    items:
+      - 自查锚点：侧面看小臂始终垂直；推起时肩部灼烧感而非三头先酸；腰部不反弓。
+      - 触觉辅助：弹力带套腕对抗张力找肩部发力；背部靠墙做强迫核心收紧。
+  conditions:
+    status: draft
+    items:
+      - 肩部前束、中束发展；改善「溜肩」体态；上肢推力基础。
+      - 需要哑铃与带靠背的训练凳（器械：dumbbell、bench；场地：gym 或 home）。
+      - 适合新手与进阶（知识文档 levels＝新手/进阶）。

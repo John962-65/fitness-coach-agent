@@ -52,9 +52,11 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
             # /api/media/* 只读媒体额外接受 ?access_token=（<img>/<video> 带不了头）
             path = request.url.path
             if path.startswith("/api") and path != "/api/health":
-                # /api/media/* 由媒体路由自行校验（令牌头或短时签名，P1-5）
+                # /api/media/* 由媒体路由自行校验（令牌头或短时签名，P1-5）；
+                # /api/assets/* 只读公共教学资源（manifest 已授权才可下发，M6.4-B）
                 ok = (request.headers.get("X-Access-Token") == token
-                      or path.startswith("/api/media/"))
+                      or path.startswith("/api/media/")
+                      or path.startswith("/api/assets/"))
                 if not ok:
                     return JSONResponse(
                         status_code=401,

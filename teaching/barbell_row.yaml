@@ -1,0 +1,52 @@
+# 结构化动作教学（M6.4-B B1.3 首批五动作之四）。
+# 内容整理自仓库 knowledge/20_exercises/back/rowing_variations.md
+# （谭成义-背部教学，公开视频整理稿）；AI 辅助整理，未人工复核。
+exercise_id: barbell_row
+content_version: 1
+updated: 2026-10-25
+review_status: draft
+sources:
+  - type: knowledge
+    ref: 20_exercises/back/rowing_variations.md
+    note: 谭成义-背部教学（公开视频）整理稿，来源元数据见该文档 frontmatter
+sections:
+  setup:
+    status: draft
+    items:
+      - 俯身角度约 45°：太直立斜方肌代偿，太水平下背压力大。
+      - 核心收紧，想象「肚脐贴向脊柱」；躯干像一块板，全程不晃动。
+      - 头部保持中立位，不抬头看镜子。
+  execution:
+    status: draft
+    items:
+      - 划船不是用手拉，是用背「裹」；启动顺序：肩胛骨后缩 → 背阔肌收缩 → 手臂屈曲跟随。
+      - 拉到顶点时背部有「夹紧」感，而不是手臂酸。
+      - 回放阶段离心控制，背部持续紧张，不「掉回去」。
+  breathing:
+    status: incomplete
+    items: []
+    note: 仓库知识来源未覆盖呼吸与节奏细节，待补充可靠依据后再录入。
+  common_errors:
+    status: draft
+    items:
+      - error: 用手臂拉
+        consequence: 二头肌代偿，背没感觉
+        fix: 减重，专注肩胛骨启动
+      - error: 弓背
+        consequence: 下背受伤风险
+        fix: 减重，收紧核心，挺胸
+      - error: 耸肩
+        consequence: 斜方肌上束代偿
+        fix: 想象「肩胛骨压进后口袋」
+  cautions:
+    status: draft
+    items:
+      - 杠铃划船是自由轨迹动作、难度大，对核心稳定要求高（知识文档标注「难度大，需要核心稳定」）。
+      - 俯身姿势下腰部持续承重，组间注意休息与姿势重置。
+      - 追求背部厚度可配合 T 杆划船；左右不平衡用哑铃单臂划船纠正。
+  conditions:
+    status: draft
+    items:
+      - 背部整体发展与厚度（自由重量轨迹）。
+      - 需要杠铃（器械：barbell；场地：gym）。
+      - 核心稳定不足时可先从坐姿划船等固定轨迹变式入门。

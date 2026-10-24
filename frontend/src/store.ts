@@ -21,6 +21,13 @@ export interface SessionEntry {
   replace_exercise_id?: string // M6.3：临时替换后动作的稳定 ID（保存时随记录提交）
 }
 
+/** M6.4-B B4.2：逐组输入草稿（进教学页返回后不丢；随会话持久化） */
+export interface SetDraftValues {
+  weight?: string; reps?: string; added?: string; assist?: string
+  minutes?: string; seconds?: string; distance?: string; rpe?: string
+  warmup?: boolean
+}
+
 export interface WorkoutSession {
   id: string                       // 会话稳定身份（M6.3：保存/恢复/统计都按会话）
   mode: 'planned' | 'free'         // planned=按计划训练日；free=自由训练（不依赖计划）
@@ -32,6 +39,7 @@ export interface WorkoutSession {
   templateId?: number              // M6.4-A.1：来源模板（纯自由训练无）
   planId?: number                  // 来源计划与版本（会话级溯源）
   planVersion?: number
+  drafts?: Record<number, SetDraftValues>  // M6.4-B：entryIdx → 未提交输入
 }
 
 export interface Settings {
@@ -50,10 +58,11 @@ const today = () => {
 const hasProgress = (s: WorkoutSession | null) =>
   !!s && s.entries.some((e) => e.logged.length > 0)
 
-/** 兼容旧持久化数据：补 id / mode（升级前创建的进行中会话） */
+/** 兼容旧持久化数据：补 id / mode / drafts（升级前创建的进行中会话） */
 function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
   if (!s) return null
-  return { ...s, id: s.id || newSessionId(), mode: s.mode || 'planned' }
+  return { ...s, id: s.id || newSessionId(), mode: s.mode || 'planned',
+           drafts: s.drafts || {} }
 }
 
 interface AppState {
@@ -76,6 +85,8 @@ interface AppState {
   removeLastSet: (entryIdx: number) => void
   replaceExercise: (entryIdx: number, newName: string, exerciseId?: string) => void
   setSessionNotes: (notes: string) => void
+  /** M6.4-B B4.2：逐组输入草稿写入（教学页往返/刷新不丢） */
+  setEntryDraft: (entryIdx: number, patch: Partial<SetDraftValues>) => void
   clearSession: () => void
 
   restEndsAt: number | null
@@ -144,8 +155,23 @@ export const useApp = create<AppState>()((set) => ({
             i === entryIdx ? { ...e, supersetGroup: group } : e) } }
       : st)),
   removeEntry: (entryIdx) =>
+    set((st) => {
+      if (!st.session) return st
+      // M6.4-B：同步平移逐组草稿键，保持与 entries 索引一致
+      const drafts: Record<number, SetDraftValues> = {}
+      for (const [k, v] of Object.entries(st.session.drafts || {})) {
+        const i = Number(k)
+        if (i === entryIdx) continue
+        drafts[i > entryIdx ? i - 1 : i] = v
+      }
+      return { session: { ...st.session, drafts,
+        entries: st.session.entries.filter((_, i) => i !== entryIdx) } }
+    }),
+  setEntryDraft: (entryIdx, patch) =>
     set((st) => (st.session
-      ? { session: { ...st.session, entries: st.session.entries.filter((_, i) => i !== entryIdx) } }
+      ? { session: { ...st.session, drafts: {
+            ...(st.session.drafts || {}),
+            [entryIdx]: { ...(st.session.drafts?.[entryIdx] || {}), ...patch } } } }
       : st)),
   logSet: (entryIdx, s) =>
     set((st) => ({

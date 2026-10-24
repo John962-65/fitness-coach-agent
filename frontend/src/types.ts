@@ -141,6 +141,19 @@ export interface TrainingTemplate {
   updated_at?: string
 }
 
+// M6.4-B：三维演示（lib/demo.ts 的 Demo3D 与此同构；此处为 api 返回形状）
+export interface Demo3D {
+  model_url: string
+  preview_url?: string
+  animation_name: string
+  duration: number
+  loop: boolean
+  supported_views: string[]
+  teaching_phases: { key: string; label: string; t: [number, number] }[]
+  review_status?: string
+  size_bytes?: number
+}
+
 export interface ExerciseDetail extends Partial<Record<string, unknown>> {
   id: string
   name: string
@@ -152,6 +165,27 @@ export interface ExerciseDetail extends Partial<Record<string, unknown>> {
   errors?: string[]
   self_check?: string[]
   joint_stress?: Record<string, number>
+  // M6.2：knowledge_refs 教学文档（原文 + 来源元数据）
+  teaching?: { path: string; topic: string; source: string[]; provenance: string; updated: string; markdown: string }[]
+  // M6.4-B：结构化教学（逐节审核状态）与演示可用性
+  teaching_content?: TeachingContent
+  demos?: { model_3d: Demo3D | null; text: boolean; public_video: boolean }
+}
+
+export interface TeachingSection {
+  status: string
+  items?: unknown[]
+  note?: string
+}
+
+export interface TeachingContent {
+  exercise_id: string
+  content_version: number
+  updated: string
+  review_status: string
+  completeness: string
+  sources: { type?: string; ref?: string; note?: string }[]
+  sections: Record<string, TeachingSection>
 }
 
 export interface ApproachRevision {

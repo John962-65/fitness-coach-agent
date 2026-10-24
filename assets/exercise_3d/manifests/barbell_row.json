@@ -1,0 +1,60 @@
+{
+  "exercise_id": "barbell_row",
+  "asset_id": "3d_barbell_row_v1",
+  "model_path": "exercise_3d/exports/barbell_row.glb",
+  "preview_path": "exercise_3d/exports/preview_barbell_row.png",
+  "animation_name": "barbell_row",
+  "duration": 3.6,
+  "loop": true,
+  "supported_views": [
+    "front",
+    "side",
+    "back"
+  ],
+  "teaching_phases": [
+    {
+      "key": "prep",
+      "label": "准备（俯身悬垂）",
+      "t": [
+        0.0,
+        0.5
+      ]
+    },
+    {
+      "key": "row",
+      "label": "拉起（肩胛先动）",
+      "t": [
+        0.5,
+        1.4
+      ]
+    },
+    {
+      "key": "top",
+      "label": "顶点（背部挤压）",
+      "t": [
+        1.4,
+        1.8
+      ]
+    },
+    {
+      "key": "return",
+      "label": "回放（离心控制）",
+      "t": [
+        1.8,
+        3.0
+      ]
+    },
+    {
+      "key": "finish",
+      "label": "结束（回到悬垂）",
+      "t": [
+        3.0,
+        3.6
+      ]
+    }
+  ],
+  "license": "project-internal",
+  "review_status": "draft",
+  "version": 1,
+  "note": "教学示例动画：常见比例的俯身杠铃划船演示（躯干稳定约 42°、拉向下腹、离心控制），非个体化动作诊断。"
+}

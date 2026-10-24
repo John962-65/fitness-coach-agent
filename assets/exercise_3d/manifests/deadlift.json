@@ -1,0 +1,60 @@
+{
+  "exercise_id": "deadlift",
+  "asset_id": "3d_deadlift_v1",
+  "model_path": "exercise_3d/exports/deadlift.glb",
+  "preview_path": "exercise_3d/exports/preview_deadlift.png",
+  "animation_name": "deadlift",
+  "duration": 3.6,
+  "loop": true,
+  "supported_views": [
+    "front",
+    "side",
+    "back"
+  ],
+  "teaching_phases": [
+    {
+      "key": "prep",
+      "label": "准备（俯身握杆）",
+      "t": [
+        0.0,
+        0.5
+      ]
+    },
+    {
+      "key": "pull",
+      "label": "拉起（伸髋伸膝）",
+      "t": [
+        0.5,
+        1.6
+      ]
+    },
+    {
+      "key": "lockout",
+      "label": "锁定（站直）",
+      "t": [
+        1.6,
+        2.1
+      ]
+    },
+    {
+      "key": "lower",
+      "label": "下放",
+      "t": [
+        2.1,
+        3.1
+      ]
+    },
+    {
+      "key": "finish",
+      "label": "结束（杆落回地面）",
+      "t": [
+        3.1,
+        3.6
+      ]
+    }
+  ],
+  "license": "project-internal",
+  "review_status": "draft",
+  "version": 1,
+  "note": "教学示例动画：常见比例的传统硬拉演示（髋铰链、杆贴身上行、锁定不过度后仰），非个体化动作诊断。"
+}

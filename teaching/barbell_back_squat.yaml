@@ -1,0 +1,53 @@
+# 结构化动作教学（M6.4-B B1.3 首批五动作之一）。
+# 内容整理自仓库 knowledge/20_exercises/leg/squat_technique.md（谭成义-腿部教学，
+# 公开视频整理稿）；AI 辅助整理，未人工复核——review_status 如实为 draft。
+exercise_id: barbell_back_squat
+content_version: 1
+updated: 2026-10-25
+review_status: draft        # draft=AI 整理稿，未经人工审核；不得从动作库 status 继承
+sources:
+  - type: knowledge
+    ref: 20_exercises/leg/squat_technique.md
+    note: 谭成义-腿部教学（公开视频）整理稿，来源元数据见该文档 frontmatter
+sections:
+  setup:
+    status: draft
+    items:
+      - 双脚与肩同宽或略宽站立，脚尖外展 15-30°。
+      - 高杠位把杠铃放在斜方肌上；低杠位放在三角肌后束。
+      - 膝盖方向对齐脚尖，全程不内扣。
+  execution:
+    status: draft
+    items:
+      - 下蹲是「坐下去」不是「蹲下去」：臀部后坐，想象身后有把椅子。
+      - 臀部是发动机、股四头肌是辅助；先动髋，不要膝盖先动。
+      - 下蹲深度到髋部低于膝盖（全蹲），全程膝盖对齐脚尖。
+      - 站起时臀部发力，想象「把地板撕开」；核心收紧、躯干保持直立。
+  breathing:
+    status: incomplete
+    items: []
+    note: 仓库知识来源未覆盖呼吸与节奏细节，待补充可靠依据后再录入。
+  common_errors:
+    status: draft
+    items:
+      - error: 膝盖先动（先屈膝后移髋）
+        consequence: 股四头肌主导，臀部参与不足
+        fix: 想象「臀部后坐」，先动髋
+      - error: 膝盖内扣
+        consequence: 膝关节受伤风险
+        fix: 弹力带套在膝盖上方，主动外撑
+      - error: 躯干过度前倾
+        consequence: 下背压力增大
+        fix: 收紧核心、挺胸，躯干像「一根柱子」
+  cautions:
+    status: draft
+    items:
+      - 动作库结构化属性标注膝/腰椎压力等级为 3（高），存在伤病史时先咨询专业人士。
+      - 自查锚点：站起时臀部应有灼烧感而非大腿前侧先酸；躯干不前倾。
+      - 触觉辅助：弹力带套膝上主动外撑；轻触椅子再站起练习臀部后坐。
+  conditions:
+    status: draft
+    items:
+      - 腿部整体发展、臀部力量建立、功能性训练基础。
+      - 需要深蹲架与杠铃（器械：barbell、rack；场地：gym）。
+      - 技能要求高（skill＝high），新手可先用高脚杯深蹲（goblet_squat）作为退阶。

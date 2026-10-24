@@ -467,6 +467,7 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
   const removeLastSet = useApp((s) => s.removeLastSet)
   const startRest = useApp((s) => s.startRest)
   const setEntryGroup = useApp((s) => s.setEntryGroup)
+  const drafts = useApp((s) => s.session?.drafts || {})
   const [rpeOpen, setRpeOpen] = useState(false)
   const done = entry.logged.filter((l) => !l.warmup).length
   const targetSets = Number(entry.target.sets) || 0
@@ -557,29 +558,54 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
                onUndo={() => removeLastSet(idx)}
                canUndo={entry.logged.length > 0}
                rpeOpen={rpeOpen} setRpeOpen={setRpeOpen}
-               suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined} />
+               suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined}
+               draftIdx={idx} initialDraft={drafts[idx]} />
     </div>
   )
 }
 
-/** 分型逐组快速输入（M6.4-A）：按动作 measurement 渲染对应输入控件与校验 */
+/** 分型逐组快速输入（M6.4-A）：按动作 measurement 渲染对应输入控件与校验。
+ *  M6.4-B B4.2：未提交输入镜像到 store（drafts），进教学页返回/刷新不丢。 */
 function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen, setRpeOpen,
-                   suggestWeight, suggestReps }: {
+                   suggestWeight, suggestReps, draftIdx, initialDraft }: {
   measurement: MeasurementType
   onDone: (s: LoggedSet) => void
   onUndo: () => void; canUndo: boolean
   rpeOpen: boolean; setRpeOpen: (v: boolean) => void
   suggestWeight?: number | null; suggestReps?: number
+  draftIdx: number
+  initialDraft?: import('../store').SetDraftValues
 }) {
-  const [weight, setWeight] = useState(suggestWeight != null ? String(suggestWeight) : '')
-  const [reps, setReps] = useState(suggestReps ? String(suggestReps) : '')
-  const [added, setAdded] = useState('')
-  const [assist, setAssist] = useState('')
-  const [minutes, setMinutes] = useState('')
-  const [seconds, setSeconds] = useState('')
-  const [distance, setDistance] = useState('')
-  const [rpe, setRpe] = useState('')
-  const [warmup, setWarmup] = useState(false)
+  const setEntryDraft = useApp((s) => s.setEntryDraft)
+  const [weight, setWeightRaw] = useState(initialDraft?.weight
+    ?? (suggestWeight != null ? String(suggestWeight) : ''))
+  const [reps, setRepsRaw] = useState(initialDraft?.reps
+    ?? (suggestReps ? String(suggestReps) : ''))
+  const [added, setAddedRaw] = useState(initialDraft?.added ?? '')
+  const [assist, setAssistRaw] = useState(initialDraft?.assist ?? '')
+  const [minutes, setMinutesRaw] = useState(initialDraft?.minutes ?? '')
+  const [seconds, setSecondsRaw] = useState(initialDraft?.seconds ?? '')
+  const [distance, setDistanceRaw] = useState(initialDraft?.distance ?? '')
+  const [rpe, setRpeRaw] = useState(initialDraft?.rpe ?? '')
+  const [warmup, setWarmupRaw] = useState(initialDraft?.warmup ?? false)
+  // 同名 setter：本地更新 + 草稿镜像进 store（B4.2 教学往返不丢）
+  const mirror = <K extends keyof import('../store').SetDraftValues>(
+    key: K, v: import('../store').SetDraftValues[K]) => setEntryDraft(draftIdx, { [key]: v })
+  const setWeight = (v: string) => { setWeightRaw(v); mirror('weight', v) }
+  const setReps = (v: string) => { setRepsRaw(v); mirror('reps', v) }
+  const setAdded = (v: string) => { setAddedRaw(v); mirror('added', v) }
+  const setAssist = (v: string) => { setAssistRaw(v); mirror('assist', v) }
+  const setMinutes = (v: string) => { setMinutesRaw(v); mirror('minutes', v) }
+  const setSeconds = (v: string) => { setSecondsRaw(v); mirror('seconds', v) }
+  const setDistance = (v: string) => { setDistanceRaw(v); mirror('distance', v) }
+  const setRpe = (v: string) => { setRpeRaw(v); mirror('rpe', v) }
+  const setWarmup = (v: boolean | ((p: boolean) => boolean)) => {
+    setWarmupRaw((prev) => {
+      const nv = typeof v === 'function' ? v(prev) : v
+      queueMicrotask(() => mirror('warmup', nv))
+      return nv
+    })
+  }
   const [formError, setFormError] = useState('')
   const n = parseTrainingNumber
 

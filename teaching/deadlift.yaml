@@ -1,0 +1,54 @@
+# 结构化动作教学（M6.4-B B1.3 首批五动作之三）。
+# 内容整理自仓库 knowledge/20_exercises/leg/deadlift_variations.md
+# （谭成义-腿部教学，公开视频整理稿）。注意：该文档以硬拉变式总则 +
+# 罗马尼亚硬拉（RDL）细节为主，传统硬拉起始位的更多细节仓库尚无来源，
+# 相关节状态如实标注；AI 辅助整理，未人工复核。
+exercise_id: deadlift
+content_version: 1
+updated: 2026-10-25
+review_status: draft
+sources:
+  - type: knowledge
+    ref: 20_exercises/leg/deadlift_variations.md
+    note: 谭成义-腿部教学（公开视频）整理稿；覆盖硬拉总则与 RDL 细节
+sections:
+  setup:
+    status: draft
+    items:
+      - 硬拉是「髋关节铰链」（Hip Hinge），不是「弯腰拉」：准备时髋部后移，不是弯腰。
+      - 背部挺直、核心收紧；臀部与腘绳肌是主导，背部只负责稳定。
+  execution:
+    status: draft
+    items:
+      - 拉起时臀部前顶，想象「用臀部把杠铃顶起来」。
+      - 全程背部挺直，杠铃贴身上行。
+      - 站起完成后不耸肩、不过度后仰。
+    note: 以上为知识文档中的硬拉总则；传统硬拉站距/握法/起始杠位等细节仓库暂无来源，待补。
+  breathing:
+    status: incomplete
+    items: []
+    note: 仓库知识来源未覆盖呼吸与节奏细节，待补充可靠依据后再录入。
+  common_errors:
+    status: draft
+    items:
+      - error: 弯腰拉（腰椎屈曲发力）
+        consequence: 下背受伤
+        fix: 想象「髋部后移」，以髋铰链模式启动
+      - error: 膝盖过度屈曲
+        consequence: 动作变成深蹲，后侧链刺激下降
+        fix: 保持膝微屈固定角度，髋主导
+      - error: 过度下放/行程过深（RDL 类）
+        consequence: 腰椎代偿
+        fix: RDL 只下放到膝盖下方，感受腘绳肌拉伸即可
+  cautions:
+    status: draft
+    items:
+      - 动作库结构化属性标注腰椎压力等级为 3（高）、疲劳高；下背有伤病史先咨询专业人士。
+      - 自查锚点：拉起时臀部有灼烧感而非腰部发力；背部始终挺直不弓背。
+      - 新手可先以罗马尼亚硬拉（dumbbell_rdl 等）学习髋铰链再进传统硬拉。
+  conditions:
+    status: draft
+    items:
+      - 后侧链（腘绳肌+臀）力量建立、整体力量发展。
+      - 需要杠铃与地面空间（器械：barbell；场地：gym）。
+      - 适合进阶与老炮（知识文档 levels＝进阶/老炮）。

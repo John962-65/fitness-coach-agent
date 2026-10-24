@@ -1,0 +1,53 @@
+# 结构化动作教学（M6.4-B B1.3 首批五动作之二）。
+# 内容整理自仓库 knowledge/20_exercises/chest/bench_press_technique.md
+# （谭成义-胸部教学，公开视频整理稿）；AI 辅助整理，未人工复核。
+exercise_id: barbell_bench_press
+content_version: 1
+updated: 2026-10-25
+review_status: draft
+sources:
+  - type: knowledge
+    ref: 20_exercises/chest/bench_press_technique.md
+    note: 谭成义-胸部教学（公开视频）整理稿，来源元数据见该文档 frontmatter
+sections:
+  setup:
+    status: draft
+    items:
+      - 仰卧后肩胛骨后缩下沉，想象「夹紧一支笔」。
+      - 腰部自然拱起（约可塞进一个手掌），不刻意过度反弓。
+      - 臀部贴紧凳面，双脚踏实地面准备腿驱动。
+  execution:
+    status: draft
+    items:
+      - 标准握距约比肩宽 1.5 倍：过宽肩关节压力大，过窄三头主导。
+      - 卧推不是「推出去」，是「把自己推离杠铃」：胸肌主导，三头与肩前束辅助。
+      - 控制下放 2-3 秒，杠铃下放到乳头上方；不做弹胸借力（可停顿 1 秒再推）。
+      - 推起时胸肌发力，想象「把杠铃掰弯」；顶点肘关节保持微屈不锁死。
+      - 腿驱动：脚踩实地面，力量从下肢传递到上肢。
+  breathing:
+    status: incomplete
+    items: []
+    note: 仓库知识来源未覆盖呼吸与节奏细节，待补充可靠依据后再录入。
+  common_errors:
+    status: draft
+    items:
+      - error: 推起时肩胛骨松开移动
+        consequence: 肩前束代偿，胸肌刺激下降
+        fix: 全程想象「夹紧一支笔」
+      - error: 腰部过度拱起
+        consequence: 下背受伤风险
+        fix: 自然拱起即可，不刻意加拱
+      - error: 弹胸（利用反弹惯性）
+        consequence: 失去肌肉控制
+        fix: 控制下放，停顿 1 秒再推
+  cautions:
+    status: draft
+    items:
+      - 顶点不锁死肘关节，保护关节。
+      - 自查锚点：推起时胸部有灼烧感而非肩或三头先酸；肩胛骨全程夹紧。
+      - 触觉辅助：腋下夹毛巾保持肩胛骨后缩；弹力带套腕对抗张力找发力感。
+  conditions:
+    status: draft
+    items:
+      - 胸肌整体发展、上肢推力基础、力量举/健美基础动作。
+      - 需要卧推凳与杠铃（器械：barbell、bench；场地：gym）。
