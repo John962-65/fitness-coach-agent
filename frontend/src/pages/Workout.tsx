@@ -7,6 +7,7 @@ import { api, ApiError } from '../api'
 import { Button, ErrorBox, Spinner, SuccessBlock } from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
+import { parseTrainingNumber, validateSetValues } from '../lib/validate'
 import { SessionEntry, useApp } from '../store'
 
 export default function Workout() {
@@ -331,26 +332,16 @@ function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, 
   const [warmup, setWarmup] = useState(false)
   const [formError, setFormError] = useState('')
 
-  const parse = (s: string): number | null | 'invalid' => {
-    const t = s.trim()
-    if (t === '') return null
-    const n = Number(t)
-    return Number.isFinite(n) ? n : 'invalid'
-  }
-
   const submit = () => {
-    const w = parse(weight)
-    const r = parse(reps)
-    const p = parse(rpe)
-    if (w === 'invalid' || r === 'invalid' || p === 'invalid') {
+    // M6.1.1：范围校验与历史纠错共用 lib/validate 同一套规则
+    const w = parseTrainingNumber(weight)
+    const r = parseTrainingNumber(reps)
+    const p = parseTrainingNumber(rpe)
+    if (w === undefined || r === undefined || p === undefined) {
       setFormError('重量 / 次数 / RPE 需为有效数字'); return
     }
-    if (!warmup && (r == null || r < 1)) {
-      setFormError('正式组请填写次数（≥1）；重量可留空（如自重动作）'); return
-    }
-    if (p != null && (p < 1 || p > 10)) {
-      setFormError('RPE 取值范围 1-10'); return
-    }
+    const invalid = validateSetValues(w, r, p, warmup)
+    if (invalid) { setFormError(invalid); return }
     setFormError('')
     // 连续记录：重量与次数保留（多为组间不变），RPE/热身复位
     onDone({ weight: w, reps: r, rpe: p, warmup, at: new Date().toISOString() })
@@ -360,15 +351,15 @@ function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, 
   // 快捷步进：空值时 + 步进从合理起点开始，负向不允许低于最小值
   const stepWeight = (d: number) => {
     setFormError('')
-    const cur = parse(weight)
+    const cur = parseTrainingNumber(weight)
     const base = typeof cur === 'number' ? cur : 0
     const next = Math.round((base + d) * 100) / 100
-    if (next < 0) return
-    setWeight(next === 0 && d < 0 ? '' : String(next))
+    if (next <= 0) return
+    setWeight(String(next))
   }
   const stepReps = (d: number) => {
     setFormError('')
-    const cur = parse(reps)
+    const cur = parseTrainingNumber(reps)
     const base = typeof cur === 'number' ? Math.floor(cur) : 0
     const next = base + d
     if (next < 1) return

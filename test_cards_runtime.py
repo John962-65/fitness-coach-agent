@@ -1,5 +1,6 @@
 """卡片运行时接入测试：已批卡进入教练工具链（任务书 §12 第四层；2026-10-11 起 39 张）。"""
 import json
+import pytest
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,13 @@ from coach.agent import CoachAgent
 from coach.cards import (CardError, USE_PRESCRIBE, approval_valid, approve_card,
                          card_for_exercise, card_for_topic,
                          check_use_permission, load_cards, serve_card)
+
+# 教练卡是真实人工审核内容，存于 sources/maintenance/cards（.gitignore，不入库）。
+# 干净环境（CI checkout）没有卡片可测——如实跳过，本地开发环境照常全量运行。
+_HAS_CARDS = (ROOT / "sources" / "maintenance" / "cards").is_dir() and any(
+    (ROOT / "sources" / "maintenance" / "cards").glob("card-*.json"))
+pytestmark = pytest.mark.skipif(
+    not _HAS_CARDS, reason="需真实教练卡内容（sources/maintenance/cards，不入库）；干净环境跳过")
 
 
 def test_card_for_exercise_returns_approved():

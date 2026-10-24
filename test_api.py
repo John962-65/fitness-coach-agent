@@ -80,6 +80,8 @@ def test_checkin_pipeline_normalizes_and_warns(client):
         "data": {"exercises": [{"name": "杠铃卧推", "weight_kg": 85, "reps": 5}]},
         "reason": "写错了", "evidence": "刚才那组其实是 85"}).json()
     assert fixed["revision"] == 1
+    # M6.1.1：列表携带最近一次修订原因（供历史页展示追溯）
+    assert app.state.db.list_checkins("api_user", 5)[0]["last_reason"] == "写错了"
     assert c.post(f"/api/users/api_user/checkins/{cid}/correct", json={
         "expected_revision": 0, "data": {}, "reason": "x", "evidence": "y"}
     ).status_code == 422

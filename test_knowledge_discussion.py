@@ -2,6 +2,8 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from coach.agent import CoachAgent
 from coach.review import review_context_text
 
@@ -86,6 +88,14 @@ def test_review_links_goal_version_and_metrics():
     assert "生效计划是目标 v1 时生成的" in text and "建议确认重排" in text
 
 
+def _has_cards() -> bool:
+    from pathlib import Path as _P
+    d = _P(__file__).resolve().parent / "sources" / "maintenance" / "cards"
+    return d.is_dir() and any(d.glob("card-*.json"))
+
+
+@pytest.mark.skipif(not _has_cards(),
+                    reason="需真实教练卡内容（sources/maintenance/cards，不入库）；干净环境跳过")
 def test_discussion_related_card_hint():
     ag = _agent()
     out = ag._handle_tool(

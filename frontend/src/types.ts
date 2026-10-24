@@ -93,6 +93,7 @@ export interface CheckinExercise {
 export interface Checkin {
   id: number
   revision: number
+  last_reason?: string | null // 最近一次修订原因（list_checkins 附带；无修订为 null）
   type: string
   data: { exercises?: CheckinExercise[]; raw?: string; [k: string]: unknown }
   at: string

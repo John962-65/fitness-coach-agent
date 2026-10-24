@@ -54,10 +54,29 @@ function useInView(el: HTMLElement | null): boolean {
   return inView
 }
 
-// 封面结果缓存：uid/exId -> 封面 URL 或 null（已确认无封面）。
-// 同一动作全站只查一次；上限后丢弃最早的条目。
-const coverCache = new Map<string, string | null>()
+// 封面结果缓存：uid/exId -> { 封面 URL 或 null（已确认无封面）, 写入时间 }。
+// 同一动作全站只查一次；带 TTL（用户在别端关联媒体后最迟 5 分钟自动刷新），
+// 本端发生媒体变更时可用 invalidateExerciseCover 立即失效。
+const COVER_TTL = 5 * 60 * 1000
 const COVER_CACHE_MAX = 400
+interface CoverEntry { v: string | null; at: number }
+const coverCache = new Map<string, CoverEntry>()
+
+/** 封面缓存失效：省略参数清空全部；只给 uid 清该用户；再给 exerciseId 精确清一条 */
+export function invalidateExerciseCover(uid?: string, exerciseId?: string): void {
+  if (!uid) { coverCache.clear(); return }
+  if (exerciseId) { coverCache.delete(`${uid}/${exerciseId}`); return }
+  for (const k of [...coverCache.keys()]) {
+    if (k.startsWith(`${uid}/`)) coverCache.delete(k)
+  }
+}
+
+const coverFresh = (key: string): string | null | undefined => {
+  const e = coverCache.get(key)
+  if (!e) return undefined
+  if (Date.now() - e.at > COVER_TTL) { coverCache.delete(key); return undefined }
+  return e.v
+}
 
 /** 某动作的用户教学媒体（封面优先）。inView=false 时不发请求。
  *  返回值：undefined=未加载/加载中，null=确认无封面 */
@@ -65,13 +84,13 @@ export function useExerciseCover(uid: string, exerciseId: string | undefined | n
                                  inView: boolean): string | null | undefined {
   const key = exerciseId ? `${uid}/${exerciseId}` : ''
   const [state, setState] = useState<{ k: string; v: string | null | undefined }>(
-    () => ({ k: key, v: key ? coverCache.get(key) : null }))
-  if (state.k !== key) setState({ k: key, v: key ? coverCache.get(key) : null })
+    () => ({ k: key, v: key ? coverFresh(key) : null }))
+  if (state.k !== key) setState({ k: key, v: key ? coverFresh(key) : null })
   const cover = state.k === key ? state.v : undefined
 
   useEffect(() => {
     if (!key || !inView) return
-    const cached = coverCache.get(key)
+    const cached = coverFresh(key)
     if (cached !== undefined) { setState({ k: key, v: cached }); return }
     let alive = true
     fetch(`/api/users/${uid}/exercise-media?exercise_id=${encodeURIComponent(exerciseId!)}`, {
@@ -87,7 +106,7 @@ export function useExerciseCover(uid: string, exerciseId: string | undefined | n
         if (coverCache.size >= COVER_CACHE_MAX) {
           coverCache.delete(coverCache.keys().next().value as string)
         }
-        coverCache.set(key, url)
+        coverCache.set(key, { v: url, at: Date.now() })
         if (alive) setState({ k: key, v: url })
       })
     return () => { alive = false }

@@ -5,6 +5,7 @@ import {
   Button, Empty, ErrorBox, Input, PageHeader, Sheet, Spinner, Tag, Textarea,
 } from '../components/Bits'
 import { buildCorrectedData, ExerciseEdit, SetEdit } from '../lib/checkin'
+import { parseTrainingNumber, validateSetValues } from '../lib/validate'
 import { useApp } from '../store'
 import { Checkin } from '../types'
 
@@ -51,6 +52,12 @@ export default function History() {
                 </div>
                 <span className="nums text-xs text-faint">{(c.at || '').slice(0, 10)}</span>
               </div>
+
+              {c.revision > 0 && c.last_reason && (
+                <p className="mb-2 -mt-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
+                  修订 v{c.revision} 原因：{c.last_reason}
+                </p>
+              )}
 
               {c.type === 'training' && c.data.exercises?.length ? (
                 <ul className="rows">
@@ -143,6 +150,47 @@ function CorrectModal({ checkin, uid, onClose, onSaved }: {
 
   const save = async () => {
     setSaving(true); setError(null)
+    // M6.1.1：纠错原因真必填（不再回退"修正记录"）；范围校验与训练执行共用一套规则
+    if (!reason.trim()) {
+      setError({ message: '请填写纠错原因——它会与原值一起留档，保证可追溯' })
+      setSaving(false); return
+    }
+    const exercises = checkin.data.exercises || []
+    for (let ei = 0; ei < exercises.length; ei++) {
+      const ex = exercises[ei]
+      const edit = edits[ei] || {}
+      if (ex.set_logs?.length) {
+        for (let li = 0; li < ex.set_logs.length; li++) {
+          const l = ex.set_logs[li]
+          const e = edit.logs?.[li]
+          if (!e) continue
+          const w = parseTrainingNumber(e.weight ?? '')
+          const r = parseTrainingNumber(e.reps ?? '')
+          const p = parseTrainingNumber(e.rpe ?? '')
+          if (w === undefined || r === undefined || p === undefined) {
+            setError({ message: `「${ex.name}」第 ${li + 1} 组存在无效数字，请检查重量/次数/RPE` })
+            setSaving(false); return
+          }
+          const invalid = validateSetValues(w, r, p, !!l.warmup)
+          if (invalid) {
+            setError({ message: `「${ex.name}」第 ${li + 1} 组：${invalid}` })
+            setSaving(false); return
+          }
+        }
+      } else {
+        const w = parseTrainingNumber(edit.weight ?? '')
+        const r = parseTrainingNumber(edit.reps ?? '')
+        if (w === undefined || r === undefined) {
+          setError({ message: `「${ex.name}」存在无效数字，请检查重量/次数` })
+          setSaving(false); return
+        }
+        const invalid = validateSetValues(w, r, null, false)
+        if (invalid) {
+          setError({ message: `「${ex.name}」：${invalid}` })
+          setSaving(false); return
+        }
+      }
+    }
     const data = buildCorrectedData(checkin, edits)
     if (!data) {
       setError({ message: '存在无效的数字输入，请检查重量/次数/RPE' })
@@ -152,7 +200,7 @@ function CorrectModal({ checkin, uid, onClose, onSaved }: {
       await api.correctCheckin(uid, checkin.id, {
         expected_revision: checkin.revision,
         data,
-        reason: reason || '修正记录',
+        reason: reason.trim(),
         evidence: `本人确认第 ${checkin.id} 条记录有误并修正`,
       })
       onSaved()

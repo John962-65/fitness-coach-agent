@@ -389,12 +389,15 @@ class Database:
     def list_checkins(self, user_id: str, limit: int = 20) -> list[dict]:
         rows = self.conn.execute(
             "SELECT c.id,c.type,c.data,c.created_at,"
-            " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision"
+            " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=c.id) AS revision,"
+            " (SELECT reason FROM checkin_revisions r WHERE r.checkin_id=c.id"
+            "  ORDER BY r.revision DESC LIMIT 1) AS last_reason"
             " FROM checkins c WHERE c.user_id=? ORDER BY c.id DESC LIMIT ?",
             (user_id, limit),
         ).fetchall()
-        return [{"id": r["id"], "revision": r["revision"], "type": r["type"],
-                 "data": json.loads(r["data"]), "at": r["created_at"]} for r in rows]
+        return [{"id": r["id"], "revision": r["revision"], "last_reason": r["last_reason"],
+                 "type": r["type"], "data": json.loads(r["data"]), "at": r["created_at"]}
+                for r in rows]
 
     def get_checkin(self, user_id: str, checkin_id: int) -> dict | None:
         row = self.conn.execute(

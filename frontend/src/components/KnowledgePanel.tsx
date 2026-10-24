@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BookOpenText, ShieldAlert, Upload } from 'lucide-react'
 import { api, ApiError } from '../api'
+import { invalidateExerciseCover } from './media'
 import {
   Button, Card, Empty, ErrorBox, Field, Input, Segmented, Spinner, Tag, Textarea,
 } from './Bits'
@@ -248,6 +249,7 @@ export default function KnowledgePanel({ uid }: { uid: string }) {
                                   body: JSON.stringify({ decision: 'approve', pattern, id: exId, link_media: true }),
                                 })
                                 const body = await res.json()
+                                if (res.ok) invalidateExerciseCover(uid) // 媒体已关联，封面缓存立即失效
                                 setPropNote(res.ok ? `已入库：${body.exercise_id}（draft，可搜索/可加入计划）` : body.detail?.error || '失败')
                                 loadClaims()
                               }}>审核通过并入库</button>
@@ -381,6 +383,7 @@ export function VideoImportPanel({ uid }: { uid: string }) {
     })
     const body = await res.json()
     if (!res.ok) setNote(body.detail?.error || '操作失败')
+    else if (action !== 'reject') invalidateExerciseCover(uid) // 关联/新建候选会影响封面
     load()
   }
 

@@ -51,7 +51,10 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function withTabLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (navigator as Navigator & { locks?: { request: (n: string, cb: () => Promise<T>) => Promise<T> } }).locks
+  // Node ≤20（vitest 环境）没有全局 navigator；浏览器用 Web Locks 跨标签页互斥
+  const locks = typeof navigator === 'undefined'
+    ? undefined
+    : (navigator as Navigator & { locks?: { request: (n: string, cb: () => Promise<T>) => Promise<T> } }).locks
   if (!locks) return withLock(fn)
   return locks.request(name, () => withLock(fn))
 }
