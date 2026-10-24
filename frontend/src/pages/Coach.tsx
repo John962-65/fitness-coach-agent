@@ -7,6 +7,7 @@ import { api, ApiError } from '../api'
 import {
   Button, Empty, ErrorBox, PlainButton, Spinner, Tag,
 } from '../components/Bits'
+import { Markdown } from '../components/Markdown'
 import { useApp } from '../store'
 import { ChatMsg, Consultation, Proposal } from '../types'
 
@@ -128,12 +129,13 @@ export default function Coach() {
                 <Sparkles size={13} className="text-accent" />
               </span>
             )}
-            <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-left text-sm
-                             leading-relaxed ${
+            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-left text-sm leading-relaxed ${
               m.role === 'user'
                 ? 'rounded-br-md bg-accent font-medium text-ink'
                 : 'rounded-tl-md border border-line bg-surface shadow-card'}`}>
-              {m.content}
+              {m.role === 'user'
+                ? <span className="whitespace-pre-wrap">{m.content}</span>
+                : <Markdown text={m.content} />}
             </div>
             {m.role === 'user' && (
               <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-canvas text-muted">

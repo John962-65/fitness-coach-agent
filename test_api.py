@@ -542,3 +542,14 @@ def test_approach_revision_content_endpoint(client):
     body = snap.json()
     assert body["content"]["structure"]["value"]  # 完整快照可取(对比用)
     assert c.get("/api/users/api_user/approach/revisions/99").status_code == 404
+
+
+def test_exercise_detail_includes_teaching(client):
+    """M6.2：动作详情带 teaching（knowledge_refs 人工整理内容；无关联为空表）。"""
+    c, _app = client
+    body = c.get("/api/exercises/barbell_bench_press").json()
+    assert body["teaching"], "已关联动作应返回教学文档"
+    assert body["teaching"][0]["topic"] == "卧推技术细节"
+    assert "谭成义-胸部教学" in body["teaching"][0]["source"]
+    no_ref = c.get("/api/exercises/leg_press").json()
+    assert no_ref["teaching"] == []

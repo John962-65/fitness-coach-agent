@@ -16,5 +16,5 @@ track_e1rm: false
 regressions: [lat_pulldown]
 progressions: [weighted_pull_up]
 substitutes: [lat_pulldown]
-knowledge_refs: []
+knowledge_refs: [20_exercises/back/lat_activation.md]
 status: approved

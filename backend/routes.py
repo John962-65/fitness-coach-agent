@@ -1061,6 +1061,8 @@ def register_routes(app) -> None:
         if not ex:
             raise HTTPException(status_code=404, detail={"error": f"动作 {ex_id} 不存在"})
         detail = dict(ex)
+        # M6.2：教学文档（knowledge_refs 指向的人工整理内容，含来源；无关联为空表）
+        detail["teaching"] = _svc.teaching_for(ex_id)
         if detail.get("status") != "approved":
             detail.setdefault("notes", [])
             detail["notes"] = list(detail["notes"]) + [

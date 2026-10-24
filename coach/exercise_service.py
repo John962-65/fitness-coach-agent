@@ -4,14 +4,66 @@
 - 内置动作所有用户可见（scope=builtin）；
 - 用户自定义仅本人可见（scope=user），绝不写入 exercises/ 目录
   （部署只读、更新丢数据、跨用户泄漏三类问题从根上消除）。
+
+M6.2：动作教学文档——exercises/*.yaml 的 knowledge_refs 指向 knowledge/ 下
+的人工整理教学 md；此处解析 frontmatter（来源/整理时间）与正文，供动作详情
+页"教学"标签渲染。内容与展示分离：本模块只读文件与元数据，不做任何改写。
 """
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 from .exercises import library
+
+KNOWLEDGE_DIR = (Path(__file__).resolve().parent.parent / "knowledge").resolve()
 
 
 def _norm(text: str) -> str:
     return "".join(str(text).split()).lower()
+
+
+def _split_frontmatter(text: str) -> tuple[dict, str]:
+    """拆出 `---\\n yaml \\n---` 头与正文；无头时返回空元数据。"""
+    if not text.startswith("---"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}, text
+    try:
+        meta = yaml.safe_load(text[3:end]) or {}
+    except yaml.YAMLError:
+        meta = {}
+    return (meta if isinstance(meta, dict) else {}), text[end + 4:].lstrip("\n")
+
+
+def teaching_for(ex_id: str) -> list[dict]:
+    """动作关联的教学文档（含来源元数据）。
+
+    安全校验：ref 必须解析到 knowledge/ 目录内且以 .md 结尾，
+    目录穿越/错配/文件缺失一律跳过——宁可没有内容也不给错内容。
+    """
+    ex = library.get(ex_id)
+    refs = (ex.get("knowledge_refs") or []) if ex else []
+    out: list[dict] = []
+    for rel in refs:
+        if not isinstance(rel, str) or not rel.endswith(".md"):
+            continue
+        p = (KNOWLEDGE_DIR / rel).resolve()
+        if not p.is_relative_to(KNOWLEDGE_DIR) or not p.is_file():
+            continue
+        meta, body = _split_frontmatter(p.read_text(encoding="utf-8"))
+        source = meta.get("source") or []
+        out.append({
+            "path": rel,
+            "topic": meta.get("topic") or p.stem,
+            "source": source if isinstance(source, list) else [str(source)],
+            "provenance": str(meta.get("provenance") or ""),
+            "updated": str(meta.get("updated") or ""),
+            "markdown": body,
+        })
+    return out
 
 
 def list_exercises(db, user_id: str | None) -> list[dict]:

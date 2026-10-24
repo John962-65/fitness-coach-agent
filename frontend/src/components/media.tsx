@@ -56,19 +56,24 @@ function useInView(el: HTMLElement | null): boolean {
 
 // 封面结果缓存：uid/exId -> { 封面 URL 或 null（已确认无封面）, 写入时间 }。
 // 同一动作全站只查一次；带 TTL（用户在别端关联媒体后最迟 5 分钟自动刷新），
-// 本端发生媒体变更时可用 invalidateExerciseCover 立即失效。
+// 本端发生媒体变更时可用 invalidateExerciseCover 立即失效并通知挂载中的封面组件。
 const COVER_TTL = 5 * 60 * 1000
 const COVER_CACHE_MAX = 400
 interface CoverEntry { v: string | null; at: number }
 const coverCache = new Map<string, CoverEntry>()
+const coverVersion = { n: 0 }
+const coverSubs = new Set<() => void>()
 
-/** 封面缓存失效：省略参数清空全部；只给 uid 清该用户；再给 exerciseId 精确清一条 */
+/** 封面缓存失效：省略参数清空全部；只给 uid 清该用户；再给 exerciseId 精确清一条。
+ *  挂载中的 ExerciseCover 通过订阅即时重新查询（不必重新进入页面）。 */
 export function invalidateExerciseCover(uid?: string, exerciseId?: string): void {
-  if (!uid) { coverCache.clear(); return }
-  if (exerciseId) { coverCache.delete(`${uid}/${exerciseId}`); return }
-  for (const k of [...coverCache.keys()]) {
+  if (!uid) coverCache.clear()
+  else if (exerciseId) coverCache.delete(`${uid}/${exerciseId}`)
+  else for (const k of [...coverCache.keys()]) {
     if (k.startsWith(`${uid}/`)) coverCache.delete(k)
   }
+  coverVersion.n += 1
+  for (const cb of coverSubs) cb()
 }
 
 const coverFresh = (key: string): string | null | undefined => {
@@ -83,15 +88,23 @@ const coverFresh = (key: string): string | null | undefined => {
 export function useExerciseCover(uid: string, exerciseId: string | undefined | null,
                                  inView: boolean): string | null | undefined {
   const key = exerciseId ? `${uid}/${exerciseId}` : ''
+  // 状态键含失效版本号：invalidateExerciseCover 触发订阅 → 键变化 → 重新查询缓存/网络
   const [state, setState] = useState<{ k: string; v: string | null | undefined }>(
-    () => ({ k: key, v: key ? coverFresh(key) : null }))
-  if (state.k !== key) setState({ k: key, v: key ? coverFresh(key) : null })
-  const cover = state.k === key ? state.v : undefined
+    () => ({ k: `${key}#${coverVersion.n}`, v: key ? coverFresh(key) : null }))
+  const k2 = `${key}#${coverVersion.n}`
+  if (state.k !== k2) setState({ k: k2, v: key ? coverFresh(key) : null })
+  const cover = state.k === k2 ? state.v : undefined
+
+  useEffect(() => {
+    const cb = () => setState((s) => ({ ...s }))  // 触发重渲染读取新版本键
+    coverSubs.add(cb)
+    return () => { coverSubs.delete(cb) }
+  }, [])
 
   useEffect(() => {
     if (!key || !inView) return
     const cached = coverFresh(key)
-    if (cached !== undefined) { setState({ k: key, v: cached }); return }
+    if (cached !== undefined) { setState({ k: k2, v: cached }); return }
     let alive = true
     fetch(`/api/users/${uid}/exercise-media?exercise_id=${encodeURIComponent(exerciseId!)}`, {
       headers: localStorage.getItem('fc-access-token')
@@ -107,10 +120,10 @@ export function useExerciseCover(uid: string, exerciseId: string | undefined | n
           coverCache.delete(coverCache.keys().next().value as string)
         }
         coverCache.set(key, { v: url, at: Date.now() })
-        if (alive) setState({ k: key, v: url })
+        if (alive) setState({ k: k2, v: url })
       })
     return () => { alive = false }
-  }, [key, inView, uid, exerciseId])
+  }, [k2, key, inView, uid, exerciseId])
   return cover
 }
 

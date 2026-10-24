@@ -16,7 +16,7 @@ track_e1rm: false
 regressions: []
 progressions: []
 substitutes: ['face_pull', 'band_pull_apart']
-knowledge_refs: []
+knowledge_refs: [20_exercises/shoulder/rear_delt_pumpkin.md]
 status: draft
 _provenance:
   name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话

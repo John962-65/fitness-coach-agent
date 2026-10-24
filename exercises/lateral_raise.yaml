@@ -16,5 +16,5 @@ track_e1rm: false
 regressions: []
 progressions: []
 substitutes: []
-knowledge_refs: []
+knowledge_refs: [20_exercises/shoulder/lateral_raise.md]
 status: approved

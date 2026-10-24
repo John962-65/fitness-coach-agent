@@ -16,7 +16,7 @@ track_e1rm: false
 regressions: []
 progressions: []
 substitutes: ['skull_crusher', 'close_grip_bench_press']
-knowledge_refs: []
+knowledge_refs: [20_exercises/tricep_training.md]
 status: draft
 _provenance:
   name_video_fields: llm        # 教学要点与结构化判断均来自通用知识，非博主原话

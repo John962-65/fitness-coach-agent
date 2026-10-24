@@ -6,12 +6,24 @@ import { api } from '../api'
 import {
   Chip, Empty, ErrorBox, Segmented, Spinner, SubHeader, Tag,
 } from '../components/Bits'
+import { Markdown } from '../components/Markdown'
 import { CoverPlaceholder, useSignedMedia } from '../components/media'
 import { ExerciseDetail } from '../types'
 import { useApp } from '../store'
 import { PATTERN_LABEL } from './Explore'
 
 interface MotionFault { code: string; label?: string; value?: number; hint?: string }
+
+/** M6.2：knowledge_refs 指向的人工整理教学文档（后端解析 frontmatter + 正文） */
+interface TeachingDoc {
+  path: string
+  topic: string
+  source: string[]
+  provenance: string
+  updated: string
+  markdown: string
+}
+
 interface MotionAnalysisItem {
   id: number; exercise_id: string; view: string; status: string; error: string | null
   video_path?: string
@@ -106,6 +118,7 @@ export default function ExploreDetail() {
   if (!detail) return <Spinner />
 
   const muscles = (detail.primary as string[] | undefined) || []
+  const teaching = ((detail.teaching as TeachingDoc[] | undefined) || [])
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -209,7 +222,24 @@ export default function ExploreDetail() {
               </ul>
             </div>
           )}
-          {media.length === 0 && !detail.setup && !(detail.cues?.length) && (
+          {/* M6.2：人工整理教学文档（内容与展示分离；来源可追溯） */}
+          {teaching.map((doc) => (
+            <div key={doc.path} className="card">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-[15px] font-semibold">{doc.topic}</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {doc.source.map((s) => <Tag key={s} tone="blue">来源：{s}</Tag>)}
+                  {doc.updated && <Tag>整理 {doc.updated}</Tag>}
+                </div>
+              </div>
+              <Markdown text={doc.markdown} />
+              <p className="mt-3 border-t border-line pt-2 text-2xs leading-relaxed text-faint">
+                整理自公开教学视频（来源见上），属一般训练指导，不构成医学建议；
+                内容入库不等于经过科学验证。
+              </p>
+            </div>
+          ))}
+          {media.length === 0 && !detail.setup && !(detail.cues?.length) && !teaching.length && (
             <Empty title="教学指导尚未完善">
               {detail.status === 'approved'
                 ? '该动作的结构化资料（关节压力/替代关系）已通过审核；图文教学要点尚未录入。可先用「动作分析」上传训练视频，或查看「知识依据」。'

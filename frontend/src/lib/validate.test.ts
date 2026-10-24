@@ -12,7 +12,6 @@ describe('validateWeight', () => {
     expect(validateWeight(500)).toBeNull()
   })
   it('负数 / 零 / 超上限拒绝', () => {
-    expect(validateWeight(-50)).toMatchObject({})
     expect(validateWeight(-50)).toContain('重量需在')
     expect(validateWeight(0)).toContain('重量需在')
     expect(validateWeight(501)).toContain('重量需在')
