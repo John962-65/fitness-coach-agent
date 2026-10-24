@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  BookOpen, Check, ChevronDown, ChevronUp, Repeat2, Timer,
+  BookOpen, Check, ChevronDown, ChevronUp, Plus, Repeat2, Timer,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
 import { Button, ErrorBox, Spinner, SuccessBlock } from '../components/Bits'
@@ -14,16 +14,18 @@ export default function Workout() {
   const { day } = useParams()
   const uid = useApp((s) => s.uid)
   const session = useApp((s) => s.session)
-  const { startSession, replaceExercise, setSessionNotes,
-          clearSession, restEndsAt, settings } = useApp((s) => s)
+  const { startSession, startFreeSession, addFreeExercise, removeEntry, replaceExercise,
+          setSessionNotes, clearSession, restEndsAt, settings } = useApp((s) => s)
   const [error, setError] = useState('')
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
+  const [addingFree, setAddingFree] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<{ message: string; details?: string[] } | null>(null)
   const [now, setNow] = useState(Date.now())
   const navigate = useNavigate()
   const offlineSaved = useRef(false)
+  const isFree = day === 'free'
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -32,6 +34,16 @@ export default function Workout() {
 
   useEffect(() => {
     if (!day) return
+    // M6.3 自由训练：不依赖计划，进入即建空会话，动作随加随练
+    if (isFree) {
+      if (session && session.mode === 'free') return
+      if (session && session.entries.some((e) => e.logged.length)) {
+        setError('有一个进行中的训练且已记录组数。请先完成它，再开始自由训练。')
+        return
+      }
+      startFreeSession()
+      return
+    }
     // 已有当天的进行中会话直接恢复（刷新不丢）
     if (session && session.day === decodeURIComponent(day)) return
     const loadPlan = () => api.plan(uid).then((p) => { api.cachePlan(uid, p); return p })
@@ -114,15 +126,18 @@ export default function Workout() {
       const name = e.replaced_with || e.name
       lines.push(`${name} ${done.length} 组：` + done.map((l) =>
         `${l.weight ?? '?'}kg×${l.reps ?? '?'}`).join('、'))
+      // M6.3：随记录提交稳定动作 ID（临时替换用替换后的 ID；断言由服务端校验）
+      const exerciseId = (e.replaced_with ? e.replace_exercise_id : e.exercise_id) || undefined
       // P0-4：每组完整保存（重量/次数/RPE/热身/完成时间）；聚合字段由服务端派生
-      return [{ name, set_logs: e.logged.map((l) => ({
+      return [{ name, exercise_id: exerciseId, set_logs: e.logged.map((l) => ({
         weight_kg: l.weight, reps: l.reps, rpe: l.rpe, warmup: l.warmup, at: l.at,
       })) }]
     })
     if (!exercises.length) { setSaveError({ message: '还没有记录任何正式组' }); setSaving(false); return }
+    const label = session!.mode === 'free' ? `自由训练 ${session!.date}` : session!.day
     const data = {
       exercises,
-      raw: `${session!.day}：${lines.join('；')}${session!.notes ? `。备注：${session!.notes}` : ''}`,
+      raw: `${label}：${lines.join('；')}${session!.notes ? `。备注：${session!.notes}` : ''}`,
     }
     try {
       const result = await api.saveCheckin(uid, 'training', data, submissionId)
@@ -159,9 +174,12 @@ export default function Workout() {
                  strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[17px] font-bold leading-tight">{session!.day}</h1>
+            <h1 className="truncate text-[17px] font-bold leading-tight">
+              {session!.mode === 'free' ? '自由训练' : session!.day}
+            </h1>
             <p className="nums text-xs text-white/60">
               已完成 {totalSets} 组 · 计量 {Math.round(volume)} kg
+              {session!.mode === 'free' && ' · 不影响计划'}
             </p>
           </div>
           {restLeft > 0 && (
@@ -176,10 +194,30 @@ export default function Workout() {
       <main className="mx-auto w-full max-w-xl space-y-4 px-4 pb-52 pt-4">
         {saveError && <ErrorBox message={saveError.message} details={saveError.details} />}
 
+        {/* 自由训练：空会话引导 */}
+        {isFree && entries.length === 0 && (
+          <div className="card flex flex-col items-center gap-3 py-8 text-center">
+            <p className="text-lg font-bold">自由训练</p>
+            <p className="max-w-64 text-sm leading-relaxed text-muted">
+              不按计划、想练什么就练什么。添加动作、逐组记录，完成后保存为历史——不影响当前计划。
+            </p>
+            <Button onClick={() => setAddingFree(true)}>
+              <Plus size={16} /> 添加第一个动作
+            </Button>
+          </div>
+        )}
+
         {entries.map((e, idx) => (
-          <ExerciseBlock key={idx} idx={idx} entry={e}
-                         onPickReplace={() => setPickerIdx(idx)} />
+          <ExerciseBlock key={idx} idx={idx} entry={e} isFree={isFree}
+                         onPickReplace={() => setPickerIdx(idx)}
+                         onRemove={() => removeEntry(idx)} />
         ))}
+
+        {isFree && entries.length > 0 && (
+          <Button variant="ghost" block onClick={() => setAddingFree(true)}>
+            <Plus size={16} /> 添加动作
+          </Button>
+        )}
 
         {/* 训练感受 */}
         <div className="card">
@@ -227,7 +265,16 @@ export default function Workout() {
       {pickerIdx !== null && (
         <ExercisePicker
           onClose={() => setPickerIdx(null)}
-          onPick={(ex) => replaceExercise(pickerIdx, ex.name)}
+          onPick={(ex) => replaceExercise(pickerIdx, ex.name, ex.id)}
+        />
+      )}
+      {addingFree && (
+        <ExercisePicker
+          onClose={() => setAddingFree(false)}
+          onPick={(ex) => addFreeExercise({
+            exercise_id: ex.id, name: ex.name,
+            target: { sets: '—', reps: '—', weight: null }, logged: [],
+          })}
         />
       )}
     </div>
@@ -235,8 +282,9 @@ export default function Workout() {
 }
 
 /** 单个动作卡：大标题 + 教学入口 + 组记录表 + 快速输入 */
-function ExerciseBlock({ idx, entry, onPickReplace }: {
-  idx: number; entry: SessionEntry; onPickReplace: () => void
+function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
+  idx: number; entry: SessionEntry; isFree: boolean
+  onPickReplace: () => void; onRemove: () => void
 }) {
   const logSet = useApp((s) => s.logSet)
   const removeLastSet = useApp((s) => s.removeLastSet)
@@ -244,8 +292,11 @@ function ExerciseBlock({ idx, entry, onPickReplace }: {
   const [rpeOpen, setRpeOpen] = useState(false)
   const done = entry.logged.filter((l) => !l.warmup).length
   const targetSets = Number(entry.target.sets) || 0
+  const targetReps = entry.target.reps !== '—' ? entry.target.reps : null
   const isWarmupOnly = entry.logged.length > 0 && entry.logged.every((l) => l.warmup)
   const prevWeight = entry.target.weight
+  const displayName = entry.replaced_with || entry.name
+  const teachId = entry.replaced_with ? entry.replace_exercise_id : entry.exercise_id
 
   return (
     <div className="card !p-0 overflow-hidden">
@@ -255,26 +306,29 @@ function ExerciseBlock({ idx, entry, onPickReplace }: {
           <div className="flex items-center gap-2">
             <span className="nums flex size-6 shrink-0 items-center justify-center rounded-full
                              bg-ink/6 text-xs font-bold text-muted">{idx + 1}</span>
-            <h2 className="truncate text-xl font-bold leading-tight">
-              {entry.replaced_with || entry.name}
-            </h2>
+            <h2 className="truncate text-xl font-bold leading-tight">{displayName}</h2>
           </div>
           <p className="nums mt-1.5 text-[13px] text-muted">
-            目标 {targetSets}×{entry.target.reps}
-            {prevWeight != null && ` · 上次 ${prevWeight}kg`}
+            {targetSets > 0 && `目标 ${targetSets}×${targetReps ?? '—'}`}
+            {targetSets > 0 && prevWeight != null && ` · 上次 ${prevWeight}kg`}
             {entry.note && ` · ${entry.note}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {entry.exercise_id && (
-            <Link to={`/explore/${encodeURIComponent(entry.exercise_id)}`}
-                  className="btn-plain" aria-label={`查看 ${entry.name} 教学`}>
+          {teachId && (
+            <Link to={`/explore/${encodeURIComponent(teachId)}`}
+                  className="btn-plain" aria-label={`查看 ${displayName} 教学`}>
               <BookOpen size={15} /> 教学
             </Link>
           )}
           <button className="btn-plain" onClick={onPickReplace}>
             <Repeat2 size={15} /> 替换
           </button>
+          {isFree && (
+            <button className="btn-plain !text-red-500" onClick={onRemove} aria-label="移除动作">
+              移除
+            </button>
+          )}
         </div>
       </div>
 

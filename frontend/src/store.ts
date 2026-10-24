@@ -18,10 +18,13 @@ export interface SessionEntry {
   note?: string
   logged: LoggedSet[]
   replaced_with?: string // 训练中临时替换（只影响本次记录，不改计划）
+  replace_exercise_id?: string // M6.3：临时替换后动作的稳定 ID（保存时随记录提交）
 }
 
 export interface WorkoutSession {
-  day: string
+  id: string                       // 会话稳定身份（M6.3：保存/恢复/统计都按会话）
+  mode: 'planned' | 'free'         // planned=按计划训练日；free=自由训练（不依赖计划）
+  day: string                      // planned=训练日名；free='free'（展示层用"自由训练"）
   date: string
   entries: SessionEntry[]
   started_at: string
@@ -32,15 +35,27 @@ export interface Settings {
   restSeconds: number
 }
 
+const newSessionId = (): string =>
+  `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+/** 兼容旧持久化数据：补 id / mode（升级前创建的进行中会话） */
+function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
+  if (!s) return null
+  return { ...s, id: s.id || newSessionId(), mode: s.mode || 'planned' }
+}
+
 interface AppState {
   uid: string
   setUid: (uid: string) => void
 
   session: WorkoutSession | null
   startSession: (day: string, entries: SessionEntry[]) => void
+  startFreeSession: () => void
+  addFreeExercise: (entry: SessionEntry) => void
+  removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
   removeLastSet: (entryIdx: number) => void
-  replaceExercise: (entryIdx: number, newName: string) => void
+  replaceExercise: (entryIdx: number, newName: string, exerciseId?: string) => void
   setSessionNotes: (notes: string) => void
   clearSession: () => void
 
@@ -69,6 +84,7 @@ function loadPersisted(): Partial<AppState> {
     for (const key of PERSISTED_KEYS) {
       if (key in parsed) out[key] = parsed[key]
     }
+    if (out.session) out.session = normalizeSession(out.session as WorkoutSession)
     return out as Partial<AppState>
   } catch {
     return {}
@@ -81,7 +97,18 @@ export const useApp = create<AppState>()((set) => ({
 
   session: null,
   startSession: (day, entries) =>
-    set({ session: { day, date: today(), entries, started_at: new Date().toISOString(), notes: '' } }),
+    set({ session: { id: newSessionId(), mode: 'planned', day, date: today(),
+                     entries, started_at: new Date().toISOString(), notes: '' } }),
+  startFreeSession: () =>
+    set({ session: { id: newSessionId(), mode: 'free', day: 'free', date: today(),
+                     entries: [], started_at: new Date().toISOString(), notes: '' } }),
+  addFreeExercise: (entry) =>
+    set((st) => (st.session && st.session.mode === 'free'
+      ? { session: { ...st.session, entries: [...st.session.entries, entry] } } : st)),
+  removeEntry: (entryIdx) =>
+    set((st) => (st.session
+      ? { session: { ...st.session, entries: st.session.entries.filter((_, i) => i !== entryIdx) } }
+      : st)),
   logSet: (entryIdx, s) =>
     set((st) => ({
       session: st.session
@@ -96,11 +123,12 @@ export const useApp = create<AppState>()((set) => ({
             i === entryIdx ? { ...e, logged: e.logged.slice(0, -1) } : e) }
         : st.session,
     })),
-  replaceExercise: (entryIdx, newName) =>
+  replaceExercise: (entryIdx, newName, exerciseId) =>
     set((st) => ({
       session: st.session
         ? { ...st.session, entries: st.session.entries.map((e, i) =>
-            i === entryIdx ? { ...e, replaced_with: newName } : e) }
+            i === entryIdx ? { ...e, replaced_with: newName,
+                               replace_exercise_id: exerciseId } : e) }
         : st.session,
     })),
   setSessionNotes: (notes) =>
@@ -125,6 +153,7 @@ useApp.subscribe((state) => {
   try {
     const slim: Record<string, unknown> = {}
     for (const key of PERSISTED_KEYS) slim[key] = (state as unknown as Record<string, unknown>)[key]
+    if (slim.session) slim.session = normalizeSession(slim.session as WorkoutSession)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(slim))
   } catch { /* 隐私模式等场景下持久化不可用，不影响功能 */ }
 })

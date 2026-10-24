@@ -7,8 +7,9 @@ import {
   Chip, Empty, ErrorBox, Segmented, Spinner, SubHeader, Tag,
 } from '../components/Bits'
 import { Markdown } from '../components/Markdown'
+import { Sparkline } from '../components/charts'
 import { CoverPlaceholder, useSignedMedia } from '../components/media'
-import { ExerciseDetail } from '../types'
+import { ExerciseDetail, ExerciseRecords, ExerciseSession } from '../types'
 import { useApp } from '../store'
 import { PATTERN_LABEL } from './Explore'
 
@@ -47,7 +48,7 @@ export default function ExploreDetail() {
   const navigate = useNavigate()
   const [detail, setDetail] = useState<ExerciseDetail | null>(null)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<'teach' | 'analysis' | 'basis'>('teach')
+  const [tab, setTab] = useState<'teach' | 'analysis' | 'basis' | 'mine'>('teach')
 
   // M3.2：用户教学媒体（封面/演示片段）
   const [media, setMedia] = useState<{ cover_path: string | null; clip_path: string | null; sentence: string }[]>([])
@@ -162,6 +163,7 @@ export default function ExploreDetail() {
           { value: 'teach', label: '教学' },
           { value: 'analysis', label: '动作分析' },
           { value: 'basis', label: '知识依据' },
+          { value: 'mine', label: '我的表现' },
         ]}
         value={tab} onChange={setTab} />
 
@@ -366,7 +368,6 @@ export default function ExploreDetail() {
         </div>
       )}
 
-      {/* ---- 知识依据 ---- */}
       {tab === 'basis' && (
         <div className="space-y-4">
           {detail.joint_stress && Object.keys(detail.joint_stress).length > 0 && (
@@ -402,10 +403,123 @@ export default function ExploreDetail() {
           )}
         </div>
       )}
+
+      {/* ---- 我的表现（M6.3：逐组口径的历史与个人纪录） ---- */}
+      {tab === 'mine' && <MyPerformance uid={uid} exerciseId={detail.id} />}
     </div>
   )
 }
 
+/** 我的表现：PR 摘要 + 逐会话历史表 + e1RM 趋势（估算值，明示口径） */
+function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string }) {
+  const [data, setData] = useState<{ sessions: ExerciseSession[]; records: ExerciseRecords } | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let alive = true
+    setData(null); setError('')
+    api.exerciseStats(uid, exerciseId)
+      .then((r) => { if (alive) setData(r) })
+      .catch((e) => { if (alive) setError(e.message) })
+    return () => { alive = false }
+  }, [uid, exerciseId])
+
+  if (error) return <ErrorBox message={error} />
+  if (!data) return <Spinner />
+  const { sessions, records } = data
+
+  if (!sessions.length) {
+    return (
+      <Empty title="这个动作还没有训练记录">
+        完成一次训练后，这里会显示逐组历史、训练容量与力量趋势。
+      </Empty>
+    )
+  }
+
+  const e1rmPoints = [...sessions].reverse()
+    .filter((s) => s.best_e1rm != null)
+    .map((s) => ({ label: s.date.slice(5), value: s.best_e1rm as number }))
+
+  const prs: [string, string, string | null][] = []
+  if (records.heaviest) prs.push(['最大重量', `${records.heaviest.weight_kg} kg`, records.heaviest.date])
+  if (records.best_e1rm) prs.push(['最佳估算 1RM', `${records.best_e1rm.e1rm} kg`, records.best_e1rm.date])
+  if (records.max_reps) prs.push(['最多次数', `${records.max_reps.reps} 次`, records.max_reps.date])
+  if (records.best_volume_session) {
+    prs.push(['单次最大容量', `${records.best_volume_session.volume} kg`, records.best_volume_session.date])
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 个人纪录 */}
+      <div className="card">
+        <h3 className="mb-2.5 text-[15px] font-semibold">个人纪录</h3>
+        <dl className="grid grid-cols-2 gap-2.5">
+          {prs.map(([label, value, date]) => (
+            <div key={label} className="rounded-xl bg-canvas p-3">
+              <dt className="text-2xs text-muted">{label}</dt>
+              <dd className="nums mt-0.5 text-lg font-bold leading-tight">{value}</dd>
+              {date && <dd className="text-2xs text-faint">{date}</dd>}
+            </div>
+          ))}
+        </dl>
+        {records.best_e1rm && (
+          <p className="mt-2 text-2xs leading-relaxed text-faint">
+            估算 1RM 由 Epley 公式按组计算（1-12 次区间取最佳），是模型估计值，不等于实测极限。
+          </p>
+        )}
+      </div>
+
+      {/* e1RM 趋势 */}
+      {e1rmPoints.length >= 2 && (
+        <div className="card">
+          <h3 className="mb-2.5 text-[15px] font-semibold">力量趋势（估算 1RM）</h3>
+          <Sparkline points={e1rmPoints} unit=" kg" />
+        </div>
+      )}
+
+      {/* 逐会话历史 */}
+      <div className="card !p-0 overflow-hidden">
+        <div className="border-b border-line px-4 py-3">
+          <h3 className="text-[15px] font-semibold">历史训练（{sessions.length} 次）</h3>
+        </div>
+        <ul className="rows">
+          {sessions.map((s) => (
+            <li key={s.checkin_id}>
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3
+                                    transition-colors hover:bg-canvas">
+                  <div className="min-w-0 flex-1">
+                    <p className="nums text-sm font-semibold">{s.date}</p>
+                    <p className="nums mt-0.5 text-xs text-muted">
+                      {s.working_sets} 组
+                      {s.best_set && ` · 最佳 ${s.best_set.weight_kg}kg×${s.best_set.reps ?? '?'}`}
+                      {s.volume > 0 && ` · 容量 ${s.volume}kg`}
+                      {s.duration_min != null && ` · 约 ${s.duration_min} 分钟`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-faint transition-transform group-open:rotate-180">
+                    ▾
+                  </span>
+                </summary>
+                <ul className="nums space-y-1 border-t border-line bg-canvas/60 px-4 py-2.5">
+                  {s.sets.map((st, i) => (
+                    <li key={i} className="flex items-center gap-2 text-[13px] text-muted">
+                      <span className="w-6 text-faint">#{i + 1}</span>
+                      <span className="text-ink">
+                        {st.weight_kg ?? '自重'}{st.weight_kg != null && ' kg'} × {st.reps ?? '?'} 次
+                      </span>
+                      {st.e1rm != null && <span className="text-faint">e1RM {st.e1rm}</span>}
+                      {st.volume > 0 && <span className="ml-auto text-faint">容量 {st.volume}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
 /** 详情页封面（签名加载，加载失败回退占位） */
 function DetailCover({ uid, path, name }: { uid: string; path: string; name: string }) {
   const src = useSignedMedia(uid, path)

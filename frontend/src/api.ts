@@ -1,8 +1,9 @@
 // API 客户端：错误统一为 ApiError（status + 人可读 message + details 列表）
 import type {
   ApproachRevision, ApproachView, Checkin, Consultation, ExerciseDetail,
-  ExerciseState, ExerciseSummary, PlanOp, PlanResponse, PlanRevision, Profile,
-  Proposal, TodayBrief, Trial,
+  ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, PlanOp,
+  PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, TodayBrief,
+  TrainingCalendar, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -152,6 +153,15 @@ export const api = {
   },
   motionCompare: (uid: string, a: number, b: number) =>
     req<unknown>(`/users/${uid}/motion-analyses/compare?a=${a}&b=${b}`),
+
+  // M6.3 训练数据分析（逐组口径）
+  exerciseStats: (uid: string, exerciseId: string) =>
+    req<{ sessions: ExerciseSession[]; records: ExerciseRecords }>(
+      `/users/${uid}/exercise-stats/${encodeURIComponent(exerciseId)}`),
+  trainingCalendar: (uid: string, year: number, month: number) =>
+    req<TrainingCalendar>(`/users/${uid}/training-calendar?year=${year}&month=${month}`),
+  periodSummary: (uid: string, days: number) =>
+    req<PeriodSummary>(`/users/${uid}/period-summary?days=${days}`),
 
   mediaSign: (uid: string, name: string) =>
     req<{ sig: string; exp: number; ttl: number }>(

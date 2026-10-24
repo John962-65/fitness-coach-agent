@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  ArrowRight, ClipboardList, Flame, MessageCircleHeart, Play,
+  ArrowRight, ClipboardList, Flame, MessageCircleHeart, Play, Plus,
   ShieldAlert, Sparkles,
 } from 'lucide-react'
 import { api } from '../api'
@@ -168,6 +168,14 @@ export default function Today() {
               )}
             </div>
           </CardNight>
+
+          {/* 自由训练入口（M6.3：不依赖计划的灵活记录） */}
+          <Link to="/workout/free"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border
+                           border-dashed border-lineStrong bg-surface/60 text-sm font-medium text-muted
+                           transition-colors hover:border-accent-deep/40 hover:text-ink">
+            <Plus size={15} /> 自由开始一次训练（不按计划）
+          </Link>
 
           {/* 本周训练进度 */}
           <div className="card">

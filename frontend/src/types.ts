@@ -229,6 +229,51 @@ export interface ChatMsg {
   content: string
 }
 
+// ---- M6.3 训练数据分析（逐组口径；后端 coach/analytics） ----
+export interface ExerciseSessionSet {
+  weight_kg: number | null
+  reps: number | null
+  at?: string | null
+  e1rm: number | null
+  volume: number
+}
+
+export interface ExerciseSession {
+  checkin_id: number
+  date: string
+  working_sets: number
+  reps_total: number
+  volume: number
+  best_set: { weight_kg: number; reps: number | null } | null
+  best_e1rm: number | null
+  duration_min: number | null
+  sets: ExerciseSessionSet[]
+}
+
+export interface ExerciseRecords {
+  heaviest: { weight_kg: number; reps: number | null; date: string } | null
+  best_e1rm: { e1rm: number; weight_kg: number; reps: number | null; date: string } | null
+  max_reps: { reps: number; weight_kg: number | null; date: string } | null
+  best_volume_session: { volume: number; working_sets: number; date: string } | null
+}
+
+export interface TrainingCalendar {
+  year: number
+  month: number
+  days: { date: string; sessions: number; working_sets: number; volume: number }[]
+}
+
+export interface PeriodSummary {
+  days: number
+  sessions: number
+  training_days: number
+  per_week: number
+  working_sets: number
+  volume: number
+  by_muscle: Record<string, number>
+  avg_duration_min: number | null
+}
+
 // 统一修改协议的操作（与 coach/plan_edit.py PLAN_OPS 对齐）
 export type PlanOp =
   | { op: 'add_exercise'; day: string; exercise: string; sets: number | string; reps: number | string; weight_kg?: number; role?: string; note?: string; index?: number }

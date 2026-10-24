@@ -937,7 +937,7 @@ def register_routes(app) -> None:
     # ---- 打卡 ----
 
     @api.get("/users/{uid}/checkins")
-    def list_checkins(uid: str, request: Request, limit: int = Query(10, ge=1, le=20)):
+    def list_checkins(uid: str, request: Request, limit: int = Query(20, ge=1, le=50)):
         _user_profile(request.app.state.db, uid)
         return {"checkins": request.app.state.db.list_checkins(uid, limit)}
 
@@ -984,8 +984,17 @@ def register_routes(app) -> None:
                         ex.pop("reps", None)
                         ex.pop("sets", None)
                         ex.pop("rpe", None)
-                ex["exercise_id"] = None            # 动作 ID 是系统判定
+                # M6.3：客户端（自由训练/临时替换）可携带会话中的稳定 exercise_id；
+                # 仅当该 id 确实存在（内置库或本人自定义）时采信，否则仍由名称系统判定
+                claimed = ex.get("exercise_id")
+                claimed_ok = isinstance(claimed, str) and claimed and (
+                    bool(library.get(claimed))
+                    or request.app.state.db.get_custom_exercise(uid, claimed) is not None)
+                ex["exercise_id"] = claimed if claimed_ok else None
                 raw_name = ex.get("name", "")
+                if claimed_ok:
+                    ex.pop("name_raw", None)
+                    continue
                 ex_id, official, _via = library.normalize(raw_name)
                 if ex_id:
                     ex["exercise_id"] = ex_id
@@ -1005,6 +1014,28 @@ def register_routes(app) -> None:
             return {"id": first["checkin_id"], "type": ctype,
                     "warnings": notes, "existing": True}
         return {"id": checkin_id, "type": ctype, "warnings": notes}
+
+    # ---- M6.3 训练数据分析（逐组口径） ----
+
+    @api.get("/users/{uid}/exercise-stats/{exercise_id}")
+    def exercise_stats(uid: str, exercise_id: str, request: Request):
+        from coach import analytics
+        db = request.app.state.db
+        _user_profile(db, uid)
+        sessions = analytics.exercise_sessions(db, uid, exercise_id)
+        return {"sessions": sessions, "records": analytics.personal_records(sessions)}
+
+    @api.get("/users/{uid}/training-calendar")
+    def training_calendar(uid: str, request: Request, year: int, month: int):
+        from coach import analytics
+        _user_profile(request.app.state.db, uid)
+        return analytics.month_calendar(request.app.state.db, uid, year, month)
+
+    @api.get("/users/{uid}/period-summary")
+    def period_summary(uid: str, request: Request, days: int = 30):
+        from coach import analytics
+        _user_profile(request.app.state.db, uid)
+        return analytics.period_summary(request.app.state.db, uid, days)
 
     @api.post("/users/{uid}/checkins/{checkin_id}/correct")
     def correct_checkin(uid: str, checkin_id: int, request: Request,

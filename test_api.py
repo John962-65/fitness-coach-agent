@@ -553,3 +553,56 @@ def test_exercise_detail_includes_teaching(client):
     assert "谭成义-胸部教学" in body["teaching"][0]["source"]
     no_ref = c.get("/api/exercises/leg_press").json()
     assert no_ref["teaching"] == []
+
+
+def test_checkin_preserves_valid_exercise_id(client):
+    """M6.3：自由训练/临时替换携带的 exercise_id，合法则保留，非法仍由名称系统判定。"""
+    c, app = client
+    body = c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [
+            {"name": "卧推", "exercise_id": "barbell_bench_press",
+             "set_logs": [{"weight_kg": 60, "reps": 10}]},
+            {"name": "深蹲", "exercise_id": "not_an_exercise",
+             "set_logs": [{"weight_kg": 100, "reps": 5}]},
+        ]}}).json()
+    assert body["warnings"] == []
+    exs = app.state.db.list_checkins("api_user", 5)[0]["data"]["exercises"]
+    assert exs[0]["exercise_id"] == "barbell_bench_press"   # 合法 id 保留（别名不改写）
+    assert exs[0]["name"] == "卧推"
+    assert exs[1]["exercise_id"] == "barbell_back_squat"    # 非法 id → 名称派生
+    assert exs[1]["name"] == "杠铃深蹲"
+
+
+def test_checkins_limit_cap_raised_to_50(client):
+    """M6.3：历史列表需要 50 条窗口（422 修复回归）。"""
+    c, _app = client
+    resp = c.get("/api/users/api_user/checkins", params={"limit": 50})
+    assert resp.status_code == 200
+    assert c.get("/api/users/api_user/checkins", params={"limit": 51}).status_code == 422
+
+
+def test_exercise_stats_calendar_period_endpoints(client):
+    """M6.3：动作历史 / 日历 / 周期汇总三个只读端点。"""
+    c, app = client
+    c.post("/api/users/api_user/checkins", json={
+        "type": "training",
+        "data": {"exercises": [{"name": "卧推", "exercise_id": "barbell_bench_press",
+                                "set_logs": [
+                                    {"weight_kg": 60, "reps": 10, "at": "2026-10-05T10:00:00"},
+                                    {"weight_kg": 65, "reps": 8, "at": "2026-10-05T10:03:00"}]}]}})
+    stats = c.get("/api/users/api_user/exercise-stats/barbell_bench_press").json()
+    assert stats["sessions"][0]["working_sets"] == 2
+    assert stats["sessions"][0]["volume"] == 600 + 520
+    assert stats["records"]["heaviest"]["weight_kg"] == 65
+    empty = c.get("/api/users/api_user/exercise-stats/leg_press").json()
+    assert empty["sessions"] == [] and empty["records"]["heaviest"] is None
+
+    cal = c.get("/api/users/api_user/training-calendar",
+                params={"year": stats["sessions"][0]["date"][:4],
+                        "month": int(stats["sessions"][0]["date"][5:7])}).json()
+    assert any(d["working_sets"] == 2 for d in cal["days"])
+
+    summary = c.get("/api/users/api_user/period-summary", params={"days": 30}).json()
+    assert summary["sessions"] >= 1
+    assert summary["by_muscle"].get("chest") == 2

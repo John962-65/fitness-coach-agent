@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Dumbbell, Salad, Scale } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, Dumbbell, Salad, Scale } from 'lucide-react'
 import { api, ApiError } from '../api'
 import {
-  Button, Empty, ErrorBox, Input, PageHeader, Sheet, Spinner, Tag, Textarea,
+  Button, Empty, ErrorBox, Input, PageHeader, Segmented, Select, Sheet,
+  Skeleton, Spinner, Stat, Tag, Textarea,
 } from '../components/Bits'
 import { buildCorrectedData, ExerciseEdit, SetEdit } from '../lib/checkin'
 import { parseTrainingNumber, validateSetValues } from '../lib/validate'
 import { useApp } from '../store'
-import { Checkin } from '../types'
+import { Checkin, PeriodSummary, TrainingCalendar } from '../types'
 
 const TYPE_META: Record<string, { label: string; icon: typeof Dumbbell }> = {
   training: { label: '训练', icon: Dumbbell },
@@ -15,101 +16,76 @@ const TYPE_META: Record<string, { label: string; icon: typeof Dumbbell }> = {
   diet: { label: '饮食', icon: Salad },
 }
 
+const MUSCLE_LABEL: Record<string, string> = {
+  chest: '胸', back: '背', shoulders: '肩', biceps: '二头', triceps: '三头',
+  quads: '股四头', hamstrings: '腘绳', glutes: '臀', calves: '小腿', core: '核心',
+  other: '其他',
+}
+
 export default function History() {
   const uid = useApp((s) => s.uid)
+  const [view, setView] = useState<'list' | 'calendar'>('list')
   const [checkins, setCheckins] = useState<Checkin[] | null>(null)
   const [error, setError] = useState('')
   const [correcting, setCorrecting] = useState<Checkin | null>(null)
+  // 列表筛选（客户端过滤，数据取最近 50 条）
+  const [typeFilter, setTypeFilter] = useState('')
+  const [q, setQ] = useState('')
 
   const load = useCallback(() => {
-    api.checkins(uid, 20).then((r) => setCheckins(r.checkins)).catch((e) => setError(e.message))
+    api.checkins(uid, 50).then((r) => setCheckins(r.checkins)).catch((e) => setError(e.message))
   }, [uid])
   useEffect(() => { load() }, [load])
+
+  const filtered = useMemo(() => (checkins || []).filter((c) => {
+    if (typeFilter && c.type !== typeFilter) return false
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase()
+      const hay = JSON.stringify(c.data).toLowerCase()
+      if (!hay.includes(needle)) return false
+    }
+    return true
+  }), [checkins, typeFilter, q])
 
   if (error) return <div className="pt-4"><ErrorBox message={error} /></div>
   if (!checkins) return <Spinner />
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <PageHeader title="训练历史" sub="最近 20 条 · 点开可纠错（保留修订痕迹）" />
+      <PageHeader title="训练历史" sub="逐组记录 · 纠错保留修订痕迹 · 长期回顾" />
+      <Segmented className="mb-4"
+        options={[
+          { value: 'list', label: '记录列表' },
+          { value: 'calendar', label: '日历与统计' },
+        ]}
+        value={view} onChange={setView} />
 
-      {checkins.length === 0 && (
-        <Empty title="还没有记录">完成第一次训练后，记录会出现在这里。</Empty>
-      )}
-
-      <div className="space-y-3">
-        {checkins.map((c) => {
-          const meta = TYPE_META[c.type] || TYPE_META.training
-          return (
-            <div key={c.id} className="card">
-              <div className="mb-2.5 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-canvas text-muted">
-                    <meta.icon size={16} />
-                  </span>
-                  <span className="text-[15px] font-semibold">{meta.label}</span>
-                  {c.revision > 0 && <Tag tone="amber">修订 v{c.revision}</Tag>}
-                </div>
-                <span className="nums text-xs text-faint">{(c.at || '').slice(0, 10)}</span>
-              </div>
-
-              {c.revision > 0 && c.last_reason && (
-                <p className="mb-2 -mt-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
-                  修订 v{c.revision} 原因：{c.last_reason}
-                </p>
-              )}
-
-              {c.type === 'training' && c.data.exercises?.length ? (
-                <ul className="rows">
-                  {c.data.exercises.map((ex, i) => (
-                    <li key={i} className="py-2 first:pt-0 last:pb-0">
-                      {ex.set_logs?.length ? (
-                        <div>
-                          <p className="text-sm font-medium">
-                            {ex.name}
-                            <span className="nums ml-1.5 text-xs text-muted">{ex.set_logs.length} 组</span>
-                          </p>
-                          <ul className="nums mt-1 space-y-0.5">
-                            {ex.set_logs.map((l, j) => (
-                              <li key={j} className="flex items-center gap-2 text-[13px] text-muted">
-                                <span className="w-8 shrink-0 text-faint">#{j + 1}</span>
-                                {l.warmup && <span className="tag bg-amber-50 text-amber-700">热身</span>}
-                                <span className="text-ink">
-                                  {l.weight_kg != null ? `${l.weight_kg} kg` : ''}
-                                  {l.weight_kg != null && l.reps != null ? ' × ' : ''}
-                                  {l.reps ?? (l.weight_kg != null ? '' : '?')} 次
-                                </span>
-                                {l.rpe ? <span className="text-faint">RPE {l.rpe}</span> : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between text-sm">
-                          <span>{ex.name}</span>
-                          <span className="nums text-muted">
-                            {ex.sets ? `${ex.sets}组 · ` : ''}{ex.weight_kg ?? '—'}kg × {ex.reps ?? '—'}
-                            {ex.rpe ? ` RPE${ex.rpe}` : ''}
-                          </span>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm leading-relaxed text-muted">
-                  {String(c.data.raw || JSON.stringify(c.data)).slice(0, 120)}
-                </p>
-              )}
-
-              <div className="mt-2.5 flex justify-end border-t border-line pt-2">
-                <button className="btn-plain text-accent-deep"
-                        onClick={() => setCorrecting(c)}>纠错这条记录</button>
-              </div>
+      {view === 'calendar'
+        ? <CalendarView uid={uid} checkins={checkins} onCorrect={setCorrecting} />
+        : (
+          <>
+            <div className="mb-3 flex gap-2">
+              <Select className="!w-32" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+                      aria-label="按类型筛选">
+                <option value="">全部类型</option>
+                <option value="training">训练</option>
+                <option value="body">身体</option>
+                <option value="diet">饮食</option>
+              </Select>
+              <Input placeholder="搜索动作 / 备注…" value={q}
+                     onChange={(e) => setQ(e.target.value)} aria-label="搜索记录" />
             </div>
-          )
-        })}
-      </div>
+
+            {filtered.length === 0 && (
+              <Empty title="没有匹配的记录">
+                {checkins.length === 0 ? '完成第一次训练后，记录会出现在这里。' : '换个筛选条件试试。'}
+              </Empty>
+            )}
+            <div className="space-y-3">
+              {filtered.map((c) => <CheckinCard key={c.id} c={c} onCorrect={() => setCorrecting(c)} />)}
+            </div>
+          </>
+        )}
 
       {correcting && (
         <CorrectModal checkin={correcting} uid={uid}
@@ -118,6 +94,234 @@ export default function History() {
     </div>
   )
 }
+
+/* ---------------- 记录卡片（列表与日历共用） ---------------- */
+
+function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
+  const meta = TYPE_META[c.type] || TYPE_META.training
+  return (
+    <div className="card">
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-canvas text-muted">
+            <meta.icon size={16} />
+          </span>
+          <span className="text-[15px] font-semibold">{meta.label}</span>
+          {c.revision > 0 && <Tag tone="amber">修订 v{c.revision}</Tag>}
+        </div>
+        <span className="nums text-xs text-faint">{(c.at || '').slice(0, 10)}</span>
+      </div>
+
+      {c.revision > 0 && c.last_reason && (
+        <p className="mb-2 -mt-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs leading-relaxed text-amber-800">
+          修订 v{c.revision} 原因：{c.last_reason}
+        </p>
+      )}
+
+      {c.type === 'training' && c.data.exercises?.length ? (
+        <ul className="rows">
+          {c.data.exercises.map((ex, i) => (
+            <li key={i} className="py-2 first:pt-0 last:pb-0">
+              {ex.set_logs?.length ? (
+                <div>
+                  <p className="text-sm font-medium">
+                    {ex.name}
+                    <span className="nums ml-1.5 text-xs text-muted">{ex.set_logs.length} 组</span>
+                  </p>
+                  <ul className="nums mt-1 space-y-0.5">
+                    {ex.set_logs.map((l, j) => (
+                      <li key={j} className="flex items-center gap-2 text-[13px] text-muted">
+                        <span className="w-8 shrink-0 text-faint">#{j + 1}</span>
+                        {l.warmup && <span className="tag bg-amber-50 text-amber-700">热身</span>}
+                        <span className="text-ink">
+                          {l.weight_kg != null ? `${l.weight_kg} kg` : ''}
+                          {l.weight_kg != null && l.reps != null ? ' × ' : ''}
+                          {l.reps ?? (l.weight_kg != null ? '' : '?')} 次
+                        </span>
+                        {l.rpe ? <span className="text-faint">RPE {l.rpe}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between text-sm">
+                  <span>{ex.name}</span>
+                  <span className="nums text-muted">
+                    {ex.sets ? `${ex.sets}组 · ` : ''}{ex.weight_kg ?? '—'}kg × {ex.reps ?? '—'}
+                    {ex.rpe ? ` RPE${ex.rpe}` : ''}
+                  </span>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm leading-relaxed text-muted">
+          {String(c.data.raw || JSON.stringify(c.data)).slice(0, 120)}
+        </p>
+      )}
+
+      <div className="mt-2.5 flex justify-end border-t border-line pt-2">
+        <button className="btn-plain text-accent-deep" onClick={onCorrect}>纠错这条记录</button>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 日历与周期统计（M6.3） ---------------- */
+
+function CalendarView({ uid, checkins, onCorrect }: {
+  uid: string; checkins: Checkin[]; onCorrect: (c: Checkin) => void
+}) {
+  const today = new Date()
+  const [year, setYear] = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [cal, setCal] = useState<TrainingCalendar | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [periodDays, setPeriodDays] = useState<7 | 30 | 90>(30)
+  const [summary, setSummary] = useState<PeriodSummary | null>(null)
+
+  useEffect(() => {
+    api.trainingCalendar(uid, year, month)
+      .then(setCal).catch(() => setCal({ year, month, days: [] }))
+  }, [uid, year, month])
+  useEffect(() => {
+    api.periodSummary(uid, periodDays)
+      .then(setSummary).catch(() => setSummary(null))
+  }, [uid, periodDays])
+
+  const byDate = useMemo(() => {
+    const m = new Map<string, TrainingCalendar['days'][number]>()
+    for (const d of cal?.days || []) m.set(d.date, d)
+    return m
+  }, [cal])
+
+  // 周一起始的月历网格
+  const grid = useMemo(() => {
+    const first = new Date(year, month - 1, 1)
+    const offset = (first.getDay() + 6) % 7
+    const total = new Date(year, month, 0).getDate()
+    const cells: (number | null)[] = Array(offset).fill(null)
+    for (let d = 1; d <= total; d++) cells.push(d)
+    while (cells.length % 7) cells.push(null)
+    return cells
+  }, [year, month])
+
+  const moveMonth = (delta: number) => {
+    const d = new Date(year, month - 1 + delta, 1)
+    setYear(d.getFullYear()); setMonth(d.getMonth() + 1); setSelected(null)
+  }
+
+  const dayCheckins = selected ? checkins.filter((c) => (c.at || '').slice(0, 10) === selected) : []
+  const maxMuscle = summary ? Math.max(1, ...Object.values(summary.by_muscle)) : 1
+
+  return (
+    <div className="space-y-4">
+      {/* 月历 */}
+      <div className="card">
+        <div className="mb-3 flex items-center justify-between">
+          <button className="btn-plain" onClick={() => moveMonth(-1)} aria-label="上个月">
+            <ChevronLeft size={16} />
+          </button>
+          <p className="nums text-[15px] font-bold">{year} 年 {month} 月</p>
+          <button className="btn-plain" onClick={() => moveMonth(1)} aria-label="下个月">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-2xs text-muted">
+          {['一', '二', '三', '四', '五', '六', '日'].map((w) => <span key={w}>{w}</span>)}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {grid.map((d, i) => {
+            if (d == null) return <span key={`e${i}`} />
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            const info = byDate.get(dateStr)
+            const isToday = dateStr === today.toISOString().slice(0, 10)
+            return (
+              <button key={dateStr} disabled={!info}
+                      onClick={() => setSelected(info ? dateStr : null)}
+                      className={`relative flex min-h-11 flex-col items-center justify-center rounded-lg
+                                  text-[13px] transition-colors ${
+                        info ? 'bg-accent-soft font-semibold text-accent-deep hover:bg-accent/40'
+                             : 'text-muted'} ${
+                        selected === dateStr ? 'ring-2 ring-accent-deep/50' : ''} ${
+                        isToday ? 'outline outline-1 outline-night/30' : ''}`}>
+                {d}
+                {info && info.sessions > 1 && (
+                  <span className="nums absolute bottom-0.5 text-[9px] font-bold">×{info.sessions}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2.5 text-2xs leading-relaxed text-faint">
+          绿色 = 有训练的日期（×n 为同日多次）；点击查看当天完整记录。
+        </p>
+      </div>
+
+      {/* 周期统计 */}
+      <div className="card">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-[15px] font-semibold">周期统计</h3>
+          <Segmented className="!flex-none"
+            options={[
+              { value: '7', label: '7 天' },
+              { value: '30', label: '30 天' },
+              { value: '90', label: '90 天' },
+            ]}
+            value={String(periodDays) as '7' | '30' | '90'}
+            onChange={(v) => setPeriodDays(Number(v) as 7 | 30 | 90)} />
+        </div>
+        {!summary ? <Skeleton className="h-24" /> : (
+          <>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <Stat value={summary.sessions} label={`训练次数（约 ${summary.per_week}/周）`} />
+              <Stat value={summary.working_sets} label="工作组数" />
+              <Stat value={summary.volume} label="容量 kg" />
+              <Stat value={summary.avg_duration_min != null
+                ? (summary.avg_duration_min >= 1 ? `${summary.avg_duration_min} 分` : '不足 1 分')
+                : '—'}
+                    label="平均时长" />
+            </div>
+            <div className="mt-3.5">
+              <p className="mb-2 text-[13px] font-medium text-muted">
+                肌群分布（按主肌群归口，一组只计一次）
+              </p>
+              {Object.keys(summary.by_muscle).length === 0 ? (
+                <p className="text-xs text-muted">该周期内暂无训练。</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {Object.entries(summary.by_muscle).map(([m, n]) => (
+                    <div key={m} className="flex items-center gap-2.5">
+                      <span className="w-12 shrink-0 text-xs text-ink">{MUSCLE_LABEL[m] || m}</span>
+                      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-ink/8">
+                        <div className="h-full rounded-full bg-accent"
+                             style={{ width: `${(n / maxMuscle) * 100}%` }} />
+                      </div>
+                      <span className="nums w-8 shrink-0 text-right text-xs text-muted">{n}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 选中日期的完整记录 */}
+      {selected && (
+        <div className="space-y-3">
+          <h3 className="nums px-1 text-[15px] font-bold">{selected} 的记录</h3>
+          {dayCheckins.length === 0
+            ? <Empty title="本地列表中无当日记录">日历数据来自服务端全量统计；更早记录可在列表视图翻看最近 50 条。</Empty>
+            : dayCheckins.map((c) => <CheckinCard key={c.id} c={c} onCorrect={() => onCorrect(c)} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------------- 逐组纠错（M6.1.1） ---------------- */
 
 function CorrectModal({ checkin, uid, onClose, onSaved }: {
   checkin: Checkin; uid: string; onClose: () => void; onSaved: () => void

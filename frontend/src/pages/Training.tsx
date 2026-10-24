@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   CalendarRange, ChevronRight, History as HistoryIcon, Pencil,
-  Play, TriangleAlert,
+  Play, Plus, TriangleAlert,
 } from 'lucide-react'
 import { api } from '../api'
 import {
@@ -106,6 +106,12 @@ export default function Training() {
             )}
           </button>
         ))}
+        <button onClick={() => navigate('/workout/free')}
+                className={`flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-dashed
+                            border-lineStrong px-4 text-sm font-medium text-muted transition-colors
+                            hover:border-accent-deep/40 hover:text-ink`}>
+          <Plus size={14} /> 自由训练
+        </button>
       </div>
 
       {/* 选中训练日的动作列表（封面 + 名称 + 组数/次数/重量） */}
