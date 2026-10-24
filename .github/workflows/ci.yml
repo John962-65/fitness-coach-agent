@@ -31,4 +31,10 @@ jobs:
           python-version: '3.10'
           cache: pip
       - run: pip install -r requirements.txt pytest
-      - run: python -m pytest -q
+      - name: Run backend tests
+        run: |
+          set -o pipefail
+          python -m pytest -q --junitxml=pytest-results.xml 2>&1 | tee pytest.log
+      - name: 失败诊断（写入 Job Summary，公开可读）
+        if: always()
+        run: python tools/ci_annotate.py
