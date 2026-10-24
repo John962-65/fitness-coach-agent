@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  BookOpen, Check, ChevronDown, ChevronUp, Minus, Plus, Repeat2, Timer,
+  BookOpen, Check, ChevronDown, ChevronUp, Repeat2, Timer,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
 import { Button, ErrorBox, Spinner, SuccessBlock } from '../components/Bits'
@@ -318,7 +318,7 @@ function ExerciseBlock({ idx, entry, onPickReplace }: {
   )
 }
 
-/** 逐组快速输入：重量/次数大输入区 + 热身区分 + 可展开 RPE；完成组为拇指可达大按钮 */
+/** 逐组快速输入：重量/次数大输入区 + 热身区分 + 快捷步进 + 可展开 RPE；正式组次数必填 */
 function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, suggestReps }: {
   onDone: (s: { weight: number | null; reps: number | null; rpe: number | null; warmup: boolean; at?: string }) => void
   onUndo: () => void; canUndo: boolean
@@ -329,23 +329,55 @@ function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, 
   const [reps, setReps] = useState(suggestReps ? String(suggestReps) : '')
   const [rpe, setRpe] = useState('')
   const [warmup, setWarmup] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const parse = (s: string): number | null | 'invalid' => {
+    const t = s.trim()
+    if (t === '') return null
+    const n = Number(t)
+    return Number.isFinite(n) ? n : 'invalid'
+  }
 
   const submit = () => {
-    onDone({
-      weight: weight === '' ? null : Number(weight),
-      reps: reps === '' ? null : Number(reps),
-      rpe: rpe === '' ? null : Number(rpe),
-      warmup,
-      at: new Date().toISOString(),
-    })
+    const w = parse(weight)
+    const r = parse(reps)
+    const p = parse(rpe)
+    if (w === 'invalid' || r === 'invalid' || p === 'invalid') {
+      setFormError('重量 / 次数 / RPE 需为有效数字'); return
+    }
+    if (!warmup && (r == null || r < 1)) {
+      setFormError('正式组请填写次数（≥1）；重量可留空（如自重动作）'); return
+    }
+    if (p != null && (p < 1 || p > 10)) {
+      setFormError('RPE 取值范围 1-10'); return
+    }
+    setFormError('')
     // 连续记录：重量与次数保留（多为组间不变），RPE/热身复位
+    onDone({ weight: w, reps: r, rpe: p, warmup, at: new Date().toISOString() })
     setRpe(''); setWarmup(false)
   }
 
-  const bump = (setter: (v: string) => void, cur: string, step: number) => {
-    const n = Number(cur)
-    setter(Number.isFinite(n) && cur !== '' ? String(Math.round((n + step) * 100) / 100) : String(step > 0 ? step : ''))
+  // 快捷步进：空值时 + 步进从合理起点开始，负向不允许低于最小值
+  const stepWeight = (d: number) => {
+    setFormError('')
+    const cur = parse(weight)
+    const base = typeof cur === 'number' ? cur : 0
+    const next = Math.round((base + d) * 100) / 100
+    if (next < 0) return
+    setWeight(next === 0 && d < 0 ? '' : String(next))
   }
+  const stepReps = (d: number) => {
+    setFormError('')
+    const cur = parse(reps)
+    const base = typeof cur === 'number' ? Math.floor(cur) : 0
+    const next = base + d
+    if (next < 1) return
+    setReps(String(next))
+  }
+
+  const stepBtn = 'flex h-9 flex-1 items-center justify-center rounded-lg border border-line ' +
+    'bg-surface text-xs font-medium text-muted transition-colors hover:border-lineStrong hover:text-ink ' +
+    'disabled:opacity-40'
 
   return (
     <div className="border-t border-line bg-canvas/60 px-4 pb-4 pt-3">
@@ -353,20 +385,20 @@ function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, 
         <button
           className={`tag h-11 shrink-0 px-3 transition-colors ${
             warmup ? 'bg-amber-400 text-amber-950' : 'border border-line bg-surface text-muted'}`}
-          onClick={() => setWarmup((w) => !w)}
+          onClick={() => { setWarmup((w) => !w); setFormError('') }}
           aria-pressed={warmup}>
           热身
         </button>
         <div className="relative flex-1">
           <input className="input nums h-12 rounded-xl text-center text-lg font-semibold" placeholder="重量"
                  inputMode="decimal" value={weight}
-                 onChange={(e) => setWeight(e.target.value)} />
+                 onChange={(e) => { setWeight(e.target.value); setFormError('') }} />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">kg</span>
         </div>
         <div className="relative flex-1">
           <input className="input nums h-12 rounded-xl text-center text-lg font-semibold" placeholder="次数"
                  inputMode="numeric" value={reps}
-                 onChange={(e) => setReps(e.target.value)} />
+                 onChange={(e) => { setReps(e.target.value); setFormError('') }} />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">次</span>
         </div>
         <button className={`flex size-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
@@ -378,23 +410,30 @@ function SetForm({ onDone, onUndo, canUndo, rpeOpen, setRpeOpen, suggestWeight, 
         </button>
       </div>
 
-      {rpeOpen && (
-        <div className="mt-2 flex items-center gap-2 animate-fade-up">
-          <div className="relative flex-1">
-            <input className="input nums input-sm text-center" placeholder="RPE（可选，1-10）"
-                   inputMode="decimal" value={rpe} onChange={(e) => setRpe(e.target.value)} />
-          </div>
-          <div className="flex shrink-0 gap-1">
-            {([1, 0.5] as const).map((step) => (
-              <button key={step} className="flex size-9 items-center justify-center rounded-lg border
-                                             border-line bg-surface text-muted hover:border-lineStrong"
-                      aria-label={`${step > 0 ? '增加' : '减少'}重量 ${Math.abs(step)}`}
-                      onClick={() => bump(setWeight, weight, step === 1 ? 2.5 : -2.5)}>
-                {step === 1 ? <Plus size={15} /> : <Minus size={15} />}
-              </button>
-            ))}
-          </div>
+      {/* 快捷步进：免键盘调整 */}
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-1.5">
+          <button className={stepBtn} onClick={() => stepWeight(-2.5)} disabled={!weight}
+                  aria-label="重量减 2.5 公斤">−2.5</button>
+          <button className={stepBtn} onClick={() => stepWeight(2.5)} aria-label="重量加 2.5 公斤">+2.5</button>
         </div>
+        <div className="flex flex-1 items-center gap-1.5">
+          <button className={stepBtn} onClick={() => stepReps(-1)} disabled={!reps}
+                  aria-label="次数减 1">−1</button>
+          <button className={stepBtn} onClick={() => stepReps(1)} aria-label="次数加 1">+1</button>
+        </div>
+      </div>
+
+      {rpeOpen && (
+        <div className="mt-2 animate-fade-up">
+          <input className="input nums input-sm text-center" placeholder="RPE（可选，1-10）"
+                 inputMode="decimal" value={rpe}
+                 onChange={(e) => { setRpe(e.target.value); setFormError('') }} />
+        </div>
+      )}
+
+      {formError && (
+        <p className="mt-2 text-center text-xs font-medium text-red-600" role="alert">{formError}</p>
       )}
 
       <div className="mt-2.5 flex gap-2">

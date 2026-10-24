@@ -210,7 +210,11 @@ export default function ExploreDetail() {
             </div>
           )}
           {media.length === 0 && !detail.setup && !(detail.cues?.length) && (
-            <Empty title="暂无教学内容">该动作的结构化教学信息尚未录入。</Empty>
+            <Empty title="教学指导尚未完善">
+              {detail.status === 'approved'
+                ? '该动作的结构化资料（关节压力/替代关系）已通过审核；图文教学要点尚未录入。可先用「动作分析」上传训练视频，或查看「知识依据」。'
+                : '该动作的图文教学要点尚未录入，且结构化属性还未审核。'}
+            </Empty>
           )}
         </div>
       )}

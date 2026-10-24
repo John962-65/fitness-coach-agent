@@ -12,6 +12,9 @@ const STRUCTURE_LABEL: Record<string, string> = {
   full_body: '全身', upper_lower: '上下肢分化', ppl: '推拉腿分化',
   circuit: '循环训练', custom: '自定义',
 }
+const INTENSITY_LABEL: Record<string, string> = {
+  linear: '线性进阶', rpe_based: 'RPE 驱动', periodized: '周期化', flexible: '灵活进阶',
+}
 
 const STRUCTURES: [string, string][] = [
   ['full_body', '全身'], ['upper_lower', '上下肢分化'], ['ppl', '推拉腿分化'],
@@ -75,7 +78,9 @@ export default function MineApproach() {
               结构：<b>{STRUCTURE_LABEL[a.structure.value] || a.structure.value}</b>
               {a.structure.note && <span className="text-muted"> · {a.structure.note}</span>}
             </p>
-            <p className="mt-1 text-sm">强度风格：{a.intensity_style.value}</p>
+            <p className="mt-1 text-sm">
+              强度风格：<b>{INTENSITY_LABEL[a.intensity_style.value] || a.intensity_style.value}</b>
+            </p>
             {a.diet_approach.strategy || a.diet_approach.note ? (
               <p className="mt-1 text-sm">饮食方式：{a.diet_approach.strategy || a.diet_approach.note}</p>
             ) : null}

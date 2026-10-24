@@ -21,6 +21,19 @@ export const LEVEL_LABEL: Record<string, string> = {
   beginner: '新手', intermediate: '进阶', advanced: '老炮',
 }
 
+// 内部枚举 → 自然语言（摘要文本由后端生成，含枚举原值，展示前统一转换）
+const ENUM_LABELS: Record<string, string> = {
+  muscle_gain: '增肌', fat_loss: '减脂', strength: '力量', health: '健康', shaping: '塑形',
+  beginner: '新手', intermediate: '进阶', advanced: '老炮',
+  gym: '健身房', home: '居家',
+  full_body: '全身', upper_lower: '上下肢分化', ppl: '推拉腿分化',
+  circuit: '循环训练', custom: '自定义',
+  linear: '线性进阶', rpe_based: 'RPE 驱动', periodized: '周期化', flexible: '灵活进阶',
+}
+export function humanize(text: string): string {
+  return text.replace(/\b[a-z_]+\b/g, (w) => ENUM_LABELS[w] || w)
+}
+
 export default function Mine() {
   const uid = useApp((s) => s.uid)
   const navigate = useNavigate()
@@ -68,7 +81,7 @@ export default function Mine() {
         </div>
         {summary && (
           <p className="mt-3 whitespace-pre-wrap rounded-xl bg-canvas p-3.5 text-[13px] leading-relaxed text-ink/90">
-            {summary}
+            {humanize(summary)}
           </p>
         )}
       </div>

@@ -1,5 +1,6 @@
 // 媒体共享工具：短时签名 URL（含过期预刷新）+ 统一占位封面。
 // 无媒体时使用统一占位视觉（首字母 + 品牌色渐变），不使用未授权第三方素材。
+// 封面查询：模块级缓存 + IntersectionObserver 懒加载（M6.1：动作库不再逐卡全量请求）。
 import { useEffect, useState } from 'react'
 import { Dumbbell } from 'lucide-react'
 import { api } from '../api'
@@ -36,16 +37,44 @@ export function useSignedMedia(uid: string, path?: string | null): string {
   return src
 }
 
-/** 某动作的用户教学媒体（封面优先；只返回封面 URL，无则 null） */
-export function useExerciseCover(uid: string, exerciseId: string | undefined | null):
-  string | null | undefined {
-  const [cover, setCover] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
+/** 元素进入视口（含 200px 预载边距）后返回 true；不支持 IO 的环境直接视为可见 */
+function useInView(el: HTMLElement | null): boolean {
+  const [inView, setInView] = useState(false)
   useEffect(() => {
-    if (!exerciseId) return
+    if (inView || !el) return
+    if (typeof IntersectionObserver === 'undefined') { setInView(true); return }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) { setInView(true); io.disconnect() }
+      },
+      { rootMargin: '200px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [inView, el])
+  return inView
+}
+
+// 封面结果缓存：uid/exId -> 封面 URL 或 null（已确认无封面）。
+// 同一动作全站只查一次；上限后丢弃最早的条目。
+const coverCache = new Map<string, string | null>()
+const COVER_CACHE_MAX = 400
+
+/** 某动作的用户教学媒体（封面优先）。inView=false 时不发请求。
+ *  返回值：undefined=未加载/加载中，null=确认无封面 */
+export function useExerciseCover(uid: string, exerciseId: string | undefined | null,
+                                 inView: boolean): string | null | undefined {
+  const key = exerciseId ? `${uid}/${exerciseId}` : ''
+  const [state, setState] = useState<{ k: string; v: string | null | undefined }>(
+    () => ({ k: key, v: key ? coverCache.get(key) : null }))
+  if (state.k !== key) setState({ k: key, v: key ? coverCache.get(key) : null })
+  const cover = state.k === key ? state.v : undefined
+
+  useEffect(() => {
+    if (!key || !inView) return
+    const cached = coverCache.get(key)
+    if (cached !== undefined) { setState({ k: key, v: cached }); return }
     let alive = true
-    setPending(true)
-    fetch(`/api/users/${uid}/exercise-media?exercise_id=${encodeURIComponent(exerciseId)}`, {
+    fetch(`/api/users/${uid}/exercise-media?exercise_id=${encodeURIComponent(exerciseId!)}`, {
       headers: localStorage.getItem('fc-access-token')
         ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
     }).then((r) => r.json())
@@ -54,10 +83,16 @@ export function useExerciseCover(uid: string, exerciseId: string | undefined | n
         return link?.cover_path ? signedMediaUrl(uid, link.cover_path) : null
       })
       .catch(() => null)
-      .then((url) => { if (alive) { setCover(url); setPending(false) } })
+      .then((url) => {
+        if (coverCache.size >= COVER_CACHE_MAX) {
+          coverCache.delete(coverCache.keys().next().value as string)
+        }
+        coverCache.set(key, url)
+        if (alive) setState({ k: key, v: url })
+      })
     return () => { alive = false }
-  }, [uid, exerciseId])
-  return pending ? undefined : cover // undefined = 加载中
+  }, [key, inView, uid, exerciseId])
+  return cover
 }
 
 const COVER_TONES = [
@@ -83,13 +118,15 @@ export function CoverPlaceholder({ name, className = '', iconSize = 22 }: {
   )
 }
 
-/** 动作封面：用户上传封面优先，无媒体回退统一占位 */
+/** 动作封面：进入视口才请求媒体列表；用户上传封面优先，无媒体回退统一占位 */
 export function ExerciseCover({ uid, exerciseId, name, className = '', iconSize = 22 }: {
   uid: string; exerciseId?: string | null; name: string; className?: string; iconSize?: number
 }) {
-  const cover = useExerciseCover(uid, exerciseId)
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
+  const inView = useInView(el)
+  const cover = useExerciseCover(uid, exerciseId, inView)
   if (cover === undefined) {
-    return <div className={`animate-pulse-soft bg-ink/6 ${className}`} aria-hidden />
+    return <div ref={setEl} className={`animate-pulse-soft bg-ink/6 ${className}`} aria-hidden />
   }
   if (cover) {
     return <img alt={`${name} 封面`} src={cover} className={`object-cover ${className}`} />
