@@ -22,7 +22,15 @@ EXERCISE_RULES = {
     "deadlift": "deadlift",
     "romanian_deadlift": "romanian_deadlift",
     "barbell_bench_press": "bench",
+    "barbell_row": "barbell_row",              # P4：五个三维动作全覆盖
+    "dumbbell_shoulder_press": "shoulder_press",
 }
+
+# 模型/规则版本（进入技术档案；升级时变化——跨版本数值不解释为动作变化）
+ANALYSIS_MODEL_VERSION = "motion-1: mediapipe-pose + vision-rules-1"
+
+# 周期信号：肘角类动作 deep 相=角度小于中线（拉起/下放低位）
+_ELBOW_SIGNAL = ("bench", "barbell_row", "shoulder_press")
 VIEW_OPTIONS = ("side", "front", "back")
 
 
@@ -34,7 +42,7 @@ def rules_name(exercise_id: str) -> str | None:
 
 def _signal_for(exercise: str, kp: list[dict]) -> float | None:
     """每帧一个标量信号：蹲类=髋高（y 越大越低）、铰链=躯干前倾、卧推=肘角。"""
-    if exercise == "bench":
+    if exercise in _ELBOW_SIGNAL:
         s, e, w = _point(kp, 12), _point(kp, 14), _point(kp, 16)
         if s and e and w:
             return _angle(s, e, w)
@@ -79,7 +87,7 @@ def segment_reps(exercise: str, indexed: list[tuple[int, list[dict]]],
     start = peak_t = peak_v = None
     # 下位相方向（M5.1 P1-3 修正）：蹲类=髋 y 变大（更低）；
     # 铰链=躯干-髋-膝角变小（俯身）；卧推=肘角变小（下放）
-    lowers = exercise in ("deadlift", "romanian_deadlift", "bench")
+    lowers = exercise in ("deadlift", "romanian_deadlift") or exercise in _ELBOW_SIGNAL
     for t, v in pts:
         deep = (v < mid) if lowers else (v > mid)
         if deep and not inside:
@@ -136,7 +144,9 @@ def process_analysis(exercise_id: str, video_path: str, view: str,
     frames = [kp for _i, kp in indexed]
     # 双比例质量门（P1）：detection=检测到人体的采样帧占比；
     # valid=检测帧中所需关键点完整的占比。任一过低都如实降级。
-    detection_ratio = min(1.0, len(indexed) / max(1, total_sampled))
+    # 检出 = 帧内确有关键点（空骨架帧不算检出）
+    detected = sum(1 for kp in ([kp for _i, kp in indexed]) if kp)
+    detection_ratio = min(1.0, detected / max(1, total_sampled))
     valid_ratio = _valid_ratio(name, frames, view)
     faults = rules_analyze(name, frames, view)
     reps = segment_reps(name, indexed, fps, sample_every)
@@ -150,16 +160,52 @@ def process_analysis(exercise_id: str, video_path: str, view: str,
     elif valid_ratio < 0.5:
         quality_note = (f"关键点完整率仅 {int(valid_ratio * 100)}%（遮挡/半身出镜？），"
                         "以下结果仅供参考，建议按拍摄规范重拍")
+    observations = build_observations(name, view, indexed, fps, faults, reps,
+                                      summary_metric(name, indexed))
     return {
         "supported": True, "view": view, "frames": len(indexed),
         "detection_ratio": round(detection_ratio, 2),
         "valid_ratio": round(valid_ratio, 2),
         "faults": faults, "reps": reps,
         "summary": summary_metric(name, indexed),
+        "observations": observations,
+        "model_version": ANALYSIS_MODEL_VERSION,
         "note": quality_note or ("故障码为整段聚合的可见几何量提示，不推断三维生物力学；"
                                  "次数为画面内估计值" if faults or reps else
                                  "未命中当前覆盖的可见项目；这不代表未评估的动作细节正常"),
     }
+
+
+def build_observations(exercise: str, view: str, indexed: list, fps: float,
+                       faults: list, reps: list, summary: dict) -> list[dict]:
+    """确定性运动观察（P4-2）：只描述可见/可计算的量，逐条带口径说明。"""
+    obs: list[dict] = []
+    view_note = ("侧面视角：前后方向位移被投影压缩，深度/位移类数值低于真实值；"
+                 if view == "side" else
+                 f"{view} 视角：左右可见，前后深度不可见；")
+    obs.append({"kind": "view-limitation", "text":
+                view_note + "所有角度均为二维投影角，不是真实三维关节角。"})
+    if reps:
+        durations = [r["end_s"] - r["start_s"] for r in reps]
+        rhythm = round(sum(durations) / len(durations), 2)
+        obs.append({"kind": "rep-count", "text":
+                    f"画面内识别到 {len(reps)} 个动作周期（峰值检测估计，不区分借力/半程）。"})
+        obs.append({"kind": "rhythm", "text":
+                    f"平均周期节奏约 {rhythm}s/次（抽样帧率下的估计值）。"})
+        if len(reps) >= 2 and summary.get("signal_min") is not None:
+            obs.append({"kind": "consistency", "text":
+                        f"周期一致性：信号范围 {summary['signal_min']}–{summary['signal_max']}"
+                        f"（画面内标量信号 min–max）；跨周期深度的逐周期对比属于"
+                        f"后续增强，当前以整体范围提示。"})
+    for f in faults:
+        obs.append({"kind": "fault-observation", "text":
+                    f"{f.get('label', f['code'])}：{f.get('hint', '')}"
+                    + (f"（数值 {f['value']}）" if "value" in f else "")})
+    if not faults and not reps:
+        obs.append({"kind": "insufficient", "text":
+                    "未能产生可观察结果（关键点不足或未识别完整周期）；"
+                    "不能把'没有观察结果'当作'动作正常'。"})
+    return obs
 
 
 def _valid_ratio(exercise: str, frames: list, view: str) -> float:
@@ -167,7 +213,7 @@ def _valid_ratio(exercise: str, frames: list, view: str) -> float:
     from .vision_rules import _point
     if not frames:
         return 0.0
-    if exercise == "bench":
+    if exercise in ("bench", "barbell_row", "shoulder_press"):
         groups = ((11, 13, 15), (12, 14, 16))
     elif exercise == "squat" and view == "front":
         groups = ((23, 24, 25, 26, 27, 28),)

@@ -23,6 +23,8 @@ FAULT_LABELS = {
     "HINGE_SHALLOW_HIP": "髋没往后坐（像深蹲不像硬拉）",
     "BENCH_ELBOW_FRAME_CHANGE": "相邻采样帧肘角变化较大",
     "BENCH_HALF_ROM": "采样中最小肘角大于参考区间，需人工复核",
+    "ROW_SHALLOW_PULL": "拉起幅度参考：最小肘角仍较大（画面内）",
+    "PRESS_SHALLOW_LOCKOUT": "推起幅度参考：肘角未接近伸直（画面内）",
 }
 # 15.7 局限声明：以下只能作为「提示」而非诊断；数值阈值可由发起人校准
 
@@ -167,8 +169,48 @@ def check_bench(frames: list, view: str = "side") -> list[dict]:
     return faults
 
 
+def _elbow_angles(frames: list, view: str = "side") -> list[float]:
+    """两侧肘角（肩-肘-腕）投影序列（side 视角下的可见几何量）。"""
+    from .vision_rules import _point  # 局部引用避免循环
+    out = []
+    for f in frames:
+        for s, e, w in ((11, 13, 15), (12, 14, 16)):
+            if _point(f, s) and _point(f, e) and _point(f, w):
+                out.append(_angle(_point(f, s), _point(f, e), _point(f, w)))
+    return out
+
+
+def check_row(frames: list, view: str = "side") -> list[dict]:
+    """杠铃划船侧面：肘角范围（拉起-下放的可见几何量）。保守：只报 ROM 参考。"""
+    faults: list[dict] = []
+    angles = _elbow_angles(frames, view)
+    if len(angles) < 4:
+        return faults
+    min_a = min(angles)
+    if min_a > 105:
+        faults.append({"code": "ROW_SHALLOW_PULL", "value": round(min_a, 1),
+                       "hint": "采样中最小肘角仍较大（拉起幅度参考）；仅画面内几何量，"
+                               "负重与躯干姿态信息缺失，不构成动作质量评分"})
+    return faults
+
+
+def check_shoulder_press(frames: list, view: str = "side") -> list[dict]:
+    """哑铃肩推侧面：肘角范围 + 头前伸粗查（肩-肘-腕投影角）。"""
+    faults: list[dict] = []
+    angles = _elbow_angles(frames, view)
+    if len(angles) < 4:
+        return faults
+    max_a = max(angles)
+    if max_a < 140:
+        faults.append({"code": "PRESS_SHALLOW_LOCKOUT", "value": round(max_a, 1),
+                       "hint": "采样中肘角未接近伸直参考区间；仅为画面内几何量，"
+                               "不推断肩关节健康或负荷合理性"})
+    return faults
+
+
 CHECKERS = {"squat": check_squat, "deadlift": check_hinge,
-            "romanian_deadlift": check_hinge, "bench": check_bench}
+            "romanian_deadlift": check_hinge, "bench": check_bench,
+            "barbell_row": check_row, "shoulder_press": check_shoulder_press}
 
 
 def analyze(exercise: str, frames: list, view: str = "side") -> list[dict]:
@@ -176,10 +218,12 @@ def analyze(exercise: str, frames: list, view: str = "side") -> list[dict]:
     fn = CHECKERS.get(exercise)
     if fn is None:
         return [{"code": "UNSUPPORTED", "value": exercise,
-                 "hint": "MVP 只支持深蹲/硬拉/罗马尼亚硬拉/卧推（侧面）"}]
+                 "hint": "当前只支持深蹲/硬拉/罗马尼亚硬拉/卧推/杠铃划船/肩推（侧面）"}]
     if view != "side" and not (exercise == "squat" and view == "front"):
         return [{"code": "UNSUPPORTED_VIEW", "hint": "该动作当前只支持侧面，请按拍摄规范重新录制"}]
-    required = ((11, 13, 15), (12, 14, 16)) if exercise == "bench" else ((11, 23, 25, 27), (12, 24, 26, 28))
+    elbow_exercises = ("bench", "barbell_row", "shoulder_press")
+    required = ((11, 13, 15), (12, 14, 16)) if exercise in elbow_exercises \
+        else ((11, 23, 25, 27), (12, 24, 26, 28))
     if exercise == "squat" and view == "front":
         required = ((23, 24, 25, 26, 27, 28),)
     valid = [f for f in (frames or []) if any(all(_point(f, i) is not None for i in group) for group in required)]

@@ -526,6 +526,20 @@ CREATE TABLE IF NOT EXISTS care_activity_logs (
     created_at  TEXT NOT NULL,
     UNIQUE(activity_id, local_date)
 );
+CREATE TABLE IF NOT EXISTS motion_tech_profiles (
+    analysis_id INTEGER PRIMARY KEY,    -- 1:1 挂 motion_analyses（不产生两套历史）
+    user_id     TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    model_version TEXT NOT NULL,        -- 分析模型/规则版本（升级可追溯）
+    video_quality TEXT NOT NULL,        -- JSON：{status, view, detection_ratio, valid_ratio, limitations}
+    motion_observations TEXT NOT NULL,  -- JSON：[{kind, text}]
+    phase_timestamps TEXT NOT NULL,     -- JSON：[{rep, start_s, end_s, peak_s}]
+    review_status TEXT NOT NULL DEFAULT 'unreviewed',  -- 系统生成结果未经人工复核
+    user_notes  TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mtp_user_ex ON motion_tech_profiles(user_id, exercise_id);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -2580,3 +2594,73 @@ class Database:
         return [dict(r) for r in self.conn.execute(
             "SELECT * FROM care_activity_logs WHERE user_id=? AND activity_id=?"
             " ORDER BY local_date DESC LIMIT ?", (user_id, activity_id, limit)).fetchall()]
+
+    # ---- P4 动作技术档案（扩展表，1:1 挂 motion_analyses）----
+
+    def upsert_motion_tech_profile(self, user_id: str, analysis_id: int,
+                                   exercise_id: str, profile: dict) -> None:
+        self.conn.execute(
+            "INSERT INTO motion_tech_profiles(analysis_id, user_id, exercise_id,"
+            " model_version, video_quality, motion_observations, phase_timestamps,"
+            " review_status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(analysis_id) DO UPDATE SET model_version=excluded.model_version,"
+            " video_quality=excluded.video_quality,"
+            " motion_observations=excluded.motion_observations,"
+            " phase_timestamps=excluded.phase_timestamps,"
+            " review_status=excluded.review_status, updated_at=excluded.updated_at",
+            (analysis_id, user_id, exercise_id, profile["model_version"],
+             json.dumps(profile.get("video_quality") or {}, ensure_ascii=False),
+             json.dumps(profile.get("motion_observations") or [], ensure_ascii=False),
+             json.dumps(profile.get("phase_timestamps") or [], ensure_ascii=False),
+             profile.get("review_status", "unreviewed"), _now(), _now()))
+        self.conn.commit()
+
+    def get_motion_tech_profile(self, user_id: str, analysis_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM motion_tech_profiles WHERE user_id=? AND analysis_id=?",
+            (user_id, analysis_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for key in ("video_quality", "motion_observations", "phase_timestamps"):
+            try:
+                d[key] = json.loads(d.get(key) or "[]")
+            except (ValueError, TypeError):
+                d[key] = []
+        return d
+
+    def motion_profile_version(self, user_id: str) -> str:
+        """技术档案版本（洞察漂移锚：重算/删除/备注变化都会变化——
+        同秒重算靠内容长度签名区分）。"""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at),'') AS last,"
+            " COALESCE(SUM(LENGTH(motion_observations)),0) AS obs_len,"
+            " COALESCE(SUM(LENGTH(phase_timestamps)),0) AS phase_len"
+            " FROM motion_tech_profiles WHERE user_id=?", (user_id,)).fetchone()
+        return f"{row['n']}:{row['last']}:{row['obs_len']}:{row['phase_len']}"
+
+    def delete_motion_analysis(self, user_id: str, analysis_id: int) -> bool:
+        """删除视频分析（含关联技术档案与视频文件引用记录；视频文件保留
+        由用户在文件系统层面管理——记录删除后不再可达）。"""
+        row = self.conn.execute(
+            "SELECT id FROM motion_analyses WHERE user_id=? AND id=?",
+            (user_id, analysis_id)).fetchone()
+        if not row:
+            return False
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM motion_tech_profiles WHERE user_id=? AND analysis_id=?",
+                (user_id, analysis_id))
+            self.conn.execute(
+                "DELETE FROM motion_analyses WHERE user_id=? AND id=?",
+                (user_id, analysis_id))
+        return True
+
+    def set_motion_user_notes(self, user_id: str, analysis_id: int,
+                              notes: str) -> bool:
+        cur = self.conn.execute(
+            "UPDATE motion_tech_profiles SET user_notes=?, updated_at=?"
+            " WHERE user_id=? AND analysis_id=?",
+            (notes[:500], _now(), user_id, analysis_id))
+        self.conn.commit()
+        return cur.rowcount == 1

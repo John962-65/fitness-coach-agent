@@ -8,9 +8,9 @@
   系统尚未建设（P1-P4），只保留咨询入口，不伪造分析能力；
 - triggers → task_types：本领域订阅的业务事件与对应分析类型。
 
-P0-P3 实装：training_science / nutrition / recovery / rehabilitation 四个
-工作台的分析器均为确定性（fact_service / 确定性营养计算 / 确定性恢复指标 /
-确定性安全分流规则）。movement 触发源待 P4 接线。
+P0-P4 实装：五个顾问工作台全部就绪；分析器均为确定性
+（fact_service / 确定性营养计算 / 确定性恢复指标 / 确定性安全分流规则 /
+二维关键点确定性观察）。
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ TASK_TYPES: dict[str, str] = {
     "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
     "recovery-review": "coach.recovery.recovery_analysis.analyze_recovery",
     "symptom-review": "coach.rehab.analysis.analyze_symptom_review",
+    "movement-review": "coach.movement.analysis.analyze_movement_review",
 }
 
 SPECIALISTS: dict[str, dict] = {
@@ -81,11 +82,14 @@ SPECIALISTS: dict[str, dict] = {
     "movement": {
         "label": "动作技术顾问",
         "domain": "动作教学、视频分析、技术反馈",
-        "data_sources": ["动作库与结构化教学", "个人视频姿态分析（若有）"],
-        "tools": [],
-        "workbench": "planned",   # P4
-        "workbench_note": "动作技术工作台（视频对照三维演示）将在下一阶段提供",
-        "triggers": {"VideoAnalysisCompleted": []},
+        "data_sources": ["动作库与结构化教学（审核达标部分）",
+                         "个人视频技术档案（二维关键点，含质量门）"],
+        "tools": ["确定性周期分割与观察（MediaPipe + vision-rules）",
+                  "三维对照视图（复用 Exercise3DViewer）"],
+        "workbench": "ready",
+        "workbench_path": "/experts/movement",
+        "triggers": {"VideoAnalysisCompleted": ["movement-review"],
+                     "UserRequested": ["movement-review"]},
     },
 }
 

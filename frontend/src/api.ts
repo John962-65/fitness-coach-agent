@@ -328,6 +328,13 @@ export const api = {
   bodyTrend: (uid: string, metric: string, days: number) =>
     req<BodyTrend>(`/users/${uid}/body-trend?metric=${metric}&days=${days}`),
 
+  deleteMotionAnalysis: (uid: string, analysisId: number) =>
+    req<{ deleted: number }>(`/users/${uid}/motion-analyses/${analysisId}`,
+                              { method: 'DELETE' }),
+  motionNotes: (uid: string, analysisId: number, notes: string) =>
+    post<{ analysis_id: number; user_notes: string }>(
+      `/users/${uid}/motion-analyses/${analysisId}/notes`, { notes }),
+
   recoveryCheckins: (uid: string, days = 90) =>
     req<{ checkins: RecoveryCheckin[] }>(`/users/${uid}/recovery-checkins?days=${days}`),
   saveRecoveryCheckin: (uid: string, data: Record<string, unknown>, submissionId?: string) =>

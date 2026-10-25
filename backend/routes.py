@@ -779,6 +779,40 @@ def register_routes(app) -> None:
             try:
                 result = process_analysis(exercise_id, str(video_path), view)
                 wdb.finish_motion_analysis(analysis_id, "ready", result=result)
+                # P4：建立技术档案（1:1 扩展表）并通知动作技术顾问。
+                # 整体容错：分析已落库，档案/事件失败只留日志不回滚。
+                try:
+                    from coach.motion_analysis import ANALYSIS_MODEL_VERSION
+                    quality_status = "usable" if result.get("supported") \
+                        and result.get("frames", 0) > 0 \
+                        and (result.get("detection_ratio") or 0) >= 0.5 else "poor"
+                    if not result.get("supported"):
+                        quality_status = "unsupported"
+                    wdb.upsert_motion_tech_profile(uid, analysis_id, exercise_id, {
+                        "model_version": result.get("model_version",
+                                                    ANALYSIS_MODEL_VERSION),
+                        "video_quality": {
+                            "status": quality_status, "view": view,
+                            "detection_ratio": result.get("detection_ratio"),
+                            "valid_ratio": result.get("valid_ratio"),
+                            "limitations": [f.get("hint") for f in
+                                            (result.get("faults") or [])
+                                            if f.get("code") in
+                                            ("UNSUPPORTED", "UNSUPPORTED_VIEW",
+                                             "INSUFFICIENT_DATA")]
+                            or ([] if quality_status == "usable" else
+                                [result.get("note", "")])},
+                        "motion_observations": result.get("observations") or [],
+                        "phase_timestamps": result.get("reps") or [],
+                    })
+                    from coach.experts import task_dispatcher
+                    task_dispatcher.on_event(wdb, uid, "VideoAnalysisCompleted",
+                                             {"analysis_id": analysis_id,
+                                              "exercise_id": exercise_id,
+                                              "motion_version":
+                                                  wdb.motion_profile_version(uid)})
+                except Exception:  # noqa: BLE001 档案/事件失败不回滚分析
+                    pass
             except Exception as e:  # noqa: BLE001 失败要留痕不吞
                 wdb.finish_motion_analysis(analysis_id, "failed", error=str(e))
 
@@ -790,7 +824,30 @@ def register_routes(app) -> None:
     def motion_list(uid: str, request: Request, exercise_id: str | None = Query(None)):
         db = request.app.state.db
         _user_profile(db, uid)
-        return {"analyses": db.list_motion_analyses(uid, exercise_id)}
+        analyses = db.list_motion_analyses(uid, exercise_id)
+        # P4：附带技术档案（1:1 扩展；旧记录 profile=None 如实标注）
+        for a in analyses:
+            a["tech_profile"] = db.get_motion_tech_profile(uid, a["id"])
+        return {"analyses": analyses}
+
+    @api.delete("/users/{uid}/motion-analyses/{analysis_id}")
+    def motion_delete(uid: str, analysis_id: int, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if not db.delete_motion_analysis(uid, analysis_id):
+            raise HTTPException(status_code=404,
+                                detail={"error": "分析记录不存在"})
+        return {"deleted": analysis_id}
+
+    @api.post("/users/{uid}/motion-analyses/{analysis_id}/notes")
+    def motion_notes(uid: str, analysis_id: int, request: Request,
+                     notes: str = Body(..., embed=True)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if not db.set_motion_user_notes(uid, analysis_id, notes):
+            raise HTTPException(status_code=404,
+                                detail={"error": "技术档案不存在（旧版分析无档案）"})
+        return {"analysis_id": analysis_id, "user_notes": notes}
 
     @api.get("/users/{uid}/motion-analyses/compare")
     def motion_compare(uid: str, request: Request,

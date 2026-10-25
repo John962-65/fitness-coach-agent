@@ -69,6 +69,11 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if str(current) != str(stored):
             return (f"{local_date} 的恢复记录已变化，该分析基于旧数据，"
                     "请重新分析")
+    if "motion" in rev:
+        current = db.motion_profile_version(user_id)
+        if str(current) != str(rev["motion"]):
+            return ("动作视频档案已变化（重算或删除），该分析基于旧数据，"
+                    "请重新分析")
     if "symptoms" in rev or "restrictions" in rev:
         from ..rehab import symptom_service, restriction_service
         if "symptoms" in rev                 and str(symptom_service.symptoms_version(db, user_id)) != str(rev["symptoms"]):
