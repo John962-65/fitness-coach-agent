@@ -64,8 +64,14 @@ def c01(db, uid):
          "set_logs": bench_logs([(100, 5)])}])
     r, _g, by_ex = facts_by_metric(db, uid, exercise_ids=[BENCH])
     f = by_ex.get((BENCH, "sessions"))
-    ok = f and f["status"] == "insufficient" and f["value"] == 0
-    return ok, f"expect insufficient sessions, got {f and f['status']}"
+    # 复查 P1-1 语义：已确认零次 = observed 0（非 insufficient 混用）；
+    # 且不得出现任何表现类数值（e1RM/容量等无中生有）
+    no_perf = not any(m in by_ex for m in (
+        (BENCH, "best-estimated-1rm"), (BENCH, "volume"),
+        (BENCH, "heaviest-set")))
+    ok = (f and f["status"] == "observed" and f["value"] == 0
+          and no_perf)
+    return ok, f"sessions={f and f['status']}/{f and f['value']} no_perf={no_perf}"
 
 
 @case("no-bench-progress-insufficient", "没有卧推记录", hard=True)
@@ -655,3 +661,120 @@ def c43(db, uid):
     from .test_eval import untraceable_numbers
     bad = untraceable_numbers(reply, allowed)
     return not bad, f"不可追溯数值: {bad} reply={reply[:120]}"
+
+
+# ============ 复查新增：对抗性反例与标识唯一性 ============
+
+@case("adversarial-plank-cumulative-vs-single", "对抗性反例", hard=True)
+def c44(db, uid):
+    """累计时长上升（60→90）但单组最长下降（60→45）：趋势必须按单组口径
+    判 declining，暴露"累计值冒充表现"的错误。"""
+    S.seed_session(db, uid, ago(14), [
+        {"exercise_id": PLANK, "name": "平板支撑",
+         "set_logs": [S.set_log(type="duration", duration_seconds=60)]}])
+    S.seed_session(db, uid, ago(12), [
+        {"exercise_id": PLANK, "name": "平板支撑",
+         "set_logs": [S.set_log(type="duration", duration_seconds=55)]}])
+    S.seed_session(db, uid, ago(3), [
+        {"exercise_id": PLANK, "name": "平板支撑",
+         "set_logs": [S.set_log(type="duration", duration_seconds=45),
+                      S.set_log(type="duration", duration_seconds=45)]}])
+    prog = fact_service.exercise_progress(db, uid, PLANK)
+    series = prog["series"]
+    cum = [s["duration_total_s"] for s in series]
+    single = [s["longest_set_s"] for s in series]
+    v = progress_analysis.analyze_progress(series, "duration")
+    return (cum[-1] > cum[0]          # 累计口径确实"上升"
+            and single[-1] < single[0]  # 单组口径实际下降
+            and v["verdict"] == "declining"), \
+        f"cum={cum} single={single} verdict={v['verdict']}"
+
+
+@case("adversarial-distance-single-set", "对抗性反例", hard=True)
+def c45(db, uid):
+    S.seed_session(db, uid, ago(14), [
+        {"exercise_id": "farmer_carry", "name": "农夫行走",
+         "set_logs": [S.set_log(type="distance_time", distance_m=40,
+                                 duration_seconds=60)]}])
+    S.seed_session(db, uid, ago(12), [
+        {"exercise_id": "farmer_carry", "name": "农夫行走",
+         "set_logs": [S.set_log(type="distance_time", distance_m=38,
+                                 duration_seconds=60)]}])
+    S.seed_session(db, uid, ago(3), [
+        {"exercise_id": "farmer_carry", "name": "农夫行走",
+         "set_logs": [S.set_log(type="distance_time", distance_m=30,
+                                 duration_seconds=60) for _ in range(3)]}])  # 累计 90m
+    prog = fact_service.exercise_progress(db, uid, "farmer_carry")
+    v = progress_analysis.analyze_progress(prog["series"], "distance_time")
+    return v["verdict"] == "declining", \
+        f"累计上升但单组下降，verdict={v['verdict']}"
+
+
+@case("fact-id-unique-across-windows", "事实标识唯一性", hard=True)
+def c46(db, uid):
+    seed_bench3(db, uid)
+    r7 = fact_service.get_training_facts(db, uid, window_days=8)
+    r30 = fact_service.get_training_facts(db, uid, window_days=30)
+    ids7 = {f["fact_id"] for f in r7["facts"]}
+    ids30 = {f["fact_id"] for f in r30["facts"]}
+    overlap = ids7 & ids30
+    # 不同窗口 = 不同统计事实：同日查询不得复用同一 fact_id
+    return not overlap, f"窗口间 fact_id 冲突: {sorted(overlap)[:4]}"
+
+
+@case("mixed-types-split-and-noted", "混合记录类型", hard=True)
+def c47(db, uid):
+    """同动作窗口内负重与时长两种记录：分列统计 + 不可比说明，
+    不得把时长会话混进负重口径。"""
+    S.seed_session(db, uid, ago(10), [
+        {"exercise_id": BENCH, "name": "卧推",
+         "set_logs": bench_logs([(60, 8)])}])
+    S.seed_session(db, uid, ago(3), [
+        {"exercise_id": BENCH, "name": "卧推",
+         "set_logs": [S.set_log(type="duration", duration_seconds=40)]}])
+    r = fact_service.get_training_facts(db, uid)
+    ex_facts = [f for f in r["facts"] if f.get("exercise_id") == BENCH]
+    has_wr = any(f["measurement_type"] == "weight_reps" for f in ex_facts)
+    has_dur = any(f["measurement_type"] == "duration"
+                  and f["metric"] == "longest-set" for f in ex_facts)
+    noted = any("不可直接比较" in str(f["data_quality"].get("notes", []))
+                for f in ex_facts)
+    return has_wr and has_dur and noted, \
+        f"wr={has_wr} dur={has_dur} noted={noted}"
+
+
+@case("gap-downgrades-to-insufficient", "缺口降级", hard=True)
+def c48(db, uid):
+    """半窗内间隔 >21 天必须降级 insufficient，不得给出方向性结论。"""
+    S.seed_session(db, uid, ago(40), [
+        {"exercise_id": BENCH, "name": "卧推",
+         "set_logs": bench_logs([(60, 8)])}])
+    S.seed_session(db, uid, ago(39), [
+        {"exercise_id": BENCH, "name": "卧推",
+         "set_logs": bench_logs([(61, 8)])}])
+    S.seed_session(db, uid, ago(3), [
+        {"exercise_id": BENCH, "name": "卧推",
+         "set_logs": bench_logs([(70, 8)])}])
+    prog = fact_service.exercise_progress(db, uid, BENCH, window_days=60)
+    v = progress_analysis.analyze_progress(prog["series"], "weight_reps")
+    return v["verdict"] == "insufficient" and v["limitations"], \
+        f"verdict={v['verdict']} lim={v['limitations']}"
+
+
+@case("median-even-samples", "中位数口径")
+def c49(db, uid):
+    """偶数样本取真中位数（复查 P0-2）：[80,80,84,85] 前半中位=82（均值），
+    非 sorted[2]=84。"""
+    for d, w in ((ago(24), 80), (ago(20), 80), (ago(6), 84), (ago(3), 85)):
+        S.seed_session(db, uid, d, [
+            {"exercise_id": BENCH, "name": "卧推",
+             "set_logs": bench_logs([(w, 8)])}])
+    prog = fact_service.exercise_progress(db, uid, BENCH)
+    v = progress_analysis.analyze_progress(prog["series"], "weight_reps")
+    ev = v["evidence"]
+    # 指标是 e1RM（Epley），期望值按同一公式计算
+    from coach.review import e1rm
+    expect_f = (e1rm(80, 8) + e1rm(80, 8)) / 2          # 101.3
+    expect_s = (e1rm(84, 8) + e1rm(85, 8)) / 2          # 106.4/107.7 → 107.05
+    return (abs(ev["first_half_median"] - expect_f) < 0.01
+            and abs(ev["second_half_median"] - expect_s) < 0.01), str(ev)

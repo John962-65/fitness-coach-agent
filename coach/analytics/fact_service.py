@@ -115,48 +115,14 @@ def _sessions_in_window(db, user_id: str, exercise_id: str,
     return out, srcs
 
 
-def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
-                    window: dict, start: str, end: str) -> list[dict]:
-    sessions, srcs = _sessions_in_window(db, user_id, exercise_id, start, end)
-    # 实际记录类型优先（用户按辅助/时长记录时按该口径统计），库声明兜底
-    mtype = (entry_set_type(sessions[0]["sets"]) if sessions else None) \
-        or doc.get("measurement") or "weight_reps"
-    base = f"{exercise_id}-{window['end'].replace('-', '')}"
-    dates = [s["date"] for s in sessions]
-    gaps = _max_gap_days(dates)
-    corrected = sum(1 for s in sessions if (s.get("revision") or 0) > 0)
-    quality = {
-        "sessions": len(sessions),
-        "date_gaps_max_days": gaps,
-        "corrected_records": corrected,
-    }
-    if corrected:
-        quality["notes"] = [f"含已纠错记录 {corrected} 条（按当前有效版本统计）"]
-    if len(sessions) == 1:
-        quality.setdefault("notes", []).append("窗口内仅 1 次训练，趋势不可判")
-    if not sessions:
-        return [_fact(f"frequency-{base}", "sessions", 0, "次", mtype,
-                      window, [], "count_training_sessions_by_local_date",
-                      "insufficient", exercise_id=exercise_id, **quality)]
-
-    facts = [
-        _fact(f"frequency-{base}", "sessions", len(sessions), "次", mtype,
-              window, srcs, "count_training_sessions_by_local_date",
-              "observed", exercise_id=exercise_id, **quality),
-        _fact(f"frequency-per-week-{base}", "sessions-per-week",
-              round(len(sessions) * 7 / window["days"], 1), "次/周", mtype,
-              window, srcs, "sessions_x7_over_window_days", "observed",
-              exercise_id=exercise_id, **quality),
-        _fact(f"working-sets-{base}", "working-sets",
-              sum(s["working_sets"] for s in sessions), "组", mtype,
-              window, srcs, "sum_working_sets_excluding_warmup", "observed",
-              exercise_id=exercise_id, **quality),
-    ]
-
-    # ---- 分型主指标（口径与「我的表现」完全一致）----
+def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
+                exercise_id: str, quality: dict) -> list[dict]:
+    """单一记录类型会话组的分型主指标事实（口径与「我的表现」完全一致）。"""
+    srcs = [_src(s["checkin_id"], s.get("revision") or 0) for s in group]
+    facts: list[dict] = []
     if mtype == "weight_reps":
         heavy = max(
-            (st for s in sessions for st in s["sets"]
+            (st for s in group for st in s["sets"]
              if st["weight_kg"] is not None),
             key=lambda st: st["weight_kg"], default=None)
         if heavy:
@@ -165,10 +131,9 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 "kg", mtype, window, srcs,
                 "max_working_set_weight_excluding_warmup", "observed",
                 exercise_id=exercise_id, reps=heavy["reps"], **quality))
-        e1rms = [s["best_e1rm"] for s in sessions if s["best_e1rm"]]
-        if e1rms:
-            best = max((s for s in sessions if s["best_e1rm"]),
-                       key=lambda s: s["best_e1rm"])
+        best = max((s for s in group if s["best_e1rm"]),
+                   key=lambda s: s["best_e1rm"], default=None)
+        if best:
             facts.append(_fact(
                 f"best-estimated-1rm-{base}", "best-estimated-1rm",
                 best["best_e1rm"], "kg", mtype, window, srcs,
@@ -184,7 +149,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 note="窗口内没有 1-12 次区间的有效正式组", **quality))
     elif mtype == "bodyweight_reps":
         best_reps = max(
-            (st for s in sessions for st in s["sets"] if st["reps"]),
+            (st for s in group for st in s["sets"] if st["reps"]),
             key=lambda st: st["reps"], default=None)
         if best_reps:
             facts.append(_fact(
@@ -192,7 +157,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 mtype, window, srcs, "max_working_set_reps", "observed",
                 exercise_id=exercise_id,
                 added_weight_kg=best_reps.get("added_weight_kg"), **quality))
-        added = [st["added_weight_kg"] for s in sessions for st in s["sets"]
+        added = [st["added_weight_kg"] for s in group for st in s["sets"]
                  if st.get("added_weight_kg")]
         if added:
             facts.append(_fact(
@@ -201,7 +166,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 "observed", exercise_id=exercise_id, **quality))
     elif mtype == "assisted_reps":
         best_reps = max(
-            (st for s in sessions for st in s["sets"] if st["reps"]),
+            (st for s in group for st in s["sets"] if st["reps"]),
             key=lambda st: st["reps"], default=None)
         if best_reps:
             facts.append(_fact(
@@ -209,7 +174,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 mtype, window, srcs, "max_working_set_reps", "observed",
                 exercise_id=exercise_id,
                 assistance_kg=best_reps.get("assistance_kg"), **quality))
-        assist = [st["assistance_kg"] for s in sessions for st in s["sets"]
+        assist = [st["assistance_kg"] for s in group for st in s["sets"]
                   if st.get("assistance_kg") is not None]
         if assist:
             facts.append(_fact(
@@ -220,7 +185,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 note="辅助重量越小=自承担越多（方向与负重类相反）", **quality))
     elif mtype == "duration":
         longest = max(
-            (st for s in sessions for st in s["sets"]
+            (st for s in group for st in s["sets"]
              if st.get("duration_seconds")),
             key=lambda st: st["duration_seconds"], default=None)
         if longest:
@@ -231,7 +196,7 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 exercise_id=exercise_id, **quality))
     elif mtype == "distance_time":
         far = max(
-            (st for s in sessions for st in s["sets"] if st.get("distance_m")),
+            (st for s in group for st in s["sets"] if st.get("distance_m")),
             key=lambda st: st["distance_m"], default=None)
         if far:
             facts.append(_fact(
@@ -239,16 +204,79 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
                 far["distance_m"], "米", mtype, window, srcs,
                 "max_working_set_distance", "observed",
                 exercise_id=exercise_id, **quality))
-
-    # 容量（只有负重类产生 kg 容量；口径=set_volume 全站唯一公式）
     if mtype in ("weight_reps", "bodyweight_reps"):
         facts.append(_fact(
             f"volume-{base}", "volume",
-            round(sum(s["volume"] for s in sessions)), "kg", mtype,
+            round(sum(s["volume"] for s in group)), "kg", mtype,
             window, srcs,
             ("sum_weight_times_reps_working_sets" if mtype == "weight_reps"
              else "sum_added_weight_times_reps_working_sets"),
             "observed", exercise_id=exercise_id, **quality))
+    return facts
+
+
+def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
+                    window: dict, start: str, end: str) -> list[dict]:
+    sessions, srcs = _sessions_in_window(db, user_id, exercise_id, start, end)
+    # 每次会话的实际记录类型（库声明兜底）——混合类型分开统计（复查 P1-2）
+    types: list[str] = []
+    for s in sessions:
+        t = entry_set_type(s["sets"]) or doc.get("measurement") or "weight_reps"
+        s["_mtype"] = t
+        if t not in types:
+            types.append(t)
+    # fact_id 必须唯一标识统计事实：动作 + 起始 + 结束（+ 类型后缀）。
+    # 只含结束日期时，同日查询 7 天与 30 天窗口会产生重复 ID（复查 P1-1）。
+    sc, ec = window["start"].replace("-", ""), window["end"].replace("-", "")
+    base = f"{exercise_id}-{sc}-{ec}"
+    gaps = _max_gap_days([s["date"] for s in sessions])
+    corrected = sum(1 for s in sessions if (s.get("revision") or 0) > 0)
+    quality = {
+        "sessions": len(sessions),
+        "date_gaps_max_days": gaps,
+        "corrected_records": corrected,
+    }
+    if corrected:
+        quality["notes"] = [f"含已纠错记录 {corrected} 条（按当前有效版本统计）"]
+    if len(sessions) == 1:
+        quality.setdefault("notes", []).append("窗口内仅 1 次训练，趋势不可判")
+    if len(types) > 1:
+        quality.setdefault("notes", []).append(
+            f"窗口内存在多种记录类型（{'、'.join(types)}）：已按类型分开统计，"
+            "跨类型结果不可直接比较")
+    if not sessions:
+        # 已确认的"零次训练"是观察结果（observed 0），不是数据缺失——
+        # 不与"表现类指标数据不足"（insufficient, value=None）混用（复查 P1-1）
+        return [_fact(f"frequency-{base}", "sessions", 0, "次",
+                      doc.get("measurement") or "weight_reps",
+                      window, [], "count_training_sessions_by_local_date",
+                      "observed", exercise_id=exercise_id, **quality,
+                      note="窗口内无该动作训练记录（确认为 0 次）")]
+
+    facts = [
+        _fact(f"frequency-{base}", "sessions", len(sessions), "次",
+              types[0] if len(types) == 1 else "mixed",
+              window, srcs, "count_training_sessions_by_local_date",
+              "observed", exercise_id=exercise_id, **quality),
+        _fact(f"frequency-per-week-{base}", "sessions-per-week",
+              round(len(sessions) * 7 / window["days"], 1), "次/周",
+              types[0] if len(types) == 1 else "mixed",
+              window, srcs, "sessions_x7_over_window_days", "observed",
+              exercise_id=exercise_id, **quality),
+        _fact(f"working-sets-{base}", "working-sets",
+              sum(s["working_sets"] for s in sessions), "组",
+              types[0] if len(types) == 1 else "mixed",
+              window, srcs, "sum_working_sets_excluding_warmup", "observed",
+              exercise_id=exercise_id, **quality),
+    ]
+    if len(types) == 1:
+        facts.extend(_type_facts(sessions, types[0], base, window,
+                                 exercise_id, quality))
+    else:
+        for t in types:
+            group = [s for s in sessions if s["_mtype"] == t]
+            facts.extend(_type_facts(group, t, f"{base}-{t}", window,
+                                     exercise_id, quality))
 
     # RPE（用户主观自报，只汇总不推断）
     rpes = [st.get("rpe") for s in sessions for st in s["sets"]
@@ -256,7 +284,8 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
     if rpes:
         facts.append(_fact(
             f"rpe-average-{base}", "rpe-average",
-            round(sum(rpes) / len(rpes), 1), "RPE", mtype, window, srcs,
+            round(sum(rpes) / len(rpes), 1), "RPE",
+            types[0] if len(types) == 1 else "mixed", window, srcs,
             "user_reported_mean_working_sets", "observed",
             exercise_id=exercise_id,
             note="RPE 为用户主观自报，非客观测量", **quality))
@@ -357,7 +386,7 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
     srcs = [_src(row["id"], row["revision"])
             for row, data in _iter_training_rows(db, user_id)
             if start <= session_local_date(row["created_at"], data) <= end]
-    wend = window["end"].replace("-", "")
+    sc, ec = window["start"].replace("-", ""), window["end"].replace("-", "")
     for metric, unit, calc in (
             ("sessions", "次", "period_summary_sessions"),
             ("training_days", "天", "period_summary_training_days"),
@@ -366,8 +395,8 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
             ("avg_duration_min", "分钟", "period_summary_avg_duration")):
         value = ps.get(metric)
         facts.append(_fact(
-            f"{metric}-{wend}", metric, value, unit, "session", window, srcs,
-            calc,
+            f"{metric}-{sc}-{ec}", metric, value, unit, "session", window,
+            srcs, calc,
             "observed" if value is not None else "insufficient"))
 
     facts.extend(_plan_adherence_facts(db, user_id, window, start, end))
@@ -399,7 +428,9 @@ def exercise_progress(db, user_id: str, exercise_id: str,
                "volume": s["volume"], "best_e1rm": s["best_e1rm"],
                "best_set": s["best_set"],
                "duration_total_s": s["duration_total_s"],
-               "distance_total_m": s["distance_total_m"]}
+               "longest_set_s": s.get("longest_set_s"),
+               "distance_total_m": s["distance_total_m"],
+               "farthest_set_m": s.get("farthest_set_m")}
               for s in reversed(sessions)]  # 旧→新
     return {
         "exercise_id": exercise_id,

@@ -16,7 +16,8 @@ from .progress_analysis import analyze_progress
 
 
 def _compact(facts: dict) -> dict:
-    """只保留主指标与关键频率事实（基线/复盘都要小而稳定）。"""
+    """保留主指标事实及其**完整追溯链**（复查 P1-2：基线/复盘都要能仅凭
+    快照确认数值来自哪次训练、哪次修订、当时的数据质量）。"""
     keep = []
     primary = {"best-estimated-1rm", "max-reps", "min-assistance-kg",
                "longest-set", "farthest-distance", "max-added-weight",
@@ -27,7 +28,8 @@ def _compact(facts: dict) -> dict:
             keep.append({k: f[k] for k in ("fact_id", "metric", "value",
                                            "unit", "exercise_id",
                                            "measurement_type", "window",
-                                           "calculation", "status")
+                                           "source_ids", "calculation",
+                                           "data_quality", "status")
                          if k in f})
     return {"window": facts.get("window"), "facts": keep}
 

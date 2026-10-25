@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import statistics
 from datetime import date
 
 MIN_SESSIONS = 3
@@ -66,9 +67,9 @@ def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
             bs = s.get("best_set") or {}
             return bs.get("weight_kg")
         if c == "longest-set":
-            return s.get("duration_total_s")
+            return s.get("longest_set_s")
         if c == "farthest-distance":
-            return s.get("distance_total_m")
+            return s.get("farthest_set_m")
         return s.get("best_e1rm")
 
     chosen = metric or {
@@ -101,7 +102,9 @@ def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
             "note": "先补齐记录或换该类型的适用指标再看趋势。",
         }
 
-    # 缺口检查（两半窗口内部最大间隔）
+    # 缺口检查（两半窗口内部最大间隔）：超过阈值即降级 insufficient——
+    # 只在 limitations 里提醒而不降级会让不连续的数据得出方向性结论
+    # （M6.5 复查 P0-2）
     for label, half in (("前半", first_half), ("后半", second_half)):
         gap = None
         hd = [s["date"] for s in half]
@@ -109,10 +112,19 @@ def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
             dd = sorted(date.fromisoformat(x) for x in hd)
             gap = max((b - a).days for a, b in zip(dd, dd[1:]))
         if gap is not None and gap > MAX_HALF_GAP_DAYS:
-            limitations.append(f"{label}窗口内记录间隔达 {gap} 天，连续性弱")
+            return {
+                "verdict": "insufficient", "metric": chosen,
+                "evidence": {"first_half_n": len(fv), "second_half_n": len(sv),
+                             f"{label}_max_gap_days": gap},
+                "limitations": [f"{label}窗口内记录间隔达 {gap} 天"
+                                f"（>{MAX_HALF_GAP_DAYS}），趋势连续性不足"],
+                "note": "训练记录间隔过长，先补齐观察再判断趋势。",
+            }
+        if gap is not None:
+            limitations.append(f"{label}窗口内最大记录间隔 {gap} 天")
 
-    f_med = sorted(fv)[len(fv) // 2]
-    s_med = sorted(sv)[len(sv) // 2]
+    f_med = statistics.median(fv)
+    s_med = statistics.median(sv)
     if chosen in ("max-reps", "longest-set", "farthest-distance"):
         diff = s_med - f_med
         threshold = MEANINGFUL_ABS_REPS if chosen == "max-reps" else max(

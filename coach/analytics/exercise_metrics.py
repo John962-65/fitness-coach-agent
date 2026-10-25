@@ -178,8 +178,14 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
                 "best_e1rm": max((s["e1rm"] for s in working if s["e1rm"]), default=None),
                 "duration_total_s": round(sum(s["duration_seconds"] or 0 for s in dur_sets))
                                     if dur_sets else None,
+                # 单组口径（M6.5 复查 P0-1）：累计值会随组数变化，
+                # 单组最长/最远才是"表现"指标——趋势分析用这两个字段
+                "longest_set_s": max((s["duration_seconds"] for s in dur_sets),
+                                     default=None),
                 "distance_total_m": round(sum(s["distance_m"] or 0 for s in dist_sets))
                                     if dist_sets else None,
+                "farthest_set_m": max((s["distance_m"] for s in dist_sets),
+                                      default=None),
                 "duration_min": _duration_min(working, data),
                 "sets": working,
             })
