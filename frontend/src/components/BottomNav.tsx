@@ -1,21 +1,22 @@
 import { NavLink } from 'react-router-dom'
-import { Compass, Dumbbell, MessageCircleHeart, Sun, UserRound } from 'lucide-react'
+import { Dumbbell, Sun, UsersRound, UserRound } from 'lucide-react'
 
+// P0 信息架构（2.0 §1.1）：今日｜训练｜专家｜我的。
+// 饮食页在 P1 营养系统落地后加入，不用空壳标签冒充功能。
 const TABS = [
   { to: '/today', label: '今日', icon: Sun },
   { to: '/training', label: '训练', icon: Dumbbell },
-  { to: '/coach', label: 'AI 教练', icon: MessageCircleHeart },
-  { to: '/explore', label: '探索', icon: Compass },
+  { to: '/experts', label: '专家', icon: UsersRound },
   { to: '/mine', label: '我的', icon: UserRound },
 ]
 
-/** 移动端底部五栏导航（安全区兼容；lg 及以上由侧边栏接管） */
+/** 移动端底部导航（安全区兼容；lg 及以上由侧边栏接管） */
 export default function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur
                     lg:hidden"
          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} aria-label="主导航">
-      <div className="mx-auto grid h-14 max-w-2xl grid-cols-5">
+      <div className="mx-auto grid h-14 max-w-2xl grid-cols-4">
         {TABS.map((t) => (
           <NavLink key={t.to} to={t.to} aria-label={t.label}
                    className={({ isActive }) =>

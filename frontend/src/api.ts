@@ -1,7 +1,8 @@
 // API 客户端：错误统一为 ApiError（status + 人可读 message + details 列表）
 import type {
   ApproachRevision, ApproachView, Checkin, Consultation, ExerciseDetail,
-  ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, PlanOp,
+  ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, ExpertInsight,
+  ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, PlanOp,
   PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, TodayBrief,
   TrainingCalendar, TrainingTemplate, Trial,
 } from './types'
@@ -200,4 +201,43 @@ export const api = {
       `/users/${uid}/plan/revisions/${version}/restore`, { reason }),
   chat: (uid: string, message: string) =>
     post<{ user_id: string; reply: string }>(`/users/${uid}/chat`, { message }),
+
+  // ---- P0 专家平台 ----
+  expertsOverview: (uid: string) =>
+    req<ExpertOverview>(`/users/${uid}/experts/overview`),
+  expertSettings: (uid: string) =>
+    req<ExpertSettings>(`/users/${uid}/experts/settings`),
+  saveExpertSettings: (uid: string, payload: ExpertSettings) =>
+    post<ExpertSettings>(`/users/${uid}/experts/settings`, payload),
+  requestAnalysis: (uid: string, specialist: string, params: Record<string, unknown>) =>
+    post<{ task: ExpertTask; insight: ExpertInsight | null; error?: string }>(
+      `/users/${uid}/experts/analysis`, { specialist, params }),
+  expertTasks: (uid: string, opts: { specialist?: string; status?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(opts).filter(([, v]) => v) as [string, string][])
+    return req<{ tasks: ExpertTask[] }>(
+      `/users/${uid}/experts/tasks${qs.size ? `?${qs}` : ''}`)
+  },
+  cancelExpertTask: (uid: string, taskId: string) =>
+    post<{ task_id: string; status: string }>(
+      `/users/${uid}/experts/tasks/${taskId}/cancel`, {}),
+  expertInsights: (uid: string, opts: { specialist?: string; status?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (opts.specialist) qs.set('specialist', opts.specialist)
+    if (opts.status) qs.set('status', opts.status)
+    if (opts.limit) qs.set('limit', String(opts.limit))
+    return req<{ insights: ExpertInsightSummary[] }>(
+      `/users/${uid}/expert-insights${qs.size ? `?${qs}` : ''}`)
+  },
+  expertInsight: (uid: string, insightId: string) =>
+    req<ExpertInsight>(`/users/${uid}/expert-insights/${insightId}`),
+  markInsightViewed: (uid: string, insightId: string) =>
+    post<ExpertInsight>(`/users/${uid}/expert-insights/${insightId}/view`, {}),
+  dismissInsight: (uid: string, insightId: string) =>
+    post<ExpertInsight>(`/users/${uid}/expert-insights/${insightId}/dismiss`, {}),
+  regenerateInsight: (uid: string, insightId: string) =>
+    post<{ task: ExpertTask; insight: ExpertInsight | null }>(
+      `/users/${uid}/expert-insights/${insightId}/regenerate`, {}),
+  stageInsightProposal: (uid: string, insightId: string, optionId: string) =>
+    post<{ proposal: { proposal_id: string; status: string }; note: string }>(
+      `/users/${uid}/expert-insights/${insightId}/options/${optionId}/proposal`, {}),
 }

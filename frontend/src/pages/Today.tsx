@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  ArrowRight, ClipboardList, Flame, MessageCircleHeart, Play, Plus,
+  ArrowRight, ClipboardList, Flame, LineChart, MessageCircleHeart, Play, Plus,
   ShieldAlert, Sparkles,
 } from 'lucide-react'
 import { api } from '../api'
 import {
   CardNight, ErrorBox, Notice, Spinner, Stat,
 } from '../components/Bits'
+import InsightCard from '../components/experts/InsightCard'
 import { useApp } from '../store'
-import { PlanResponse, TodayBrief } from '../types'
+import { ExpertInsightSummary, PlanResponse, TodayBrief } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -28,6 +29,7 @@ export default function Today() {
   const offlineCount = useApp((s) => s.offlineCount)
   const [brief, setBrief] = useState<TodayBrief | null>(null)
   const [plan, setPlan] = useState<PlanResponse | null>(null)
+  const [insights, setInsights] = useState<ExpertInsightSummary[]>([])
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
@@ -35,6 +37,10 @@ export default function Today() {
     Promise.all([api.today(uid), api.plan(uid).catch(() => null)])
       .then(([b, p]) => { setBrief(b); setPlan(p) })
       .catch((e) => setError(e.message))
+    // P0：待查看的专业分析卡片（训练完成后自动生成，无需打开聊天）
+    api.expertInsights(uid, { status: 'ready', limit: 3 })
+      .then((r) => setInsights(r.insights))
+      .catch(() => setInsights([]))
   }, [uid])
 
   if (error) return <div className="pt-4"><ErrorBox message={error} /></div>
@@ -149,7 +155,7 @@ export default function Today() {
                   <p className="mt-1.5 text-sm leading-relaxed text-white/70">
                     计划已隔离：旧动作安排暂不能执行，处理安全记录并确认重排后恢复。
                   </p>
-                  <Link to="/coach" className="btn-soft mt-5 w-full">
+                  <Link to="/experts/chat" className="btn-soft mt-5 w-full">
                     去 AI 教练处理 <ArrowRight size={16} />
                   </Link>
                 </>
@@ -214,8 +220,22 @@ export default function Today() {
             <Stat value={brief.open_pain_flags} label="待跟进安全记录" tone={brief.open_pain_flags > 0 ? 'warn' : 'default'} />
           </div>
 
+          {/* P0 专业分析卡片（训练后自动生成，点击直达工作台，不经聊天） */}
+          {insights.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <LineChart size={16} /> 专业分析
+              </h3>
+              {insights.map((ins) => (
+                <InsightCard key={ins.id} insight={ins}
+                             onClick={() => navigate(
+                               `/experts/training?insight=${ins.id}`)} />
+              ))}
+            </div>
+          )}
+
           {/* AI 教练快捷入口 */}
-          <Link to="/coach" className="card flex items-center gap-3.5 transition-shadow hover:shadow-pop">
+          <Link to="/experts/chat" className="card flex items-center gap-3.5 transition-shadow hover:shadow-pop">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
               <MessageCircleHeart size={21} className="text-accent-deep" />
             </span>
@@ -240,7 +260,7 @@ export default function Today() {
               </h3>
               <p className="mt-1.5 text-[13px] leading-relaxed text-amber-800/90">
                 有 {brief.due_review_notes.length} 条教练笔记到了复核时点，去
-                <Link to="/coach" className="mx-1 font-semibold underline underline-offset-2">AI 教练</Link>
+                <Link to="/experts/chat" className="mx-1 font-semibold underline underline-offset-2">主教练</Link>
                 确认是否仍然适用。
               </p>
             </div>

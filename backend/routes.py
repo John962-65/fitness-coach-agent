@@ -1022,6 +1022,15 @@ def register_routes(app) -> None:
             db.conn.commit()
             return {"id": first["checkin_id"], "type": ctype,
                     "warnings": notes, "existing": True}
+        # P0 专家平台：训练保存 → WorkoutSaved → 订阅的确定性分析（如训练后回顾）。
+        # 事件分发整体容错：专家分析失败绝不阻塞打卡保存（2.0 §11.4）。
+        if ctype == "training":
+            try:
+                from coach.experts import task_dispatcher
+                task_dispatcher.on_event(db, uid, "WorkoutSaved",
+                                         {"checkin_id": checkin_id})
+            except Exception:  # noqa: BLE001 打卡主流程已成功，专家链路异常只留任务日志
+                pass
         return {"id": checkin_id, "type": ctype, "warnings": notes}
 
     # ---- M6.4-A：训练模板（可复用，与计划/会话独立） ----
@@ -1180,6 +1189,179 @@ def register_routes(app) -> None:
         return FileResponse(f, media_type=media_type, headers={
             "Cache-Control": "public, max-age=3600"})
 
+
+    # ---- P0 专家平台：工作台 / 任务 / 洞察 / 设置 ----
+
+    @api.get("/users/{uid}/experts/overview")
+    def experts_overview(uid: str, request: Request):
+        """Experts 中心页：注册表 + 各顾问最新洞察计数 + 任务状态。"""
+        from coach.experts import registry
+        db = request.app.state.db
+        _user_profile(db, uid)
+        counts: dict[str, int] = {}
+        for row in db.conn.execute(
+                "SELECT specialist, COUNT(*) AS n FROM expert_insights"
+                " WHERE user_id=? AND status IN ('ready','viewed')"
+                " GROUP BY specialist", (uid,)):
+            counts[row["specialist"]] = row["n"]
+        return {
+            "specialists": [
+                {**s, "active_insights": counts.get(s["specialist"], 0)}
+                for s in registry.specialists_view()],
+            "orchestrator": registry.ORCHESTRATOR,
+            "shared_services": registry.SHARED_SERVICES,
+            "settings": db.expert_settings(uid),
+            "pending_tasks": db.list_expert_tasks(uid, status="pending", limit=5),
+        }
+
+    @api.get("/users/{uid}/experts/settings")
+    def experts_settings(uid: str, request: Request):
+        _user_profile(request.app.state.db, uid)
+        return request.app.state.db.expert_settings(uid)
+
+    @api.post("/users/{uid}/experts/settings")
+    def experts_save_settings(uid: str, request: Request,
+                              payload: dict = Body(...)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        proactive = payload.get("proactive_enabled")
+        if not isinstance(proactive, bool):
+            raise HTTPException(status_code=400,
+                                detail={"error": "proactive_enabled 必须是布尔值"})
+        try:
+            return db.save_expert_settings(
+                uid, proactive, int(payload.get("min_interval_minutes") or 0))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/experts/analysis")
+    def request_analysis(uid: str, request: Request, payload: dict = Body(...)):
+        """用户主动请求分析（UserRequested：不受主动分析开关限制）。"""
+        from coach.experts import task_dispatcher
+        db = request.app.state.db
+        _user_profile(db, uid)
+        specialist = str(payload.get("specialist") or "")
+        task_type = str(payload.get("task_type") or "post-workout-review")
+        params = payload.get("params") or {}
+        if not params.get("checkin_id"):
+            raise HTTPException(status_code=422,
+                                detail={"error": "params.checkin_id 必填（暂支持对指定训练做回顾）"})
+        try:
+            task = task_dispatcher.enqueue(db, uid, specialist, task_type,
+                                           "UserRequested", params)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        if not task:
+            raise HTTPException(status_code=429,
+                                detail={"error": "同类分析正在进行或频率受限，请稍后再试"})
+        result = task_dispatcher.run_task(db, task)
+        return result
+
+    @api.get("/users/{uid}/experts/tasks")
+    def expert_tasks(uid: str, request: Request,
+                     specialist: str | None = Query(None),
+                     status: str | None = Query(None),
+                     limit: int = Query(20, ge=1, le=100)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"tasks": db.list_expert_tasks(uid, specialist, status, limit)}
+
+    @api.get("/users/{uid}/experts/tasks/{task_id}")
+    def expert_task_detail(uid: str, task_id: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        task = db.get_expert_task(uid, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail={"error": "任务不存在"})
+        return {**task, "events": db.expert_task_events(task_id)}
+
+    @api.post("/users/{uid}/experts/tasks/{task_id}/cancel")
+    def expert_task_cancel(uid: str, task_id: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        task = db.get_expert_task(uid, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail={"error": "任务不存在"})
+        if task["status"] != "pending":
+            raise HTTPException(status_code=422,
+                                detail={"error": f"任务状态为 {task['status']}，只有未执行任务可取消"})
+        db.update_expert_task(uid, task_id, status="cancelled",
+                              event="cancelled", event_detail="用户取消")
+        return {"task_id": task_id, "status": "cancelled"}
+
+    @api.get("/users/{uid}/expert-insights")
+    def expert_insights(uid: str, request: Request,
+                        specialist: str | None = Query(None),
+                        status: str | None = Query(None),
+                        limit: int = Query(20, ge=1, le=100)):
+        """洞察列表（读取时懒判定失效/到期——数据漂移不会以旧充新）。"""
+        from coach.experts import insight_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"insights": insight_service.list_insights(
+            db, uid, specialist, status, limit)}
+
+    @api.get("/users/{uid}/expert-insights/{insight_id}")
+    def expert_insight_detail(uid: str, insight_id: str, request: Request):
+        from coach.experts import insight_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        insight = insight_service.get_insight(db, uid, insight_id)
+        if not insight:
+            raise HTTPException(status_code=404, detail={"error": "分析不存在"})
+        return insight
+
+    @api.post("/users/{uid}/expert-insights/{insight_id}/view")
+    def expert_insight_view(uid: str, insight_id: str, request: Request):
+        from coach.experts import insight_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        insight = insight_service.mark_viewed(db, uid, insight_id)
+        if not insight:
+            raise HTTPException(status_code=404,
+                                detail={"error": "分析不存在或当前状态不能标记已读"})
+        return insight
+
+    @api.post("/users/{uid}/expert-insights/{insight_id}/dismiss")
+    def expert_insight_dismiss(uid: str, insight_id: str, request: Request):
+        """忽略建议：用户明确决策"先不采纳"，历史保留、可重新分析。"""
+        from coach.experts import insight_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            insight = insight_service.dismiss(db, uid, insight_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        if not insight:
+            raise HTTPException(status_code=404, detail={"error": "分析不存在"})
+        return insight
+
+    @api.post("/users/{uid}/expert-insights/{insight_id}/regenerate")
+    def expert_insight_regenerate(uid: str, insight_id: str, request: Request):
+        """重新分析：以最新数据重跑（旧的 invalidated/dismissed 保留为历史）。"""
+        from coach.experts import insight_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return insight_service.regenerate(db, uid, insight_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/expert-insights/{insight_id}/options/{option_id}/proposal")
+    def expert_insight_proposal(uid: str, insight_id: str, option_id: str,
+                                request: Request):
+        """方案 → 待确认修改提案（统一修改协议 AI 路径；确认门在 /changes）。
+        绝不经此接口直接生效——顾问没有写权限（2.0 §2.4）。"""
+        from coach.experts import recommendation_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return recommendation_service.stage_option_proposal(
+                db, uid, insight_id, option_id)
+        except ProposalRejected as e:
+            raise _reject(e) from None
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
 
     # ---- AI 教练对话 ----
 

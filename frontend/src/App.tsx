@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { api } from './api'
 import BottomNav from './components/BottomNav'
 import SideNav from './components/SideNav'
 import Coach from './pages/Coach'
 import Explore from './pages/Explore'
 import ExploreDetail from './pages/ExploreDetail'
+import Experts from './pages/Experts'
 import History from './pages/History'
 import Mine from './pages/Mine'
 import MineApproach from './pages/MineApproach'
@@ -13,12 +14,19 @@ import MineSettings from './pages/MineSettings'
 import Onboarding from './pages/Onboarding'
 import PlanEditor from './pages/PlanEditor'
 import Today from './pages/Today'
+import TrainingExpert from './pages/experts/TrainingExpert'
 import Training from './pages/Training'
 import Workout from './pages/Workout'
 import { useApp } from './store'
 
 // 训练执行走沉浸式布局：无侧栏/底栏，由 Workout 自行掌控整屏
 const isImmersive = (path: string) => path.startsWith('/workout')
+
+/** 旧 /explore/:id → /experts/knowledge/:id（保留动作参数） */
+function OldExploreRedirect() {
+  const { exerciseId } = useParams()
+  return <Navigate to={`/experts/knowledge/${exerciseId ?? ''}`} replace />
+}
 
 function Shell() {
   const uid = useApp((s) => s.uid)
@@ -36,7 +44,7 @@ function Shell() {
 
   if (!uid) return <Navigate to="/welcome" replace />
 
-  const isChat = location.pathname.startsWith('/coach')
+  const isChat = location.pathname.startsWith('/experts/chat')
 
   return (
     <div className={immersive ? 'min-h-dvh' : 'min-h-dvh lg:pl-60'}>
@@ -54,12 +62,19 @@ function Shell() {
           <Route path="/history" element={<History />} />
           <Route path="/workout/template/:templateId" element={<Workout />} />
           <Route path="/workout/:day" element={<Workout />} />
-          <Route path="/coach" element={<Coach />} />
-          <Route path="/explore" element={<Explore />} />
-          <Route path="/explore/:exerciseId" element={<ExploreDetail />} />
+          {/* P0 专家平台：中心页 / 训练科学工作台 / 主教练聊天 / 知识检索 */}
+          <Route path="/experts" element={<Experts />} />
+          <Route path="/experts/training" element={<TrainingExpert />} />
+          <Route path="/experts/chat" element={<Coach />} />
+          <Route path="/experts/knowledge" element={<Explore />} />
+          <Route path="/experts/knowledge/:exerciseId" element={<ExploreDetail />} />
           <Route path="/mine" element={<Mine />} />
           <Route path="/mine/approach" element={<MineApproach />} />
           <Route path="/mine/settings" element={<MineSettings />} />
+          {/* 旧路径兼容重定向（2.0 §1.1：不破坏既有链接/书签） */}
+          <Route path="/coach" element={<Navigate to="/experts/chat" replace />} />
+          <Route path="/explore" element={<Navigate to="/experts/knowledge" replace />} />
+          <Route path="/explore/:exerciseId" element={<OldExploreRedirect />} />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>

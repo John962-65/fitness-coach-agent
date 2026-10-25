@@ -41,6 +41,9 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
             " error=COALESCE(error || '；', '') || '服务重启：任务中断，请重新上传'"
             " WHERE status='processing'")
         app.state.db.conn.commit()
+    # P0 专家任务恢复：崩溃残留的 running → 重试或失败；pending 留在队列可继续执行
+    from coach.experts import task_dispatcher
+    task_dispatcher.recover_stale(app.state.db)
     token = access_token if access_token is not None else (os.getenv("API_ACCESS_TOKEN") or "")
     app.state.access_token = token
 

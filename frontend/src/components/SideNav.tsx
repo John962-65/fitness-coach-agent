@@ -1,15 +1,14 @@
 import { NavLink } from 'react-router-dom'
 import {
-  CalendarRange, Compass, Dumbbell, MessageCircleHeart, Settings,
-  Sun, UserRound,
+  CalendarRange, Dumbbell, Settings, Sun, UserRound, UsersRound,
 } from 'lucide-react'
 import { useApp } from '../store'
 
+// P0 信息架构（2.0 §1.1）：AI 教练/知识探索并入「专家」页（旧路径保留重定向）
 const NAV = [
   { to: '/today', label: '今日', icon: Sun },
   { to: '/training', label: '训练', icon: Dumbbell },
-  { to: '/coach', label: 'AI 教练', icon: MessageCircleHeart },
-  { to: '/explore', label: '探索', icon: Compass },
+  { to: '/experts', label: '专家', icon: UsersRound },
   { to: '/mine', label: '我的', icon: UserRound },
 ]
 

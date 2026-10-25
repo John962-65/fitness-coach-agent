@@ -54,7 +54,7 @@ export default function Training() {
       <div className="mx-auto w-full max-w-3xl space-y-3">
         <PageHeader title="训练" />
         <ErrorBox message={error} />
-        <Link to="/coach" className="btn-ghost block text-center">去 AI 教练页完成建档</Link>
+        <Link to="/experts/chat" className="btn-ghost block text-center">去主教练对话完成建档</Link>
       </div>
     )
   }
@@ -85,7 +85,7 @@ export default function Training() {
                         p-3.5 text-sm font-medium leading-relaxed text-red-700">
           <TriangleAlert size={18} className="mt-0.5 shrink-0" />
           计划已隔离，以下内容仅作历史参考；去
-          <Link to="/coach" className="font-semibold underline underline-offset-2">AI 教练</Link>
+          <Link to="/experts/chat" className="font-semibold underline underline-offset-2">主教练</Link>
           处理安全记录并确认重排。
         </div>
       )}

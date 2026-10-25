@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -246,6 +247,64 @@ CREATE TABLE IF NOT EXISTS motion_analyses (
     error       TEXT,
     result      TEXT,                   -- JSON：supported/frames/faults/reps/summary/note
     created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expert_tasks (
+    id          TEXT PRIMARY KEY,       -- ext-<uuid>
+    user_id     TEXT NOT NULL,
+    specialist  TEXT NOT NULL,          -- training_science / nutrition / ...
+    task_type   TEXT NOT NULL,          -- post-workout-review / ...
+    trigger_source TEXT NOT NULL,       -- WorkoutSaved / UserRequested / ...（trigger 是 SQL 关键字）
+    input_refs  TEXT NOT NULL,          -- JSON：{checkin_id, exercise_ids, ...}
+    dedup_key   TEXT,                   -- 幂等键（NULL=允许重复，如用户主动请求）
+    status      TEXT NOT NULL,          -- pending / running / ready / failed / cancelled
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL DEFAULT 2,
+    insight_id  TEXT,                   -- 产出的 ExpertInsight
+    created_at  TEXT NOT NULL,
+    started_at  TEXT,
+    completed_at TEXT,
+    heartbeat_at TEXT,                  -- running 崩溃恢复判定
+    error_code  TEXT,
+    error       TEXT,
+    UNIQUE(user_id, dedup_key)          -- 同一事件不重复入队（NULL 互不冲突）
+);
+CREATE TABLE IF NOT EXISTS expert_task_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    event   TEXT NOT NULL,              -- enqueued/started/retry/ready/failed/cancelled
+    detail  TEXT,
+    at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS expert_insights (
+    id          TEXT PRIMARY KEY,       -- ins-<uuid>
+    user_id     TEXT NOT NULL,
+    task_id     TEXT,
+    specialist  TEXT NOT NULL,
+    insight_type TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    findings    TEXT NOT NULL,          -- JSON：[{finding_id, text, fact_ids, source_ids}]
+    evidence_refs TEXT NOT NULL,        -- JSON：全部引用的 fact_id
+    facts_snapshot TEXT NOT NULL,       -- JSON：生成时的 fact_service 输出（证据面板用）
+    knowledge_refs TEXT NOT NULL,       -- JSON：知识检索命中（引擎:ref + 出处）
+    options     TEXT NOT NULL,          -- JSON：[{option_id, title, detail, basis,
+                                        --   tradeoffs, proposal_hint?}]
+    limitations TEXT NOT NULL,          -- JSON：[str]
+    status      TEXT NOT NULL,          -- ready / viewed / dismissed / expired /
+                                        -- invalidated / failed（分析在任务侧，不占洞察行）
+    confidence  TEXT NOT NULL,          -- high / medium / low——按数据充分性规则生成
+    confidence_basis TEXT NOT NULL,     -- 为什么是这个置信度（人可读）
+    generated_at TEXT NOT NULL,
+    expires_at  TEXT,                   -- 过期时点（懒判定）
+    source_revision TEXT NOT NULL,      -- JSON：{checkins:{id:rev}, plan_version}
+    input_refs  TEXT,                   -- JSON：分析输入（重新分析用）
+    read_at     TEXT
+);
+CREATE TABLE IF NOT EXISTS expert_settings (
+    user_id     TEXT PRIMARY KEY,
+    proactive_enabled INTEGER NOT NULL DEFAULT 1,   -- 用户可关闭主动分析
+    min_interval_minutes INTEGER NOT NULL DEFAULT 0, -- 同类任务最小间隔（频率限制）
+    updated_at  TEXT
 );
 """
 
@@ -1300,3 +1359,226 @@ class Database:
              json.dumps(result, ensure_ascii=False) if result is not None else None,
              error[:500] if error else None, analysis_id))
         self.conn.commit()
+
+    # ---- 专家平台（P0：ExpertTask / ExpertInsight / 设置）----
+    #
+    # 设计要点：
+    # - 任务状态落库（不依赖进程内存），服务重启后 pending 可继续执行、
+    #   running 凭 heartbeat_at 判定崩溃并恢复；
+    # - dedup_key 唯一约束 = 事件级幂等（同一 WorkoutSaved 重放不重复分析）；
+    # - 洞察的失效不靠钩子全覆盖：读取时对比 source_revision 与当前数据
+    #   （checkin 修订数 / 生效计划版本），漂移即失效（懒失效）。
+
+    def _task_event(self, task_id: str, event: str, detail: str = "") -> None:
+        self.conn.execute(
+            "INSERT INTO expert_task_events(task_id, event, detail, at)"
+            " VALUES(?,?,?,?)", (task_id, event, detail[:500], _now()))
+
+    def create_expert_task(self, user_id: str, specialist: str, task_type: str,
+                           trigger_source: str, input_refs: dict,
+                           dedup_key: str | None = None,
+                           max_retries: int = 2) -> dict | None:
+        """入队；命中 dedup（同事件重放/并发）返回既有任务，不重复创建。"""
+        task_id = "ext-" + uuid.uuid4().hex
+        try:
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO expert_tasks(id, user_id, specialist, task_type,"
+                    " trigger_source, input_refs, dedup_key, status, max_retries,"
+                    " created_at) VALUES(?,?,?,?,?,?,?,'pending',?,?)",
+                    (task_id, user_id, specialist, task_type, trigger_source,
+                     json.dumps(input_refs, ensure_ascii=False), dedup_key,
+                     max_retries, _now()))
+                self._task_event(task_id, "enqueued",
+                                 f"{trigger_source} → {specialist}/{task_type}")
+        except sqlite3.IntegrityError:
+            row = self.conn.execute(
+                "SELECT * FROM expert_tasks WHERE user_id=? AND dedup_key=?",
+                (user_id, dedup_key)).fetchone()
+            return self._task_row(row) if row else None
+        return self.get_expert_task(user_id, task_id)
+
+    @staticmethod
+    def _task_row(row) -> dict:
+        task = dict(row)
+        task["input_refs"] = json.loads(task["input_refs"])
+        return task
+
+    def get_expert_task(self, user_id: str, task_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM expert_tasks WHERE user_id=? AND id=?",
+            (user_id, task_id)).fetchone()
+        return self._task_row(row) if row else None
+
+    def list_expert_tasks(self, user_id: str, specialist: str | None = None,
+                          status: str | None = None, limit: int = 20) -> list[dict]:
+        sql = "SELECT * FROM expert_tasks WHERE user_id=?"
+        params: list = [user_id]
+        if specialist:
+            sql += " AND specialist=?"
+            params.append(specialist)
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        rows = self.conn.execute(sql + " ORDER BY created_at DESC, id DESC LIMIT ?",
+                                 params + [limit]).fetchall()
+        return [self._task_row(r) for r in rows]
+
+    def update_expert_task(self, user_id: str, task_id: str, *,
+                           status: str | None = None,
+                           insight_id: str | None = None,
+                           error_code: str | None = None,
+                           error: str | None = None,
+                           bump_retry: bool = False,
+                           heartbeat: bool = False,
+                           event: str | None = None,
+                           event_detail: str = "") -> None:
+        """任务状态迁移 + 执行日志。仅更新给出的字段。"""
+        sets, params = [], []
+        if status is not None:
+            sets.append("status=?")
+            params.append(status)
+            if status == "running":
+                sets += ["started_at=?", "heartbeat_at=?"]
+                params += [_now(), _now()]
+            if status in ("ready", "failed", "cancelled"):
+                sets.append("completed_at=?")
+                params.append(_now())
+        if insight_id is not None:
+            sets.append("insight_id=?")
+            params.append(insight_id)
+        if error_code is not None:
+            sets.append("error_code=?")
+            params.append(error_code)
+        if error is not None:
+            sets.append("error=?")
+            params.append(error[:500])
+        if bump_retry:
+            sets.append("retry_count=retry_count+1")
+        if heartbeat:
+            sets.append("heartbeat_at=?")
+            params.append(_now())
+        if event:
+            self._task_event(task_id, event, event_detail)
+        if not sets:
+            return
+        params += [user_id, task_id]
+        with self.conn:
+            self.conn.execute(
+                f"UPDATE expert_tasks SET {', '.join(sets)} WHERE user_id=? AND id=?",
+                params)
+
+    def stale_running_expert_tasks(self, max_running_minutes: int = 10) -> list[dict]:
+        """running 且心跳过期的任务（进程崩溃残留），供启动恢复。"""
+        cutoff = (datetime.now() - timedelta(minutes=max_running_minutes)
+                  ).isoformat(timespec="seconds")
+        rows = self.conn.execute(
+            "SELECT * FROM expert_tasks WHERE status='running'"
+            " AND (heartbeat_at IS NULL OR heartbeat_at < ?)", (cutoff,)).fetchall()
+        return [self._task_row(r) for r in rows]
+
+    def expert_task_events(self, task_id: str, limit: int = 20) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT event, detail, at FROM expert_task_events WHERE task_id=?"
+            " ORDER BY id DESC LIMIT ?", (task_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- 洞察 ----
+
+    def insert_expert_insight(self, insight: dict) -> str:
+        cur = self.conn.execute(
+            "INSERT INTO expert_insights(id, user_id, task_id, specialist,"
+            " insight_type, title, summary, findings, evidence_refs,"
+            " facts_snapshot, knowledge_refs, options, limitations, status,"
+            " confidence, confidence_basis, generated_at, expires_at,"
+            " source_revision, input_refs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'ready',?,?,?,?,?,?)",
+            (insight["id"], insight["user_id"], insight.get("task_id"),
+             insight["specialist"], insight["insight_type"],
+             insight["title"][:200], insight["summary"][:1000],
+             json.dumps(insight.get("findings") or [], ensure_ascii=False),
+             json.dumps(insight.get("evidence_refs") or [], ensure_ascii=False),
+             json.dumps(insight.get("facts_snapshot") or {}, ensure_ascii=False),
+             json.dumps(insight.get("knowledge_refs") or [], ensure_ascii=False),
+             json.dumps(insight.get("options") or [], ensure_ascii=False),
+             json.dumps(insight.get("limitations") or [], ensure_ascii=False),
+             insight["confidence"], insight["confidence_basis"][:500],
+             insight["generated_at"], insight.get("expires_at"),
+             json.dumps(insight.get("source_revision") or {}, ensure_ascii=False),
+             json.dumps(insight.get("input_refs") or {}, ensure_ascii=False)))
+        self.conn.commit()
+        return cur.lastrowid
+
+    @staticmethod
+    def _insight_row(row) -> dict:
+        d = dict(row)
+        for key in ("findings", "evidence_refs", "facts_snapshot",
+                    "knowledge_refs", "options", "limitations", "source_revision",
+                    "input_refs"):
+            default = "{}" if key in ("facts_snapshot", "source_revision",
+                                      "input_refs") else "[]"
+            try:
+                d[key] = json.loads(d.get(key) or default)
+            except (ValueError, TypeError):
+                d[key] = json.loads(default)
+        return d
+
+    def get_expert_insight(self, user_id: str, insight_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM expert_insights WHERE user_id=? AND id=?",
+            (user_id, insight_id)).fetchone()
+        return self._insight_row(row) if row else None
+
+    def list_expert_insights(self, user_id: str, specialist: str | None = None,
+                             status: str | None = None, limit: int = 20) -> list[dict]:
+        sql = ("SELECT id, user_id, task_id, specialist, insight_type, title,"
+               " summary, status, confidence, confidence_basis, generated_at,"
+               " expires_at, source_revision, read_at FROM expert_insights"
+               " WHERE user_id=?")
+        params: list = [user_id]
+        if specialist:
+            sql += " AND specialist=?"
+            params.append(specialist)
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        rows = self.conn.execute(sql + " ORDER BY generated_at DESC LIMIT ?",
+                                 params + [limit]).fetchall()
+        return [self._insight_row(r) for r in rows]
+
+    def update_expert_insight_status(self, user_id: str, insight_id: str,
+                                     status: str) -> bool:
+        """ready↔viewed↔dismissed/expired/invalidated 的状态迁移（幂等）。"""
+        allowed = ("ready", "viewed", "dismissed", "expired", "invalidated")
+        if status not in allowed:
+            raise ValueError(f"未知洞察状态 {status!r}")
+        extra = ", read_at=?" if status == "viewed" else ""
+        params: list = [_now()] if status == "viewed" else []
+        cur = self.conn.execute(
+            f"UPDATE expert_insights SET status=?{extra} WHERE user_id=? AND id=?"
+            " AND status IN ('ready','viewed')",
+            [status, *params, user_id, insight_id])
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def expert_settings(self, user_id: str) -> dict:
+        row = self.conn.execute(
+            "SELECT * FROM expert_settings WHERE user_id=?", (user_id,)).fetchone()
+        if row:
+            return {"proactive_enabled": bool(row["proactive_enabled"]),
+                    "min_interval_minutes": row["min_interval_minutes"]}
+        return {"proactive_enabled": True, "min_interval_minutes": 0}
+
+    def save_expert_settings(self, user_id: str, proactive_enabled: bool,
+                             min_interval_minutes: int) -> dict:
+        if not isinstance(min_interval_minutes, int) or isinstance(min_interval_minutes, bool) \
+                or not 0 <= min_interval_minutes <= 1440:
+            raise ValueError("min_interval_minutes 必须是 0-1440 的整数")
+        self.conn.execute(
+            "INSERT INTO expert_settings(user_id, proactive_enabled,"
+            " min_interval_minutes, updated_at) VALUES(?,?,?,?)"
+            " ON CONFLICT(user_id) DO UPDATE SET proactive_enabled=?,"
+            " min_interval_minutes=?, updated_at=?",
+            (user_id, int(proactive_enabled), min_interval_minutes, _now(),
+             int(proactive_enabled), min_interval_minutes, _now()))
+        self.conn.commit()
+        return self.expert_settings(user_id)

@@ -357,3 +357,116 @@ export type ApproachOp =
   | { op: 'upsert_exercise_choice'; exercise_id: string; set: Record<string, unknown> }
   | { op: 'remove_exercise_choice'; exercise_id: string }
   | { op: 'upsert_execution_choice'; exercise_id: string; choices: Record<string, string>; note?: string }
+
+// ---- P0 专家平台（后端 coach/experts/） ----
+
+export interface InsightFinding {
+  finding_id: string
+  kind: string                     // session-baseline / comparison / trend
+  text: string
+  fact_ids: string[]
+  source_ids: string[]             // checkin:ID:revision:N 追溯链
+  evidence?: 'verified' | 'unverified'
+}
+
+export interface InsightOption {
+  option_id: string
+  title: string
+  detail: string
+  basis: string[]
+  tradeoffs: { 收益: string; 代价: string; 适用条件: string }
+  action: 'proposal' | 'advisory'
+  proposal_hint?: {
+    target: 'plan' | 'approach'
+    operations: Record<string, unknown>[]
+  }
+}
+
+export interface ExpertFact {
+  fact_id: string
+  metric: string
+  exercise_id?: string
+  value: number | null
+  unit: string
+  measurement_type: string
+  window: { start: string; end: string; days: number }
+  source_ids: string[]
+  calculation: string
+  data_quality?: Record<string, unknown>
+  status: string                   // observed / estimated / insufficient
+  note?: string
+}
+
+/** 洞察列表行（轻载荷：无 findings/options/facts_snapshot） */
+export interface ExpertInsightSummary {
+  id: string
+  specialist: string
+  insight_type: string
+  title: string
+  summary: string
+  status: string                   // ready/viewed/dismissed/expired/invalidated
+  confidence: string               // high/medium/low
+  confidence_basis: string
+  generated_at: string
+  expires_at: string | null
+  status_reason?: string
+  read_at?: string | null
+}
+
+export interface ExpertInsight extends ExpertInsightSummary {
+  task_id: string | null
+  findings: InsightFinding[]
+  evidence_refs: string[]
+  facts_snapshot: { window: { start: string; end: string; days: number }
+                    facts: ExpertFact[]
+                    exercises_covered: string[]
+                    caliber: string }
+  knowledge_refs: { engine: string; ref: string; title: string
+                    provenance: string }[]
+  options: InsightOption[]
+  limitations: string[]
+  source_revision: { checkins?: Record<string, number>; plan_version?: number }
+  input_refs?: { checkin_id?: number; exercise_ids?: string[] }
+}
+
+export interface ExpertTask {
+  id: string
+  specialist: string
+  task_type: string
+  trigger_source: string
+  input_refs: Record<string, unknown>
+  status: string                   // pending/running/ready/failed/cancelled
+  retry_count: number
+  max_retries: number
+  insight_id: string | null
+  created_at: string
+  completed_at: string | null
+  error_code: string | null
+  error: string | null
+  events?: { event: string; detail: string | null; at: string }[]
+}
+
+export interface ExpertSettings {
+  proactive_enabled: boolean
+  min_interval_minutes: number
+}
+
+export interface ExpertSpecialistInfo {
+  specialist: string
+  label: string
+  domain: string
+  data_sources: string[]
+  tools: string[]
+  workbench: 'ready' | 'planned'
+  workbench_path: string | null
+  workbench_note?: string
+  active_insights: number
+}
+
+export interface ExpertOverview {
+  specialists: ExpertSpecialistInfo[]
+  orchestrator: { key: string; label: string; note: string }
+  shared_services: Record<string, { label: string; note: string }>
+  settings: ExpertSettings
+  pending_tasks: ExpertTask[]
+}
