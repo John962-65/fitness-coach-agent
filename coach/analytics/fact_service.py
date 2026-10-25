@@ -236,6 +236,17 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
         "date_gaps_max_days": gaps,
         "corrected_records": corrected,
     }
+    # P5-A：复杂组说明（逻辑组=1，容量=各执行段和；单侧左右分别执行）
+    methods = sorted({st.get("method") for s in sessions for st in s["sets"]
+                      if st.get("method") and st["method"] != "straight_set"})
+    if methods:
+        label = {"drop_set": "递减组", "rest_pause": "休息暂停组",
+                 "unilateral": "单侧训练"}.get(methods[0], methods[0])
+        quality["complex_methods"] = methods
+        quality.setdefault("notes", []).append(
+            f"含{label}等复杂组：工作组按逻辑组计数（每条记录=1 组），"
+            "容量按各执行段实际完成求和" + ("；单侧左右分别执行" if "unilateral" in methods else "")
+            + "，不按段重复计组数")
     if corrected:
         quality["notes"] = [f"含已纠错记录 {corrected} 条（按当前有效版本统计）"]
     if len(sessions) == 1:

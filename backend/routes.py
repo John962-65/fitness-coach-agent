@@ -1036,14 +1036,38 @@ def register_routes(app) -> None:
                     main = [s for s in logs if isinstance(s, dict) and not s.get("warmup")]
                     if main:
                         # M6.4-A：bodyweight_reps 的负荷 = 额外负重（自重不可比，不计入容量口径）
+                        # P5-A：复杂组代表段=段中容量最大段（主级字段从段派生）
                         def _load(s: dict):
-                            return s.get("added_weight_kg") if s.get("type") == "bodyweight_reps" \
+                            if s.get("method") in ("drop_set", "rest_pause",
+                                                   "unilateral")                                     and isinstance(s.get("segments"), list):
+                                t = s.get("type") or "weight_reps"
+                                best = max((seg for seg in s["segments"]
+                                            if seg.get("reps")),
+                                           key=lambda g: ((
+                                               (g.get("added_weight_kg") or 0)
+                                               if t == "bodyweight_reps"
+                                               else (g.get("weight_kg") or 0))
+                                               * g["reps"]), default=None)
+                                if best is None:
+                                    return None
+                                return (best.get("added_weight_kg")
+                                        if t == "bodyweight_reps"
+                                        else best.get("weight_kg"))
+                            return s.get("added_weight_kg") \
+                                if s.get("type") == "bodyweight_reps" \
                                 else s.get("weight_kg")
+
+                        def _reps_of(s: dict):
+                            if s.get("method") in ("drop_set", "rest_pause",
+                                                   "unilateral")                                     and isinstance(s.get("segments"), list):
+                                return sum(g.get("reps") or 0
+                                           for g in s["segments"])
+                            return s.get("reps")
                         best = max(main, key=lambda s: (
-                            (_load(s) or 0) * (s.get("reps") or 0), _load(s) or 0))
+                            (_load(s) or 0) * (_reps_of(s) or 0), _load(s) or 0))
                         ex["sets"] = len(main)
                         ex["weight_kg"] = _load(best)
-                        ex["reps"] = best.get("reps")
+                        ex["reps"] = _reps_of(best)
                         ex["rpe"] = best.get("rpe")
                     else:
                         ex.pop("weight_kg", None)

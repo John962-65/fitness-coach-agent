@@ -20,7 +20,13 @@ def set_volume(log: dict) -> int:
     """单组容量（kg）——全站唯一公式：
     weight_reps = 负重×次数；bodyweight_reps = 额外负重×次数（自重不可比，不计入）；
     assisted_reps / duration / distance_time 不产生 kg 容量。
+    P5-A：复杂组（method+segments）容量 = 各执行段按同公式求和——
+    一个逻辑组仍计一次（工作组数不按段重复），容量反映实际完成总量。
     """
+    segs = log.get("segments")
+    if log.get("method") in ("drop_set", "rest_pause", "unilateral")             and isinstance(segs, list) and segs:
+        return int(sum(_segment_volume(seg, log.get("type") or "weight_reps")
+                       for seg in segs))
     t = log.get("type") or "weight_reps"
     if t not in ("weight_reps", "bodyweight_reps"):
         return 0
@@ -31,12 +37,36 @@ def set_volume(log: dict) -> int:
     return int((w or 0) * r)
 
 
+def _segment_volume(seg: dict, t: str) -> int:
+    """执行段容量（与主组同公式；无有效次数的段计 0）。"""
+    r = seg.get("reps")
+    if not r:
+        return 0
+    if t == "bodyweight_reps":
+        return int((seg.get("added_weight_kg") or 0) * r)
+    if t == "weight_reps":
+        return int((seg.get("weight_kg") or 0) * r)
+    return 0
+
+
 def set_e1rm(log: dict, max_reps: int = E1RM_MAX_REPS):
     """单组估算 1RM——仅 weight_reps 类型在 1-12 次区间计算；
-    bodyweight/assisted/duration/distance 不适用该口径（返回 None）。"""
+    bodyweight/assisted/duration/distance 不适用该口径（返回 None）。
+    P5-A：复杂组取各段中最大的有效 e1RM（同口径）。"""
     t = log.get("type") or "weight_reps"
+    if t != "weight_reps":
+        return None
+    if log.get("method") in ("drop_set", "rest_pause", "unilateral")             and isinstance(log.get("segments"), list):
+        best = None
+        for seg in log["segments"]:
+            reps = seg.get("reps")
+            if isinstance(reps, int) and 1 <= reps <= max_reps                     and seg.get("weight_kg"):
+                score = e1rm(seg["weight_kg"], reps)
+                if score is not None and (best is None or score > best):
+                    best = score
+        return best
     reps = log.get("reps")
-    if t != "weight_reps" or not isinstance(reps, int) or not (1 <= reps <= max_reps):
+    if not isinstance(reps, int) or not (1 <= reps <= max_reps):
         return None
     return e1rm(log.get("weight_kg"), reps)
 
@@ -98,8 +128,12 @@ def _working_sets(set_logs: list) -> list[dict]:
     for log in set_logs:
         if not isinstance(log, dict) or log.get("warmup"):
             continue
-        out.append({
+        method = log.get("method")
+        segs = log.get("segments")             if method in ("drop_set", "rest_pause", "unilateral") else None
+        entry = {
             "type": log.get("type") or "weight_reps",
+            "method": method or "straight_set",
+            "segments": segs,
             "weight_kg": log.get("weight_kg"),
             "reps": log.get("reps"),
             "at": log.get("at"),
@@ -110,7 +144,19 @@ def _working_sets(set_logs: list) -> list[dict]:
             "added_weight_kg": log.get("added_weight_kg"),
             "assistance_kg": log.get("assistance_kg"),
             "rpe": log.get("rpe"),
-        })
+        }
+        if segs:
+            # 复杂组：主级字段=代表段（容量最大段）；总次数=各段和
+            # （reps_total 用它；best_set 取代表段；逻辑组仍计 1）
+            best_seg = max(segs, key=lambda g: _segment_volume(
+                g, log.get("type") or "weight_reps"), default=None)
+            entry["reps"] = sum(g.get("reps") or 0 for g in segs)
+            if best_seg:
+                if entry["type"] == "weight_reps":
+                    entry["weight_kg"] = best_seg.get("weight_kg")
+                elif entry["type"] == "bodyweight_reps":
+                    entry["added_weight_kg"] = best_seg.get("added_weight_kg")
+        out.append(entry)
     return out
 
 

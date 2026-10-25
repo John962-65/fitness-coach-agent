@@ -210,9 +210,22 @@ export default function Workout() {
   if (!entries) return <Spinner />
 
   const totalSets = entries.reduce((n, e) => n + e.logged.filter((l) => !l.warmup).length, 0)
+  // P5-A：复杂组容量=各执行段求和（与后端 exercise_metrics.set_volume 同公式）
+  const segVolume = (l: LoggedSet): number => {
+    const m = l as { method?: string; segments?: Record<string, number>[] }
+    if (m.method && m.method !== 'straight_set' && Array.isArray(m.segments)) {
+      const t = l.type || 'weight_reps'
+      return m.segments.reduce((acc, g) =>
+        acc + (t === 'weight_reps' ? (g.weight_kg || 0) : (g.added_weight_kg || 0))
+          * (g.reps || 0), 0)
+    }
+    return NaN
+  }
   const volume = entries.reduce((n, e) =>
     n + e.logged.filter((l) => !l.warmup)
       .reduce((m, l) => {
+        const sv = segVolume(l)
+        if (!Number.isNaN(sv)) return m + sv
         if (l.type === undefined || l.type === 'weight_reps')
           return m + (l.weight_kg || 0) * (l.reps || 0)
         if (l.type === 'bodyweight_reps') return m + (l.added_weight_kg || 0) * (l.reps || 0)
@@ -237,6 +250,8 @@ export default function Workout() {
         superset_group: e.supersetGroup || undefined,
         set_logs: e.logged.map((l) => ({
           type: l.type || 'weight_reps',
+          method: (l as { method?: string }).method,
+          segments: (l as { segments?: unknown[] }).segments,
           weight_kg: l.type === 'weight_reps' ? l.weight_kg : undefined,
           added_weight_kg: l.type === 'bodyweight_reps' ? l.added_weight_kg : undefined,
           assistance_kg: l.type === 'assisted_reps' ? l.assistance_kg : undefined,
@@ -510,20 +525,19 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
           )}
         </div>
       </div>
-      {isFree && (
-        <div className="flex items-center gap-1.5 px-4 pb-2.5" aria-label="超级组分组">
-          <span className="text-2xs text-muted">超级组</span>
-          {([null, 'A', 'B', 'C'] as const).map((g) => (
-            <button key={g ?? 'none'} onClick={() => setEntryGroup(idx, g ?? undefined)}
-                    className={`tag min-h-7 px-2 transition-colors ${
-                      (entry.supersetGroup ?? null) === g
-                        ? 'bg-night text-white'
-                        : 'border border-line bg-surface text-muted'}`}>
-              {g ?? '无'}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex items-center gap-1.5 px-4 pb-2.5" aria-label="超级组分组">
+        <span className="text-2xs text-muted">超级组</span>
+        {([null, 'A', 'B', 'C'] as const).map((g) => (
+          <button key={g ?? 'none'} onClick={() => setEntryGroup(idx, g ?? undefined)}
+                  className={`tag min-h-7 px-2 transition-colors ${
+                    (entry.supersetGroup ?? null) === g
+                      ? 'bg-night text-white'
+                      : 'border border-line bg-surface text-muted'}`}>
+            {g ?? '无'}
+          </button>
+        ))}
+      </div>
+      <SupersetBanner idx={idx} entry={entry} />
 
       {/* 已记录组 */}
       {entry.logged.length > 0 && (
@@ -537,6 +551,12 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
                 {i + 1}
               </span>
               {l.warmup && <span className="tag bg-amber-50 text-amber-700">热身</span>}
+              {(l as { method?: string }).method && (
+                <span className="tag bg-accent-soft text-accent-deep">
+                  {{ drop_set: '递减', rest_pause: '休息暂停', unilateral: '单侧' }[
+                    (l as { method?: string }).method as string] ?? ''}
+                </span>
+              )}
               <span className="ml-auto font-medium">{formatSetRecord(l)}</span>
               {'rpe' in l && l.rpe != null && <span className="text-xs text-muted">RPE {l.rpe}</span>}
               <Check size={14} className="text-accent-deep" />
@@ -559,7 +579,8 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
                canUndo={entry.logged.length > 0}
                rpeOpen={rpeOpen} setRpeOpen={setRpeOpen}
                suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined}
-               draftIdx={idx} initialDraft={drafts[idx]} />
+               draftIdx={idx} initialDraft={drafts[idx]}
+               lastLogged={entry.logged.filter((l) => !l.warmup).slice(-1)[0]} />
     </div>
   )
 }
@@ -567,7 +588,7 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
 /** 分型逐组快速输入（M6.4-A）：按动作 measurement 渲染对应输入控件与校验。
  *  M6.4-B B4.2：未提交输入镜像到 store（drafts），进教学页返回/刷新不丢。 */
 function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen, setRpeOpen,
-                   suggestWeight, suggestReps, draftIdx, initialDraft }: {
+                   suggestWeight, suggestReps, draftIdx, initialDraft, lastLogged }: {
   measurement: MeasurementType
   onDone: (s: LoggedSet) => void
   onUndo: () => void; canUndo: boolean
@@ -575,6 +596,7 @@ function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen
   suggestWeight?: number | null; suggestReps?: number
   draftIdx: number
   initialDraft?: import('../store').SetDraftValues
+  lastLogged?: LoggedSet
 }) {
   const setEntryDraft = useApp((s) => s.setEntryDraft)
   const [weight, setWeightRaw] = useState(initialDraft?.weight
@@ -608,8 +630,83 @@ function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen
   }
   const [formError, setFormError] = useState('')
   const n = parseTrainingNumber
+  // P5-A：组法（普通=缺省；递减/休息暂停/单侧 → 分段编辑）
+  const [method, setMethodRaw] = useState(initialDraft?.method ?? '')
+  const [segments, setSegmentsRaw] = useState<Record<string, string>[]>(
+    (() => {
+      try { return initialDraft?.segments ? JSON.parse(initialDraft.segments) as Record<string, string>[] : [] }
+      catch { return [] }
+    })())
+  const setMethod = (m: string) => {
+    setMethodRaw(m); mirror('method', m)
+    if (m === '') { setSegmentsRaw([]); mirror('segments', '') }
+    else if (segments.length === 0) {
+      const init: Record<string, string>[] = m === 'unilateral'
+        ? [{ side: 'left', weight: weight || String(suggestWeight ?? ''), reps: reps || '' },
+           { side: 'right', weight: weight || String(suggestWeight ?? ''), reps: '' }]
+        : [{ weight: weight || String(suggestWeight ?? ''), reps: reps || '', rest: '' },
+           ...(m === 'drop_set' ? [{ weight: '', reps: '', rest: '' }] : [])]
+      setSegmentsRaw(init); mirror('segments', JSON.stringify(init))
+    }
+    setFormError('')
+  }
+  const updateSeg = (i: number, key: string, v: string) => {
+    const next = segments.map((sg, j) => (j === i ? { ...sg, [key]: v } : sg))
+    setSegmentsRaw(next); mirror('segments', JSON.stringify(next)); setFormError('')
+  }
+  const addSeg = () => {
+    const blank: Record<string, string> = method === 'unilateral'
+      ? { side: segments.length === 0 ? 'left' : 'right', weight: weight || '', reps: '' }
+      : { weight: '', reps: '', rest: method === 'rest_pause' ? '20' : '' }
+    const next = [...segments, blank].slice(0, 6)
+    setSegmentsRaw(next); mirror('segments', JSON.stringify(next))
+  }
+  const removeSeg = (i: number) => {
+    const next = segments.filter((_, j) => j !== i)
+    setSegmentsRaw(next); mirror('segments', JSON.stringify(next))
+  }
+  // P5-A：一键复制上一组（数值回填；不自动提交——提交仍需用户按确认）
+  const copyLast = () => {
+    if (!lastLogged) return
+    const l = lastLogged
+    if (l.type === 'weight_reps') { setWeight(String(l.weight_kg)); setReps(String(l.reps)) }
+    else if (l.type === 'bodyweight_reps') { setReps(String(l.reps)); setAdded(String(l.added_weight_kg ?? '')) }
+    else if (l.type === 'assisted_reps') { setReps(String(l.reps)); setAssist(String(l.assistance_kg)) }
+    else if (l.type === 'duration') { setMinutes(String(Math.floor((l.duration_seconds || 0) / 60))); setSeconds(String((l.duration_seconds || 0) % 60)) }
+    else if (l.type === 'distance_time') { setDistance(String(l.distance_m)); setMinutes(String(Math.floor((l.duration_seconds || 0) / 60))); setSeconds(String((l.duration_seconds || 0) % 60)) }
+    if ('rpe' in l && l.rpe != null) setRpe(String(l.rpe))
+    setFormError('')
+  }
 
   const submit = () => {
+    // P5-A：复杂组提交——segments 合成（不经过主输入校验；本质量在执行段）
+    const at0 = new Date().toISOString()
+    if (method === 'drop_set' || method === 'rest_pause' || method === 'unilateral') {
+      const segs0 = segments.filter((sg) => n(sg.reps) !== undefined
+        && (method === 'unilateral'
+          ? (n(sg.weight) !== undefined || n(sg.added) !== undefined)
+          : n(sg.weight) !== undefined))
+      if (segs0.length < 2) {
+        setFormError('复杂组至少需要 2 个有效执行段'); return
+      }
+      const built0 = segs0.map((sg) => method === 'unilateral'
+        ? (measurement === 'bodyweight_reps'
+            ? { side: sg.side as 'left' | 'right', reps: n(sg.reps) as number,
+                ...(n(sg.added) != null ? { added_weight_kg: n(sg.added) } : {}) }
+            : { side: sg.side as 'left' | 'right', weight_kg: n(sg.weight) as number,
+                reps: n(sg.reps) as number })
+        : (measurement === 'bodyweight_reps'
+            ? { added_weight_kg: n(sg.added) ?? 0, reps: n(sg.reps) as number,
+                ...(n(sg.rest) != null ? { rest_seconds: n(sg.rest) } : {}) }
+            : { weight_kg: n(sg.weight) as number, reps: n(sg.reps) as number,
+                ...(n(sg.rest) != null ? { rest_seconds: n(sg.rest) } : {}) }))
+      onDone({ method: method as import('../types').SetMethod,
+               segments: built0, warmup, at: at0 } as LoggedSet)
+      setSegmentsRaw(segments.map((sg) => ({ ...sg, reps: '' })))
+      mirror('segments', JSON.stringify(segments.map((sg) => ({ ...sg, reps: '' }))))
+      setRpe(''); setWarmup(false)
+      return
+    }
     const draft = {
       type: measurement,
       weight: n(weight), reps: n(reps), added: n(added), assist: n(assist),
@@ -681,9 +778,79 @@ function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen
     </button>
   )
 
+  const methodChips = (measurement === 'weight_reps' || measurement === 'bodyweight_reps'
+    || measurement === 'assisted_reps') && (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="训练方法">
+      <span className="text-2xs text-muted">组法</span>
+      {([['', '普通'], ['drop_set', '递减'], ['rest_pause', '休息暂停'],
+         ['unilateral', '单侧']] as const).map(([m, label]) => (
+        <button key={m || 'straight'} onClick={() => setMethod(m)}
+                className={`tag min-h-7 px-2 transition-colors ${
+                  method === m ? 'bg-night text-white'
+                    : 'border border-line bg-surface text-muted'}`}
+                aria-pressed={method === m}>{label}</button>
+      ))}
+      {lastLogged && method === '' && (
+        <button onClick={copyLast}
+                className="tag min-h-7 border border-line bg-surface px-2 text-muted
+                           transition-colors hover:border-accent-deep/40 hover:text-ink">
+          复制上一组
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className="border-t border-line bg-canvas/60 px-4 pb-4 pt-3">
-      {measurement === 'weight_reps' && (
+      {methodChips}
+      {method !== '' && (
+        /* P5-A：分段编辑器（递减/休息暂停=负荷段；单侧=左右段） */
+        <div className="mb-2 space-y-1.5">
+          {segments.map((sg, i) => (
+            <div key={i} className="flex items-center gap-1.5 rounded-xl border border-line
+                                    bg-surface p-1.5">
+              {method === 'unilateral' ? (
+                <span className={`tag shrink-0 ${sg.side === 'left'
+                  ? 'bg-accent-soft text-accent-deep' : 'bg-ink/6 text-muted'}`}>
+                  {sg.side === 'left' ? '左' : '右'}
+                </span>
+              ) : (
+                <span className="shrink-0 px-1 text-2xs text-muted">段{i + 1}</span>
+              )}
+              {measurement !== 'bodyweight_reps' && (
+                <input className="input nums input-sm min-w-0 flex-1 text-center"
+                       placeholder="重量 kg" inputMode="decimal" value={sg.weight ?? ''}
+                       onChange={(e) => updateSeg(i, 'weight', e.target.value)}
+                       aria-label={`段${i + 1} 重量`} />
+              )}
+              {measurement === 'bodyweight_reps' && (
+                <input className="input nums input-sm min-w-0 flex-1 text-center"
+                       placeholder="附加 kg" inputMode="decimal" value={sg.added ?? ''}
+                       onChange={(e) => updateSeg(i, 'added', e.target.value)}
+                       aria-label={`段${i + 1} 附加重量`} />
+              )}
+              <input className="input nums input-sm min-w-0 flex-1 text-center"
+                     placeholder="次数" inputMode="numeric" value={sg.reps ?? ''}
+                     onChange={(e) => updateSeg(i, 'reps', e.target.value)}
+                     aria-label={`段${i + 1} 次数`} />
+              {method === 'rest_pause' && (
+                <input className="input nums input-sm w-16 shrink-0 text-center"
+                       placeholder="休息s" inputMode="numeric" value={sg.rest ?? ''}
+                       onChange={(e) => updateSeg(i, 'rest', e.target.value)}
+                       aria-label={`段${i + 1} 段间休息秒`} />
+              )}
+              <button className="shrink-0 px-1 text-2xs text-red-500"
+                      onClick={() => removeSeg(i)} aria-label={`删除段${i + 1}`}>删</button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button className="btn-plain flex-1 justify-center text-xs" onClick={addSeg}>
+              + 加一段
+            </button>
+          </div>
+        </div>
+      )}
+      {method === '' && measurement === 'weight_reps' && (
         <>
           <div className="flex items-center gap-2">
             {warmupChip}
@@ -716,7 +883,7 @@ function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen
           {rpeRow}{errRow}
         </>
       )}
-      {(measurement === 'bodyweight_reps' || measurement === 'assisted_reps') && (
+      {method === '' && (measurement === 'bodyweight_reps' || measurement === 'assisted_reps') && (
         <>
           <div className="flex items-center gap-2">
             {warmupChip}
@@ -797,6 +964,91 @@ function SetForm({ measurement = 'weight_reps', onDone, onUndo, canUndo, rpeOpen
           <Check size={17} strokeWidth={2.5} /> 完成本组
         </button>
       </div>
+    </div>
+  )
+}
+
+/** P5-A：超级组执行横幅——轮次推进提示、轮间/动作间休息、配置与解除。
+ *  状态派生自已记录组数（不编造完成记录）；轮次/休息配置存 session
+ *  （刷新恢复）。 */
+function SupersetBanner({ idx, entry }: { idx: number; entry: SessionEntry }) {
+  const session = useApp((s) => s.session)
+  const entries = session?.entries ?? []
+  const cfgMap = session?.supersetConfig || {}
+  const setSupersetConfig = useApp((s) => s.setSupersetConfig)
+  const setEntryGroup = useApp((s) => s.setEntryGroup)
+  const startRestAt = useApp((s) => s.startRest)
+  const [configOpen, setConfigOpen] = useState(false)
+  const group = entry.supersetGroup
+  if (!group) return null
+  const cfg = cfgMap[group] || { rounds: 0, restBetween: 30, restRounds: 90 }
+  const members = entries
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e.supersetGroup === group)
+  const doneBy = members.map(({ e }) => e.logged.filter((l) => !l.warmup).length)
+  // 自由训练可能无目标组数（0）——不参与 min，否则轮次永远停在 1
+  const target = Number(entry.target.sets) || 0
+  const minDone = target > 0
+    ? Math.min(...doneBy, target)
+    : Math.min(...doneBy)
+  const currentRound = Math.min(minDone + 1, cfg.rounds || minDone + 1)
+  // 下一动作 = 组内完成组数最少的第一个
+  const next = members
+    .filter(({ e }) => e.logged.filter((l) => !l.warmup).length
+      === Math.min(...doneBy))
+    [0]
+  const isNext = next?.i === idx
+  const roundJustDone = doneBy.every((d) => d >= minDone && d > 0)
+    && doneBy.every((d) => d === doneBy[0])
+  return (
+    <div className="mx-4 mb-2.5 rounded-xl border border-accent/30 bg-accent/5 p-2.5">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="tag bg-night text-white">超级组 {group}</span>
+        {cfg.rounds > 0 && (
+          <span className="nums text-muted">第 {Math.min(currentRound, cfg.rounds)}/{cfg.rounds} 轮</span>
+        )}
+        {isNext && next && (
+          <span className="font-medium text-accent-deep">← 本动作现在轮到</span>
+        )}
+        {!isNext && next && (
+          <span className="text-muted">下一动作：{next.e.replaced_with || next.e.name}</span>
+        )}
+        <button className="ml-auto text-2xs text-muted underline underline-offset-2"
+                onClick={() => setConfigOpen(!configOpen)}>
+          {configOpen ? '收起' : '轮次/休息'}
+        </button>
+        <button className="text-2xs text-red-500"
+                aria-label={`解除超级组${group}`}
+                onClick={() => setEntryGroup(idx, undefined)}>解除</button>
+      </div>
+      {configOpen && (
+        <div className="mt-2 space-y-1.5 border-t border-accent/20 pt-2 text-xs">
+          {[
+            ['rounds', '目标轮次', cfg.rounds],
+            ['restBetween', '动作间休息（秒）', cfg.restBetween],
+            ['restRounds', '轮间休息（秒）', cfg.restRounds],
+          ].map(([key, label, val]) => (
+            <label key={key as string} className="flex items-center justify-between gap-2">
+              <span className="text-muted">{label}</span>
+              <input type="number" min={0} max={600} value={val as number}
+                     aria-label={label as string}
+                     className="input nums input-sm w-20 text-center"
+                     onChange={(e) => setSupersetConfig(group, {
+                       [key as 'rounds' | 'restBetween' | 'restRounds']:
+                         Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+          ))}
+          <p className="text-2xs leading-relaxed text-faint">
+            提示只做组织辅助，不自动编造完成记录；跳过/补做/改顺序由你直接操作对应动作卡。
+          </p>
+        </div>
+      )}
+      {roundJustDone && cfg.rounds > 0 && currentRound <= cfg.rounds && (
+        <button className="btn-soft btn mt-2 w-full text-xs"
+                onClick={() => startRestAt()}>
+          第 {currentRound - 1} 轮完成 · 开始轮间休息 {cfg.restRounds}s
+        </button>
+      )}
     </div>
   )
 }

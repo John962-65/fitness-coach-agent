@@ -75,15 +75,29 @@ export interface Profile {
 export type MeasurementType =
   | 'weight_reps' | 'bodyweight_reps' | 'assisted_reps' | 'duration' | 'distance_time'
 
+// P5-A：训练方法（与测量类型正交——method 描述执行方法，type 描述测量口径）
+export type SetMethod = 'straight_set' | 'drop_set' | 'rest_pause' | 'unilateral'
+
+// 复杂组的执行段：递减/休息暂停 = 负荷段；单侧 = 左右侧段
+export type SetSegment =
+  | { weight_kg: number; reps: number; rest_seconds?: number }          // drop/rest-pause
+  | { side: 'left' | 'right'; weight_kg: number; reps: number }         // unilateral
+  | { side: 'left' | 'right'; reps: number; added_weight_kg?: number }  // unilateral 自重
+
 export type SetRecord =
-  | { type: 'weight_reps'; weight_kg: number; reps: number; rpe?: number }
-  | { type: 'bodyweight_reps'; reps: number; added_weight_kg?: number; rpe?: number }
-  | { type: 'assisted_reps'; reps: number; assistance_kg: number; rpe?: number }
+  | { type: 'weight_reps'; weight_kg: number; reps: number; rpe?: number
+      method?: SetMethod; segments?: SetSegment[] }
+  | { type: 'bodyweight_reps'; reps: number; added_weight_kg?: number; rpe?: number
+      method?: SetMethod; segments?: SetSegment[] }
+  | { type: 'assisted_reps'; reps: number; assistance_kg: number; rpe?: number
+      method?: SetMethod; segments?: SetSegment[] }
   | { type: 'duration'; duration_seconds: number }
   | { type: 'distance_time'; distance_m: number; duration_seconds: number; weight_kg?: number }
 
 export interface SetLog {
   type?: MeasurementType            // 缺省按 weight_reps（旧记录兼容）
+  method?: SetMethod                // P5-A：缺省 straight_set（旧记录兼容）
+  segments?: SetSegment[]           // 复杂组的执行段（method!=straight_set 时）
   weight_kg?: number | null
   reps?: number | null
   rpe?: number | null

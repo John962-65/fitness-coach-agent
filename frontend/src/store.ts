@@ -21,11 +21,21 @@ export interface SessionEntry {
   replace_exercise_id?: string // M6.3：临时替换后动作的稳定 ID（保存时随记录提交）
 }
 
-/** M6.4-B B4.2：逐组输入草稿（进教学页返回后不丢；随会话持久化） */
+/** M6.4-B B4.2：逐组输入草稿（进教学页返回后不丢；随会话持久化）。
+ *  P5-A：method/segments（JSON 字符串）随草稿镜像。 */
 export interface SetDraftValues {
   weight?: string; reps?: string; added?: string; assist?: string
   minutes?: string; seconds?: string; distance?: string; rpe?: string
   warmup?: boolean
+  method?: string; segments?: string
+}
+
+/** P5-A：超级组执行配置（按组标签 A/B/C；轮次状态派生自已记录组数，
+ *  刷新恢复=store 持久化天然带回）。 */
+export interface SupersetConfig {
+  rounds: number            // 目标轮次（默认=组内最少目标组数）
+  restBetween: number       // 动作间休息（秒）
+  restRounds: number        // 轮间休息（秒）
 }
 
 export interface WorkoutSession {
@@ -40,6 +50,7 @@ export interface WorkoutSession {
   planId?: number                  // 来源计划与版本（会话级溯源）
   planVersion?: number
   drafts?: Record<number, SetDraftValues>  // M6.4-B：entryIdx → 未提交输入
+  supersetConfig?: Record<string, SupersetConfig>  // P5-A：按组标签
 }
 
 export interface Settings {
@@ -85,6 +96,7 @@ interface AppState {
   removeLastSet: (entryIdx: number) => void
   replaceExercise: (entryIdx: number, newName: string, exerciseId?: string) => void
   setSessionNotes: (notes: string) => void
+  setSupersetConfig: (group: string, cfg: Partial<SupersetConfig>) => void
   /** M6.4-B B4.2：逐组输入草稿写入（教学页往返/刷新不丢） */
   setEntryDraft: (entryIdx: number, patch: Partial<SetDraftValues>) => void
   clearSession: () => void
@@ -197,6 +209,14 @@ export const useApp = create<AppState>()((set) => ({
     })),
   setSessionNotes: (notes) =>
     set((st) => (st.session ? { session: { ...st.session, notes } } : st)),
+  setSupersetConfig: (group, cfg) =>
+    set((st) => (st.session
+      ? { session: { ...st.session,
+          supersetConfig: { ...(st.session.supersetConfig || {}),
+            [group]: Object.assign(
+              { rounds: 3, restBetween: 30, restRounds: 90 },
+              (st.session.supersetConfig || {})[group] ?? {}, cfg) } } }
+      : st)),
   clearSession: () => set({ session: null }),
 
   restEndsAt: null,

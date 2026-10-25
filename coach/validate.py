@@ -136,6 +136,76 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                             s["reps"] = int(n)
                         if not isinstance(s.get("warmup"), bool):
                             s.pop("warmup", None)
+                        # P5-A：训练方法（与测量类型正交）——method/segments 校验
+                        t = s.get("type") or "weight_reps"
+                        method = s.get("method")
+                        if method is not None:
+                            if method not in ("straight_set", "drop_set",
+                                              "rest_pause", "unilateral"):
+                                warnings.append(
+                                    f"{ex['name']} 某组的训练方法 {method!r} 无法识别，按普通组记录")
+                                s.pop("method", None)
+                            elif method == "straight_set":
+                                s.pop("method", None)  # 普通组与旧记录同构，不留冗余字段
+                        method = s.get("method")
+                        if method in ("drop_set", "rest_pause", "unilateral"):
+                            segs = s.get("segments")
+                            clean_segs = []
+                            if isinstance(segs, list):
+                                for seg in segs[:6]:
+                                    if not isinstance(seg, dict):
+                                        continue
+                                    seg = dict(seg)
+                                    if method == "unilateral":
+                                        if seg.get("side") not in ("left", "right"):
+                                            continue
+                                        for f in ("weight_kg", "added_weight_kg"):
+                                            if seg.get(f) is not None:
+                                                n = _to_number(seg[f])
+                                                if n is None or n < 0:
+                                                    seg.pop(f, None)
+                                                else:
+                                                    seg[f] = n
+                                        n = _to_number(seg.get("reps"))
+                                        if n is None or n < 1 or not float(n).is_integer():
+                                            continue
+                                        seg["reps"] = int(n)
+                                        # 单侧段：weight_reps 必须有重量；自重可无
+                                        if t == "weight_reps" and not seg.get("weight_kg"):
+                                            continue
+                                    else:
+                                        for f in ("weight_kg", "added_weight_kg",
+                                                  "assistance_kg"):
+                                            if seg.get(f) is not None:
+                                                n = _to_number(seg[f])
+                                                if n is None or n < 0:
+                                                    seg.pop(f, None)
+                                                else:
+                                                    seg[f] = n
+                                        n = _to_number(seg.get("reps"))
+                                        if n is None or n < 1 or not float(n).is_integer():
+                                            continue
+                                        seg["reps"] = int(n)
+                                        if t == "weight_reps" and not seg.get("weight_kg"):
+                                            continue
+                                        rest = seg.get("rest_seconds")
+                                        if rest is not None:
+                                            n = _to_number(rest)
+                                            if n is None or n < 0:
+                                                seg.pop("rest_seconds", None)
+                                            else:
+                                                seg["rest_seconds"] = n
+                                    clean_segs.append(seg)
+                            if not clean_segs:
+                                warnings.append(
+                                    f"{ex['name']} 某组标记为 {method} 但没有有效执行段，"
+                                    "按普通组记录")
+                                s.pop("method", None)
+                                s.pop("segments", None)
+                            else:
+                                s["segments"] = clean_segs
+                        else:
+                            s.pop("segments", None)
                         if bad:
                             continue
                         # M6.4-A.1：按记录类型校验必填字段——缺本质量字段的组剔除，
@@ -151,7 +221,9 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                         if t == "assisted_reps" and not s.get("assistance_kg"):
                             warnings.append(f"{ex['name']} 某组辅助记录缺少辅助重量，该组剔除")
                             continue
-                        if t in ("weight_reps", "bodyweight_reps") and not s.get("reps"):
+                        # P5-A：复杂组（method+segments）的本质量在执行段，
+                        # 主级 weight/reps 只是代表值（可缺，由派生层填代表段）
+                        if t in ("weight_reps", "bodyweight_reps") and not s.get("reps")                                 and "method" not in s:
                             warnings.append(f"{ex['name']} 某组缺少次数，该组剔除")
                             continue
                         clean_logs.append(s)
