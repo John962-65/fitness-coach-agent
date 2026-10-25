@@ -1702,6 +1702,189 @@ def register_routes(app) -> None:
         from coach.recovery import recovery_analysis
         return recovery_analysis.pre_training_brief(db, uid)
 
+    # ---- P3 康复辅助：症状 / 限制 / 专业安排 / 安全视图 ----
+
+    @api.get("/users/{uid}/symptom-episodes")
+    def symptom_episodes(uid: str, request: Request, status: str | None = Query(None)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"episodes": db.list_symptom_episodes(uid, status)}
+
+    @api.get("/users/{uid}/symptom-episodes/{eid}")
+    def symptom_episode_detail(uid: str, eid: int, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        ep = db.get_symptom_episode(uid, eid)
+        if not ep:
+            raise HTTPException(status_code=404, detail={"error": "事件不存在"})
+        return {**ep, "observations": db.list_symptom_observations(uid, eid),
+                "region_label": __import__("coach.rehab.symptom_service",
+                                           fromlist=["REGION_LABELS"]).REGION_LABELS.get(
+                    ep["body_region"], ep["body_region"])}
+
+    @api.post("/users/{uid}/symptom-episodes")
+    def symptom_report(uid: str, request: Request, payload: dict = Body(...)):
+        """报告身体不适：保存 → 同步安全分流（即时返回，不依赖后台任务）→
+        按结果维护 triage_recommended 限制。"""
+        from coach.rehab import symptom_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            result = symptom_service.report_episode(
+                db, uid, payload.get("data") or payload,
+                submission_id=str(payload.get("submission_id") or "")[:64] or None)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return result
+
+    @api.post("/users/{uid}/symptom-episodes/{eid}/observations")
+    def symptom_observe(uid: str, eid: int, request: Request,
+                        payload: dict = Body(...)):
+        """追加观察（不覆盖历史；分流同步执行）。"""
+        from coach.rehab import symptom_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return symptom_service.add_observation(db, uid, eid,
+                                                   payload.get("data") or payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/symptom-episodes/{eid}/status")
+    def symptom_status(uid: str, eid: int, request: Request,
+                       payload: dict = Body(...)):
+        from coach.rehab import symptom_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return symptom_service.update_episode_status(
+                db, uid, eid, str(payload.get("status") or ""),
+                str(payload.get("reason") or ""), str(payload.get("evidence") or ""))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/rehab/triage-preview")
+    def rehab_triage_preview(payload: dict = Body(...)):
+        """分流预览（不落库；供记录页实时提示）。确定性规则，无需用户上下文。"""
+        from coach.rehab import triage_rules
+        return triage_rules.triage(
+            str(payload.get("description") or ""),
+            severity=payload.get("severity"),
+            functional_limitations=payload.get("functional_limitations"),
+            onset_at=payload.get("onset_at"),
+            professional_evaluated=bool(payload.get("professional_evaluated")))
+
+    @api.get("/users/{uid}/training-restrictions")
+    def restrictions_list(uid: str, request: Request,
+                          status: str | None = Query("active")):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"restrictions": db.list_restrictions(uid, status)}
+
+    @api.post("/users/{uid}/training-restrictions")
+    def restriction_create(uid: str, request: Request, payload: dict = Body(...)):
+        from coach.rehab import restriction_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return restriction_service.create_restriction(db, uid, payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/training-restrictions/{rid}/lift")
+    def restriction_lift(uid: str, rid: int, request: Request,
+                         payload: dict = Body(...)):
+        """解除限制：按来源类型校验依据（professional 必须附专业人员说明）。"""
+        from coach.rehab import restriction_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return restriction_service.lift_restriction(
+                db, uid, rid, int(payload.get("expected_revision", 0)),
+                str(payload.get("lift_evidence") or ""),
+                str(payload.get("reason") or ""))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.get("/users/{uid}/safety-view")
+    def safety_view_api(uid: str, request: Request):
+        from coach.rehab import safety_integration
+        db = request.app.state.db
+        profile = _user_profile(db, uid)
+        view = safety_integration.safety_view(db, uid)
+        return {"permission": {"status": view.permission_status,
+                               "reason": view.permission_reason,
+                               "allows_prescription": view.allows_prescription},
+                "plan_fenced": view.plan_fenced,
+                "fence_reason": view.fence_reason,
+                "active_restrictions": view.active_restrictions,
+                "summary_lines": view.summary_lines(),
+                "disclaimer": "多来源限制并存时全部生效（并集）；"
+                              "任何专家只能收紧不能解除"}
+
+    @api.get("/users/{uid}/care-plans")
+    def care_plans_list(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        plans = db.list_care_plans(uid)
+        out = []
+        for p in plans:
+            activities = db.list_care_activities(uid, p["id"])
+            out.append({**p, "activities": [
+                {**a, "logs": db.care_activity_logs(uid, a["id"], limit=14)}
+                for a in activities]})
+        return {"plans": out}
+
+    @api.post("/users/{uid}/care-plans")
+    def care_plan_create(uid: str, request: Request, payload: dict = Body(...)):
+        """录入专业人员提供的安排（来源说明必填；软件只记录不增强度）。"""
+        from coach.rehab import symptom_service as _ss
+        db = request.app.state.db
+        _user_profile(db, uid)
+        title = str(payload.get("title") or "").strip()
+        source = str(payload.get("professional_source") or "").strip()
+        if not title or not source:
+            raise HTTPException(status_code=422,
+                                detail={"error": "安排名称与专业人员来源说明必填"})
+        plan_id = db.create_care_plan(uid, {
+            "title": title[:80], "professional_source": source[:200],
+            "applicable_conditions": str(payload.get("applicable_conditions") or "")[:300]
+                                     or None,
+            "related_episode_id": payload.get("related_episode_id"),
+            "review_at": payload.get("review_at")})
+        for a in (payload.get("activities") or [])[:10]:
+            if isinstance(a, dict) and str(a.get("name") or "").strip():
+                db.add_care_activity(uid, plan_id, {
+                    "name": str(a["name"])[:80],
+                    "frequency": str(a.get("frequency") or "")[:80] or None,
+                    "notes": str(a.get("notes") or "")[:200] or None})
+        from coach.experts import task_dispatcher
+        try:
+            task_dispatcher.on_event(db, uid, "CareActivityRecorded",
+                                     {"care_plan_id": plan_id,
+                                      "symptoms_version": db.symptoms_version(uid)})
+        except Exception:  # noqa: BLE001
+            pass
+        return {"plan_id": plan_id}
+
+    @api.post("/users/{uid}/care-activities/{aid}/log")
+    def care_activity_log(uid: str, aid: int, request: Request,
+                          payload: dict = Body(...)):
+        import re as _re
+        db = request.app.state.db
+        _user_profile(db, uid)
+        date = str(payload.get("local_date") or "")
+        if not _re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise HTTPException(status_code=422,
+                                detail={"error": "local_date 需为 YYYY-MM-DD"})
+        log_id = db.log_care_activity(uid, aid, date,
+                                      bool(payload.get("completed")),
+                                      str(payload.get("feedback") or "")[:300] or None)
+        if log_id is None:
+            raise HTTPException(status_code=422,
+                                detail={"error": "该活动当天已有记录"})
+        return {"log_id": log_id}
+
     # ---- AI 教练对话 ----
 
     @api.post("/users/{uid}/chat")

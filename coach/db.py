@@ -438,6 +438,94 @@ CREATE TABLE IF NOT EXISTS record_submissions (
     created_at  TEXT NOT NULL,
     PRIMARY KEY (user_id, submission_id)
 );
+CREATE TABLE IF NOT EXISTS symptom_episodes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    body_region TEXT NOT NULL,          -- knee/shoulder/...（与限制区域同一映射表）
+    side        TEXT,                   -- left / right / bilateral / NULL
+    onset_at    TEXT NOT NULL,          -- 大致发生时间（日期或日期时间）
+    onset_context TEXT,                 -- 与某次运动相关 / 逐渐出现 / 外伤等（用户原话）
+    description TEXT NOT NULL,          -- 用户自述（首录原话）
+    related_checkin_id INTEGER,         -- 关联训练（可空）
+    professional_evaluated INTEGER NOT NULL DEFAULT 0,  -- 是否已接受专业评估
+    status      TEXT NOT NULL DEFAULT 'active',   -- active / resolved / monitoring
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_symptom_user ON symptom_episodes(user_id, status);
+CREATE TABLE IF NOT EXISTS symptom_observations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id  INTEGER NOT NULL,
+    user_id     TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    severity    INTEGER,                -- 1-10 自报程度（不单独推断损伤严重度）
+    symptom_description TEXT,
+    functional_limitations TEXT NOT NULL DEFAULT '[]',  -- JSON list（影响的活动）
+    user_notes  TEXT,
+    triage_result TEXT,                 -- JSON：本次观察的安全分流结果快照
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_symptom_obs_episode ON symptom_observations(episode_id);
+CREATE TABLE IF NOT EXISTS training_restrictions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    source_type TEXT NOT NULL,          -- user_reported / professional / triage_recommended
+    source_evidence TEXT NOT NULL,      -- 用户原话或专业人员说明（留痕）
+    affected_activities TEXT NOT NULL,  -- JSON：{regions:[], movements:[], notes}
+    restriction_description TEXT NOT NULL,
+    related_episode_id INTEGER,         -- 关联不适事件（可空）
+    effective_at TEXT NOT NULL,
+    review_at   TEXT,                   -- 复核时点
+    status      TEXT NOT NULL DEFAULT 'active',   -- active / lifted / expired
+    lift_evidence TEXT,                 -- 解除依据（professional 需专业人员说明）
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_restriction_user ON training_restrictions(user_id, status);
+CREATE TABLE IF NOT EXISTS training_restriction_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    restriction_id INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    old_data TEXT NOT NULL,
+    new_data TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(restriction_id, revision)
+);
+CREATE TABLE IF NOT EXISTS care_plans (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    professional_source TEXT NOT NULL,  -- 专业人员来源说明（用户录入）
+    applicable_conditions TEXT,
+    related_episode_id INTEGER,
+    review_at   TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',   -- active / completed / paused
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS care_activities (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id     INTEGER NOT NULL,
+    user_id     TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    frequency   TEXT,                   -- 用户录入的执行频率（软件不自行提高）
+    notes       TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS care_activity_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id INTEGER NOT NULL,
+    user_id     TEXT NOT NULL,
+    local_date  TEXT NOT NULL,
+    completed   INTEGER NOT NULL,       -- 是否执行
+    feedback    TEXT,                   -- 用户反馈（如疼痛变化）
+    created_at  TEXT NOT NULL,
+    UNIQUE(activity_id, local_date)
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -2246,3 +2334,249 @@ class Database:
             "DELETE FROM recovery_checkins WHERE user_id=? AND id=?", (user_id, rid))
         self.conn.commit()
         return cur.rowcount == 1
+
+    # ---- P3 康复辅助：症状事件 / 训练限制 / 专业安排 ----
+
+    def create_symptom_episode(self, user_id: str, ep: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO symptom_episodes(user_id, body_region, side, onset_at,"
+            " onset_context, description, related_checkin_id, professional_evaluated,"
+            " status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, ep["body_region"], ep.get("side"), ep["onset_at"],
+             ep.get("onset_context"), ep["description"],
+             ep.get("related_checkin_id"), int(ep.get("professional_evaluated") or 0),
+             "active", _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_symptom_episode(self, user_id: str, eid: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM symptom_episodes WHERE user_id=? AND id=?",
+            (user_id, eid)).fetchone()
+        return dict(row) if row else None
+
+    def list_symptom_episodes(self, user_id: str,
+                              status: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM symptom_episodes WHERE user_id=?"
+        params: list = [user_id]
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        return [dict(r) for r in self.conn.execute(
+            sql + " ORDER BY updated_at DESC", params).fetchall()]
+
+    def update_symptom_episode(self, user_id: str, eid: int, patch: dict) -> bool:
+        sets, params = ["updated_at=?"], [_now()]
+        for col in ("status", "professional_evaluated", "side", "onset_context"):
+            if col in patch:
+                sets.append(f"{col}=?")
+                params.append(patch[col])
+        params += [user_id, eid]
+        cur = self.conn.execute(
+            f"UPDATE symptom_episodes SET {', '.join(sets)} WHERE user_id=? AND id=?",
+            params)
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def add_symptom_observation(self, user_id: str, ep_id: int, obs: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO symptom_observations(episode_id, user_id, recorded_at,"
+            " severity, symptom_description, functional_limitations, user_notes,"
+            " triage_result, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (ep_id, user_id, obs.get("recorded_at") or _now(), obs.get("severity"),
+             obs.get("symptom_description"),
+             json.dumps(obs.get("functional_limitations") or [], ensure_ascii=False),
+             obs.get("user_notes"),
+             json.dumps(obs.get("triage_result") or {}, ensure_ascii=False),
+             _now(), _now()))
+        self.conn.execute(
+            "UPDATE symptom_episodes SET updated_at=? WHERE user_id=? AND id=?",
+            (_now(), user_id, ep_id))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_symptom_observation(self, user_id: str, obs_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM symptom_observations WHERE user_id=? AND id=?",
+            (user_id, obs_id)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        for key in ("functional_limitations", "triage_result"):
+            try:
+                d[key] = json.loads(d.get(key) or ("{}" if key == "triage_result" else "[]"))
+            except (ValueError, TypeError):
+                d[key] = {} if key == "triage_result" else []
+        return d
+
+    def list_symptom_observations(self, user_id: str, ep_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM symptom_observations WHERE user_id=? AND episode_id=?"
+            " ORDER BY id", (user_id, ep_id)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for key in ("functional_limitations", "triage_result"):
+                try:
+                    d[key] = json.loads(d.get(key) or
+                                        ("{}" if key == "triage_result" else "[]"))
+                except (ValueError, TypeError):
+                    d[key] = {} if key == "triage_result" else []
+            out.append(d)
+        return out
+
+    def symptoms_version(self, user_id: str) -> str:
+        """症状数据版本（漂移锚：任何事件/观察变化都会变化）。"""
+        row = self.conn.execute(
+            "SELECT (SELECT COUNT(*) FROM symptom_episodes WHERE user_id=?) AS eps,"
+            " (SELECT COUNT(*) FROM symptom_observations WHERE user_id=?) AS obs,"
+            " (SELECT COALESCE(MAX(updated_at),'') FROM symptom_episodes"
+            "  WHERE user_id=?) AS last",
+            (user_id, user_id, user_id)).fetchone()
+        return f"{row['eps']}:{row['obs']}:{row['last']}"
+
+    # ---- 训练限制 ----
+
+    def create_restriction(self, user_id: str, r: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO training_restrictions(user_id, source_type,"
+            " source_evidence, affected_activities, restriction_description,"
+            " related_episode_id, effective_at, review_at, status, created_at,"
+            " updated_at) VALUES(?,?,?,?,?,?,?,?, 'active', ?, ?)",
+            (user_id, r["source_type"], r["source_evidence"],
+             json.dumps(r.get("affected_activities") or {}, ensure_ascii=False),
+             r["restriction_description"], r.get("related_episode_id"),
+             r["effective_at"], r.get("review_at"), _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    @staticmethod
+    def _restriction_row(row) -> dict:
+        d = dict(row)
+        d["affected_activities"] = json.loads(d.get("affected_activities") or "{}")
+        rev = d.pop("_revision", None)
+        if rev is not None:
+            d["revision"] = rev
+        return d
+
+    def get_restriction(self, user_id: str, rid: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT r.*, (SELECT COUNT(*) FROM training_restriction_revisions x"
+            " WHERE x.restriction_id=r.id) AS _revision"
+            " FROM training_restrictions r WHERE r.user_id=? AND r.id=?",
+            (user_id, rid)).fetchone()
+        return self._restriction_row(row) if row else None
+
+    def list_restrictions(self, user_id: str,
+                          status: str | None = "active") -> list[dict]:
+        sql = ("SELECT r.*, (SELECT COUNT(*) FROM training_restriction_revisions x"
+               " WHERE x.restriction_id=r.id) AS _revision"
+               " FROM training_restrictions r WHERE r.user_id=?")
+        params: list = [user_id]
+        if status:
+            sql += " AND r.status=?"
+            params.append(status)
+        return [self._restriction_row(r) for r in self.conn.execute(
+            sql + " ORDER BY effective_at DESC", params).fetchall()]
+
+    def revise_restriction(self, user_id: str, rid: int, expected_revision: int,
+                           patch: dict, reason: str, evidence: str) -> dict:
+        """限制修订（状态/描述/复核时间）；解除走这里并必须附依据。"""
+        current = self.get_restriction(user_id, rid)
+        if not current:
+            raise ValueError("限制不存在")
+        if current["revision"] != expected_revision:
+            raise ValueError("限制已被更新，请先重新读取")
+        fields = ("status", "restriction_description", "review_at", "lift_evidence")
+        new = {k: current.get(k) for k in fields}
+        for k, v in patch.items():
+            if k in fields:
+                new[k] = v
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO training_restriction_revisions(user_id,"
+                " restriction_id, revision, old_data, new_data, reason, evidence,"
+                " created_at) VALUES(?,?,?,?,?,?,?,?)",
+                (user_id, rid, expected_revision + 1,
+                 json.dumps(current, ensure_ascii=False, default=str),
+                 json.dumps(new, ensure_ascii=False), reason, evidence, _now()))
+            self.conn.execute(
+                "UPDATE training_restrictions SET status=?,"
+                " restriction_description=?, review_at=?, lift_evidence=?,"
+                " updated_at=? WHERE user_id=? AND id=?",
+                (new["status"], new["restriction_description"], new["review_at"],
+                 new["lift_evidence"], _now(), user_id, rid))
+        return self.get_restriction(user_id, rid)
+
+    def restrictions_version(self, user_id: str) -> str:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at),'') AS last,"
+            " COALESCE(SUM((SELECT COUNT(*) FROM training_restriction_revisions x"
+            " WHERE x.restriction_id=training_restrictions.id)),0) AS revs"
+            " FROM training_restrictions WHERE user_id=?", (user_id,)).fetchone()
+        return f"{row['n']}:{row['last']}:{row['revs']}"
+
+    # ---- 专业安排（CarePlan） ----
+
+    def create_care_plan(self, user_id: str, p: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO care_plans(user_id, title, professional_source,"
+            " applicable_conditions, related_episode_id, review_at, status,"
+            " created_at, updated_at) VALUES(?,?,?,?,?,?, 'active', ?, ?)",
+            (user_id, p["title"], p["professional_source"],
+             p.get("applicable_conditions"), p.get("related_episode_id"),
+             p.get("review_at"), _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_care_plans(self, user_id: str) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM care_plans WHERE user_id=? ORDER BY id DESC",
+            (user_id,)).fetchall()]
+
+    def get_care_plan(self, user_id: str, plan_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM care_plans WHERE user_id=? AND id=?",
+            (user_id, plan_id)).fetchone()
+        return dict(row) if row else None
+
+    def update_care_plan_status(self, user_id: str, plan_id: int, status: str) -> bool:
+        if status not in ("active", "completed", "paused"):
+            raise ValueError("status 必须是 active/completed/paused")
+        cur = self.conn.execute(
+            "UPDATE care_plans SET status=?, updated_at=? WHERE user_id=? AND id=?",
+            (status, _now(), user_id, plan_id))
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def add_care_activity(self, user_id: str, plan_id: int, a: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO care_activities(plan_id, user_id, name, frequency,"
+            " notes, created_at) VALUES(?,?,?,?,?,?)",
+            (plan_id, user_id, a["name"], a.get("frequency"), a.get("notes"),
+             _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_care_activities(self, user_id: str, plan_id: int) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM care_activities WHERE user_id=? AND plan_id=? ORDER BY id",
+            (user_id, plan_id)).fetchall()]
+
+    def log_care_activity(self, user_id: str, activity_id: int, local_date: str,
+                          completed: bool, feedback: str | None) -> int | None:
+        try:
+            cur = self.conn.execute(
+                "INSERT INTO care_activity_logs(activity_id, user_id, local_date,"
+                " completed, feedback, created_at) VALUES(?,?,?,?,?,?)",
+                (activity_id, user_id, local_date, int(completed), feedback, _now()))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+    def care_activity_logs(self, user_id: str, activity_id: int,
+                           limit: int = 30) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM care_activity_logs WHERE user_id=? AND activity_id=?"
+            " ORDER BY local_date DESC LIMIT ?", (user_id, activity_id, limit)).fetchall()]

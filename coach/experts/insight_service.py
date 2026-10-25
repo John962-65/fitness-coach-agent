@@ -69,6 +69,13 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if str(current) != str(stored):
             return (f"{local_date} 的恢复记录已变化，该分析基于旧数据，"
                     "请重新分析")
+    if "symptoms" in rev or "restrictions" in rev:
+        from ..rehab import symptom_service, restriction_service
+        if "symptoms" in rev                 and str(symptom_service.symptoms_version(db, user_id)) != str(rev["symptoms"]):
+            return "症状记录已变化，该分析基于旧数据，请重新分析"
+        if "restrictions" in rev and str(
+                restriction_service.restrictions_version(db, user_id)) != str(rev["restrictions"]):
+            return "训练限制已变化，该分析基于旧数据，请重新分析"
     for mid, stored in (rev.get("body") or {}).items():
         row = db.conn.execute(
             "SELECT (SELECT COUNT(*) FROM body_measurement_revisions r"

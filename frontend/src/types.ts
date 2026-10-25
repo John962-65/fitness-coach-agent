@@ -703,3 +703,76 @@ export interface RecoveryBrief {
   plan_today: string | null
   note: string
 }
+
+// ---- P3 康复辅助（后端 coach/rehab/） ----
+
+export interface TriageResult {
+  action: 'urgent_evaluation' | 'professional_evaluation' | 'uncertain'
+          | 'general_information'
+  matched_rules: { rule_id: string; hits: string[]; action: string }[]
+  message: string
+  restriction_hint: string | null
+  rules_version: string
+  review_status: string
+  disclaimer: string
+}
+
+export interface SymptomObservation {
+  id: number
+  episode_id: number
+  recorded_at: string
+  severity: number | null
+  symptom_description: string | null
+  functional_limitations: string[]
+  user_notes: string | null
+  triage_result: TriageResult | null
+}
+
+export interface SymptomEpisode {
+  id: number
+  body_region: string
+  region_label?: string
+  side: string | null
+  onset_at: string
+  onset_context: string | null
+  description: string
+  related_checkin_id: number | null
+  professional_evaluated: number | boolean
+  status: string
+  updated_at: string
+  observations?: SymptomObservation[]
+}
+
+export interface TrainingRestriction {
+  id: number
+  source_type: 'user_reported' | 'professional' | 'triage_recommended'
+  source_evidence: string
+  affected_activities: { regions: string[]; movements: string[]; notes?: string }
+  restriction_description: string
+  related_episode_id: number | null
+  effective_at: string
+  review_at: string | null
+  status: string
+  lift_evidence: string | null
+  revision: number
+}
+
+export interface CareActivity {
+  id: number
+  name: string
+  frequency: string | null
+  notes: string | null
+  logs: { id: number; local_date: string; completed: number
+          feedback: string | null }[]
+}
+
+export interface CarePlan {
+  id: number
+  title: string
+  professional_source: string
+  applicable_conditions: string | null
+  related_episode_id: number | null
+  review_at: string | null
+  status: string
+  activities: CareActivity[]
+}

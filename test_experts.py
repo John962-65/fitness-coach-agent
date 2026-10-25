@@ -433,8 +433,8 @@ def test_overview_lists_registry_and_settings(client):
     assert labels["training_science"]["workbench"] == "ready"
     assert labels["nutrition"]["workbench"] == "ready"          # P1 已上线
     assert labels["recovery"]["workbench"] == "ready"           # P2 已上线
-    assert labels["rehabilitation"]["workbench"] == "planned"   # P3 待建
-    assert labels["movement"]["workbench"] == "planned"         # P4 待建
+    assert labels["rehabilitation"]["workbench"] == "ready"        # P3 已上线
+    assert labels["movement"]["workbench"] == "planned"           # P4 待建
     assert body["settings"]["proactive_enabled"] is True
     # 关闭主动分析
     resp = c.post("/api/users/u1/experts/settings",

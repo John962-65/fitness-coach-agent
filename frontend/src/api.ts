@@ -5,9 +5,10 @@ import type {
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
   NutritionTrendDay, PlanOp,
-  BodyMeasurement, BodySummary, BodyTrend, PlanResponse, PlanRevision,
+  BodyMeasurement, BodySummary, BodyTrend, CarePlan, PlanResponse, PlanRevision,
   PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief, RecoveryCheckin,
-  RecoverySummary, TodayBrief, TrainingCalendar, TrainingTemplate, Trial,
+  RecoverySummary, SymptomEpisode, TodayBrief, TriageResult,
+  TrainingCalendar, TrainingTemplate, TrainingRestriction, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -340,4 +341,33 @@ export const api = {
     req<RecoverySummary>(`/users/${uid}/recovery-summary?days=${days}`),
   recoveryBrief: (uid: string) =>
     req<RecoveryBrief>(`/users/${uid}/pre-training-recovery-brief`),
+
+  // ---- P3 康复辅助 ----
+  symptomEpisodes: (uid: string, status?: string) =>
+    req<{ episodes: SymptomEpisode[] }>(
+      `/users/${uid}/symptom-episodes${status ? `?status=${status}` : ''}`),
+  symptomEpisode: (uid: string, eid: number) =>
+    req<SymptomEpisode & { observations: SymptomEpisode['observations'] }>(
+      `/users/${uid}/symptom-episodes/${eid}`),
+  reportSymptom: (uid: string, data: Record<string, unknown>, submissionId?: string) =>
+    post<{ episode_id: number; triage: TriageResult; restriction_id: number | null }>(
+      `/users/${uid}/symptom-episodes`,
+      { data, ...(submissionId ? { submission_id: submissionId } : {}) }),
+  observeSymptom: (uid: string, eid: number, data: Record<string, unknown>) =>
+    post<{ observation_id: number; triage: TriageResult }>(
+      `/users/${uid}/symptom-episodes/${eid}/observations`, { data }),
+  triagePreview: (data: Record<string, unknown>) =>
+    post<TriageResult>('/rehab/triage-preview', data),
+  restrictions: (uid: string, status?: string) =>
+    req<{ restrictions: TrainingRestriction[] }>(
+      `/users/${uid}/training-restrictions${status ? `?status=${status}` : ''}`),
+  liftRestriction: (uid: string, rid: number, payload: {
+    expected_revision: number; lift_evidence: string; reason?: string }) =>
+    post<TrainingRestriction>(`/users/${uid}/training-restrictions/${rid}/lift`, payload),
+  carePlans: (uid: string) => req<{ plans: CarePlan[] }>(`/users/${uid}/care-plans`),
+  createCarePlan: (uid: string, payload: Record<string, unknown>) =>
+    post<{ plan_id: number }>(`/users/${uid}/care-plans`, payload),
+  logCareActivity: (uid: string, aid: number, payload: {
+    local_date: string; completed: boolean; feedback?: string }) =>
+    post<{ log_id: number }>(`/users/${uid}/care-activities/${aid}/log`, payload),
 }

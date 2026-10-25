@@ -129,6 +129,16 @@ def _validate_plan(db, user_id, profile, operations, base,
                 errors.append(
                     f"动作「{library.get(ex_id)['name']}」对 {joint} 压力高"
                     f"（≥{INJURY_STRESS_THRESHOLD}），而档案记录该部位有伤，拒绝加入计划")
+    # P3：训练限制（TrainingRestriction）服务端强制校验——任何来源的
+    # 限制（用户报告/专业人员/安全分流）都不因专家未提示而失效
+    from .rehab.safety_integration import validate_plan_change
+    from . import exercise_service as _ex_svc
+    added_docs = []
+    for ex_id in _added_exercise_ids(operations, resolver):
+        doc = _ex_svc.get_exercise(db, user_id, ex_id)
+        if doc:
+            added_docs.append(doc)
+    errors.extend(validate_plan_change(db, user_id, added_docs))
     if errors:
         raise ProposalRejected(errors)
 

@@ -8,10 +8,9 @@
   系统尚未建设（P1-P4），只保留咨询入口，不伪造分析能力；
 - triggers → task_types：本领域订阅的业务事件与对应分析类型。
 
-P0 实装：training_science 的 post-workout-review；P1 实装：nutrition 的
-daily-nutrition-review；P2 实装：recovery 的 recovery-review（三者均为
-确定性，复用 fact_service / 确定性营养计算 / 确定性恢复指标）。
-其余触发源在枚举中登记，待对应领域数据系统落地后接线。
+P0-P3 实装：training_science / nutrition / recovery / rehabilitation 四个
+工作台的分析器均为确定性（fact_service / 确定性营养计算 / 确定性恢复指标 /
+确定性安全分流规则）。movement 触发源待 P4 接线。
 """
 from __future__ import annotations
 
@@ -26,6 +25,7 @@ TASK_TYPES: dict[str, str] = {
     "post-workout-review": "coach.experts.training_science.analyze_post_workout",
     "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
     "recovery-review": "coach.recovery.recovery_analysis.analyze_recovery",
+    "symptom-review": "coach.rehab.analysis.analyze_symptom_review",
 }
 
 SPECIALISTS: dict[str, dict] = {
@@ -66,12 +66,17 @@ SPECIALISTS: dict[str, dict] = {
     },
     "rehabilitation": {
         "label": "康复与伤痛风险顾问",
-        "domain": "症状记录、训练限制、风险提示",
-        "data_sources": ["医疗安全门（档案伤病与许可）"],
-        "tools": ["训练许可判定（medical.training_permission）"],
-        "workbench": "planned",   # P3
-        "workbench_note": "身体不适记录与训练限制管理将在康复辅助阶段提供",
-        "triggers": {"SymptomReported": []},
+        "domain": "症状记录、安全分流、训练限制、专业安排跟踪",
+        "data_sources": ["症状事件与观察（你的自述）", "训练限制（多来源）",
+                         "医疗安全门（档案伤病与许可）", "专业安排（你录入的）"],
+        "tools": ["确定性安全分流规则（版本可审计）",
+                  "统一安全视图（多来源限制取并集）"],
+        "workbench": "ready",
+        "workbench_path": "/experts/rehabilitation",
+        "triggers": {"SymptomReported": ["symptom-review"],
+                     "SymptomUpdated": ["symptom-review"],
+                     "RestrictionChanged": ["symptom-review"],
+                     "UserRequested": ["symptom-review"]},
     },
     "movement": {
         "label": "动作技术顾问",
