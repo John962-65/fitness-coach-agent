@@ -219,9 +219,19 @@ def test_glb_animation_name_matches_manifest():
             f"{ex_id}: 清单动画名 {d['animation_name']} ∉ GLB {names}"
 
 
-# ---- 4. GLB 有效性（Khronos gltf-validator；无 node 则跳过）----
+# ---- 4. GLB 有效性（Khronos gltf-validator + three 生产路径冒烟）----
+# 依赖 node + frontend/node_modules（gltf-validator、three 装在前端 devDeps）。
+# CI 的后端 job 无前端依赖 → 跳过；前端 job 由 ci.yml 直接运行校验脚本覆盖。
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node 不可用")
+def _glb_toolchain_ready() -> bool:
+    if shutil.which("node") is None:
+        return False
+    nm = ROOT / "frontend" / "node_modules"
+    return (nm / "gltf-validator").is_dir() and (nm / "three" / "build").is_dir()
+
+
+@pytest.mark.skipif(not _glb_toolchain_ready(),
+                    reason="node/前端依赖不可用（CI 前端 job 覆盖 GLB 校验）")
 def test_glb_validator_zero_errors():
     files = sorted(EXPORTS.glob("*.glb"))
     assert files, "无导出 GLB"
@@ -232,7 +242,8 @@ def test_glb_validator_zero_errors():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node 不可用")
+@pytest.mark.skipif(not _glb_toolchain_ready(),
+                    reason="node/前端依赖不可用（CI 前端 job 覆盖 GLB 冒烟）")
 def test_glb_threejs_smoke():
     for f in sorted(EXPORTS.glob("*.glb")):
         r = subprocess.run(

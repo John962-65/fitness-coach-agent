@@ -21,6 +21,13 @@ jobs:
       - run: npm ci
       - run: npm run build   # 含 tsc --noEmit 类型检查
       - run: npm test
+      - name: GLB 校验与 three.js 冒烟（M6.4-B 三维资产）
+        working-directory: .
+        run: |
+          node tools/validate_glb.mjs assets/exercise_3d/exports/*.glb
+          for f in assets/exercise_3d/exports/*.glb; do
+            node tools/smoke_glb.mjs "$f"
+          done
 
   backend:
     runs-on: ubuntu-latest
