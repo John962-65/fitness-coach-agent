@@ -181,6 +181,25 @@ class LLMClient:
                 if "finish_onboarding" in names:
                     return {"content": "好的，请告诉我你的年龄、身高、体重？", "tool_calls": []}
 
+            # M6.5：数据问题 → 训练事实/单动作进度（FAKE 场景，评测与 E2E 用）。
+            # 触发条件收窄到"进度/整体状态"意图，避免抢专业咨询与提案路由。
+            if "get_exercise_progress" in names and re.search(
+                    r"进步|退步|趋势|提升了?吗|表现如何|表现怎么样", last_user):
+                hit = next((w for w in ("卧推", "深蹲", "硬拉", "划船", "推举",
+                                        "引体", "平板支撑") if w in last_user), None)
+                if hit:
+                    ex = {"卧推": "barbell_bench_press",
+                          "深蹲": "barbell_back_squat", "硬拉": "deadlift",
+                          "划船": "barbell_row", "推举": "overhead_press",
+                          "引体": "chin_up",
+                          "平板支撑": "plank"}[hit]
+                    return self._call("get_exercise_progress",
+                                      {"exercise_id": ex})
+            if "get_training_facts" in names and re.search(
+                    r"练得怎么样|最近练得|训练完成得|整体训练|最近训练怎么样",
+                    last_user):
+                return self._call("get_training_facts", {"window_days": 30})
+
             # 知识加载
             if "load_knowledge" in names and any(
                 kw in last_user
@@ -224,6 +243,20 @@ class LLMClient:
             tool_texts = [m.get("content") for m in messages[last_user_idx + 1:]
                           if m.get("role") == "tool"]
             joined = "\n".join(str(t) for t in tool_texts)
+            # M6.5：把工具返回的真实数值带进回复（供数值可追溯性评测）。
+            # 注意用 fact_service 独有的 "fact_id" 判定——专家建议 JSON 也含
+            # "facts" 字段，不能据此误判。
+            if '"verdict"' in joined or '"fact_id"' in joined:
+                values = re.findall(
+                    r'"(?:best_e1rm|value|second_half_median)"\s*:\s*'
+                    r'([0-9]+(?:\.[0-9]+)?)', joined)[:6]
+                verdict = re.search(r'"verdict"\s*:\s*"([a-z]+)"', joined)
+                part = (f"趋势判定：{verdict.group(1)}。" if verdict else "")
+                if values:
+                    part += "记录到的数值：" + "、".join(values) + "。"
+                return {"content": "[FAKE_LLM] 已读取训练数据。" + part
+                        + "数值均来自训练事实工具（可追溯到打卡记录）。",
+                        "tool_calls": []}
             if '"consulted"' in joined:
                 labels = []
                 for m in re.findall(r'"label":\s*"([^"]+)"', joined):

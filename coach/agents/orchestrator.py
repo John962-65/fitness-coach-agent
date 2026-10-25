@@ -44,7 +44,8 @@ def route_question(question: str) -> list[str]:
 
 
 def _context_for(db, user_id: str, question: str) -> str:
-    """给专家的用户上下文：档案摘要 + 简短复盘。控制长度，避免专家提示过载。"""
+    """给专家的用户上下文：档案摘要 + 简短复盘 + 训练事实摘要（M6.5）。
+    控制长度，避免专家提示过载。"""
     try:
         profile = db.get_existing_profile(user_id) or {}
         summary = profile_summary(profile)
@@ -56,7 +57,31 @@ def _context_for(db, user_id: str, question: str) -> str:
         review = review[:600]
     except Exception:
         review = ""
-    return f"{summary}\n{review}"
+    context = f"{summary}\n{review}"
+    # M6.5-3：训练科学/恢复类问题附带结构化训练事实（可追溯，专家引用须基于此）
+    keys = route_question(question)
+    if "training_science" in keys or "recovery" in keys:
+        try:
+            from ..analytics.fact_service import get_training_facts
+            facts = get_training_facts(db, user_id, 30)
+            lines = []
+            for f in facts["facts"]:
+                if f["metric"] in ("sessions", "working_sets", "volume",
+                                   "training_days", "plan-adherence",
+                                   "best-estimated-1rm", "max-reps",
+                                   "longest-set", "farthest-distance",
+                                   "min-assistance-kg", "rpe-average"):
+                    ex = f.get("exercise_id") or "全站"
+                    val = f["value"] if f["value"] is not None else "不足"
+                    lines.append(f"- {ex}·{f['metric']}={val}{f['unit']}"
+                                 f"（{f['status']}）")
+            if lines:
+                context += ("\n\n# 训练事实（fact_service，30 天窗口；status:"
+                            "observed=记录/estimated=估算/insufficient=数据不足）\n"
+                            + "\n".join(lines[:18]))
+        except Exception:
+            pass
+    return context
 
 
 def combine(advices: list[dict]) -> dict:

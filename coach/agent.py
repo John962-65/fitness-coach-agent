@@ -281,6 +281,79 @@ GET_PLAN_TOOL = {
     },
 }
 
+# ---- M6.5：只读训练事实工具（按需获取，不整段注入历史）----
+GET_TRAINING_FACTS_TOOL = {
+    "type": "function", "function": {
+        "name": "get_training_facts",
+        "description": (
+            "获取结构化训练事实（带来源/口径/数据质量/状态）。用户问\u201c最近练得怎么样\u201d"
+            "或需要整体训练数据时调用。每条事实含 metric/value/unit/measurement_type/"
+            "window/source_ids/calculation/data_quality/status(observed|estimated|"
+            "insufficient)。规则：引用数值必须来自本工具返回；status=insufficient 的"
+            "事实如实说数据不足；estimated（如 e1RM）必须说明是估算值；无记录的动作"
+            "不得编造成绩。"),
+        "parameters": {"type": "object", "properties": {
+            "window_days": {"type": "integer", "description": "统计窗口天数，默认 30"},
+            "exercise_ids": {"type": "array", "items": {"type": "string"},
+                              "description": "可选：限定动作的稳定 ID 列表"},
+        }},
+    },
+}
+
+GET_EXERCISE_PROGRESS_TOOL = {
+    "type": "function", "function": {
+        "name": "get_exercise_progress",
+        "description": (
+            "查单个动作的进度：结构化事实 + 逐次训练序列 + 趋势判定"
+            "（improving/stable/declining/insufficient，附证据与限制）。"
+            "用户问\u201c某动作有没有进步\u201d时调用。不同记录类型的进步指标不同"
+            "（自重看次数/额外负重、辅助看辅助重量、时长看持续时间），系统已按类型"
+            "选择可比指标；趋势是前后半窗口中位数比较，短期波动不等于平台期。"),
+        "parameters": {"type": "object", "properties": {
+            "exercise_id": {"type": "string", "description": "动作稳定 ID"},
+            "window_days": {"type": "integer", "description": "默认 60 天"},
+        }, "required": ["exercise_id"]},
+    },
+}
+
+GET_TRAINING_HISTORY_TOOL = {
+    "type": "function", "function": {
+        "name": "get_training_history",
+        "description": (
+            "最近的训练会话列表（日期/模式（计划|自由|模板）/动作与工作组数摘要）。"
+            "需要看用户实际练了什么、什么时候练的时候调用；不要凭记忆复述历史。"),
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer", "description": "默认 10，上限 20"},
+        }},
+    },
+}
+
+GET_TRIAL_EVIDENCE_TOOL = {
+    "type": "function", "function": {
+        "name": "get_trial_evidence",
+        "description": (
+            "查看个人尝试的证据：基线快照、尝试期间训练事实、趋势与执行情况"
+            "（计划完成率/训练缺口）。讨论某次尝试的效果或到复盘时点时调用。"
+            "执行不完全时如实说明归因受限，不宣称\u201c调整已被证实有效\u201d。"),
+        "parameters": {"type": "object", "properties": {
+            "trial_id": {"type": "integer", "description": "缺省=当前 active 尝试"},
+        }},
+    },
+}
+
+REVIEW_PERSONAL_TRIAL_TOOL = {
+    "type": "function", "function": {
+        "name": "review_personal_trial",
+        "description": (
+            "生成个人尝试的复盘草稿（已观察结果/可能解释/无法确认的原因三节，"
+            "附完整证据）。草稿只呈现事实与不确定性；保留(keep)/调整(adjust)/"
+            "放弃(stop)由用户决定，用户明确表态后再调用 end_personal_trial。"),
+        "parameters": {"type": "object", "properties": {
+            "trial_id": {"type": "integer", "description": "缺省=当前 active 尝试"},
+        }},
+    },
+}
+
 GET_REVIEW_TOOL = {
     "type": "function",
     "function": {
@@ -624,6 +697,15 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 6. 档案中有待跟进的安全记录时，自然地询问近况；**必须等用户明确确认**
    （已就医无恙/症状消失）后才调用 resolve_pain_flag，且只关闭与用户结论
    对应的那一条（传 flag_id）——用户没确认就不关，一次也不许多关
+7a. 数据纪律（M6.5）：回答任何涉及用户训练数据的问题前，先调用对应工具取数——
+    问"某动作有没有进步"→ get_exercise_progress；问"最近练得怎么样"→
+    get_training_facts（再按需查具体动作）；问"要不要改计划/训练方式"→
+    get_training_facts + get_plan，再 consult_specialists；讨论个人尝试效果 →
+    get_trial_evidence / review_personal_trial。引用的每个数值都必须来自工具返回
+    （fact 的 source_ids 可追溯），区分：用户原话/数据库记录/确定性计算/估算指标
+    （e1RM 等要说明是估算）/知识依据/你的推断——不得把推断说成数据；无记录就说
+    没有记录，不编造个人成绩；非负重-次数类动作不引用 e1RM；用户不想改时如实
+    保持现状，不为出方案而硬找改动点
 7. 用户问进度/复盘/练得怎么样时调用 get_review；问"计划要不要调整/怎么调"时**必须**
    调用 get_adjustment_suggestions——注入的近期动态只是提示，不能代替规则引擎；
    即使打卡数据很少也要先调用，让规则引擎基于现有数据给候选，
@@ -1130,6 +1212,11 @@ class CoachAgent:
                 RECORD_KNOWLEDGE_DISCUSSION_TOOL,
                 CLOSE_KNOWLEDGE_DISCUSSION_TOOL,
                 GET_PRE_TRAINING_BRIEF_TOOL,
+                GET_TRAINING_FACTS_TOOL,
+                GET_EXERCISE_PROGRESS_TOOL,
+                GET_TRAINING_HISTORY_TOOL,
+                GET_TRIAL_EVIDENCE_TOOL,
+                REVIEW_PERSONAL_TRIAL_TOOL,
                 START_PERSONAL_TRIAL_TOOL,
                 END_PERSONAL_TRIAL_TOOL,
                 CONSULT_SPECIALISTS_TOOL,
@@ -1664,6 +1751,97 @@ class CoachAgent:
                             + "。旧动作安排暂不提供；先确认重排并复核隔离原因。")
             return text
 
+        if name == "get_training_facts":
+            from .analytics.fact_service import get_training_facts as _facts
+            window = args.get("window_days")
+            window = 30 if not isinstance(window, int) or isinstance(window, bool) \
+                else max(1, min(window, 400))
+            ex_ids = args.get("exercise_ids")
+            result = _facts(self.db, self.user_id, window,
+                            exercise_ids=ex_ids if isinstance(ex_ids, list) else None)
+            # 结果随消息落库，AI 引用必须可追溯到 source_ids
+            return json.dumps(result, ensure_ascii=False)
+
+        if name == "get_exercise_progress":
+            from .analytics.fact_service import exercise_progress as _prog
+            from .analytics.progress_analysis import analyze_progress
+            ex_id = str(args.get("exercise_id") or "")
+            window = args.get("window_days")
+            window = 60 if not isinstance(window, int) or isinstance(window, bool) \
+                else max(1, min(window, 400))
+            result = _prog(self.db, self.user_id, ex_id, window)
+            if result.get("error"):
+                return result["error"]
+            result["progress"] = analyze_progress(
+                result.get("series") or [], result.get("measurement_type") or "weight_reps")
+            return json.dumps(result, ensure_ascii=False)
+
+        if name == "get_training_history":
+            limit = max(1, min(int(args.get("limit", 10) or 10), 20))
+            rows = self.db.list_checkins(self.user_id, limit)
+            out = []
+            for r in rows:
+                if r.get("type") != "training":
+                    continue
+                data = r.get("data") or {}
+                meta = data.get("session_meta") if isinstance(
+                    data.get("session_meta"), dict) else {}
+                exercises = [
+                    {"name": ex.get("name"), "exercise_id": ex.get("exercise_id"),
+                     "working_sets": sum(
+                         1 for l in (ex.get("set_logs") or [])
+                         if isinstance(l, dict) and not l.get("warmup"))}
+                    for ex in (data.get("exercises") or [])
+                    if isinstance(ex, dict)]
+                out.append({
+                    "checkin_id": r.get("id"), "revision": r.get("revision"),
+                    "date": (meta.get("local_date") or str(r.get("at", ""))[:10]),
+                    "mode": meta.get("mode") or "legacy",
+                    "day": meta.get("day"),
+                    "template_id": meta.get("template_id"),
+                    "plan_id": meta.get("plan_id"),
+                    "exercises": exercises,
+                })
+            return json.dumps({"sessions": out}, ensure_ascii=False)
+
+        if name == "get_trial_evidence":
+            from .analytics.trial_evidence import trial_evidence
+            trials = self.db.personal_trials(self.user_id, limit=10)
+            tid = args.get("trial_id")
+            trial = None
+            if isinstance(tid, int):
+                trial = next((t for t in trials if t.get("id") == tid), None)
+                if not trial:
+                    return f"没有找到尝试 #{tid}。"
+            else:
+                trial = next((t for t in trials if t.get("status") == "active"), None)
+                if not trial:
+                    return ("当前没有进行中的个人尝试。"
+                            "（历史：" + "、".join(
+                                f"#{t['id']} {t['change_desc']}({t['status']})"
+                                for t in trials) + "）")
+            return json.dumps(trial_evidence(self.db, self.user_id, trial),
+                              ensure_ascii=False)
+
+        if name == "review_personal_trial":
+            from .analytics.trial_evidence import review_draft
+            trials = self.db.personal_trials(self.user_id, limit=10)
+            tid = args.get("trial_id")
+            trial = None
+            if isinstance(tid, int):
+                trial = next((t for t in trials if t.get("id") == tid), None)
+                if not trial:
+                    return f"没有找到尝试 #{tid}。"
+            else:
+                trial = next((t for t in trials if t.get("status") == "active"), None)
+                if not trial:
+                    return "当前没有进行中的个人尝试可复盘。"
+            draft = review_draft(self.db, self.user_id, trial)
+            self.db.add_message(
+                self.user_id, "assistant",
+                "[复盘草稿] " + json.dumps(draft["sections"], ensure_ascii=False))
+            return json.dumps(draft, ensure_ascii=False)
+
         if name == "get_review":
             plan = self._enforce_medical_permission()
             return review_context_text(self.db, self.user_id, plan)
@@ -2027,9 +2205,11 @@ class CoachAgent:
             if _TRIAL_OPT_OUT.search(latest_user) or not _TRIAL_OPT_IN.search(latest_user):
                 return "尚无用户明确同意开始这项个人尝试的发言，未保存；先与用户约定。"
             try:
+                from .analytics.trial_evidence import snapshot_baseline
+                baseline = snapshot_baseline(self.db, self.user_id, observe)
                 trial_id = self.db.start_personal_trial(
                     self.user_id, change, reason, observe, stop_rule,
-                    args.get("review_days"))
+                    args.get("review_days"), baseline=baseline)
             except ValueError as e:
                 return str(e)
             self._refresh_system_prompt()

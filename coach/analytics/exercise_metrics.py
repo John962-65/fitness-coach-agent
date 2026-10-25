@@ -109,6 +109,7 @@ def _working_sets(set_logs: list) -> list[dict]:
             "distance_m": log.get("distance_m"),
             "added_weight_kg": log.get("added_weight_kg"),
             "assistance_kg": log.get("assistance_kg"),
+            "rpe": log.get("rpe"),
         })
     return out
 
@@ -116,7 +117,9 @@ def _working_sets(set_logs: list) -> list[dict]:
 def _iter_user_training(db, user_id: str):
     """按时间倒序产出 (row, data)。坏行跳过。"""
     rows = db.conn.execute(
-        "SELECT id, data, created_at FROM checkins WHERE user_id=? AND type='training'"
+        "SELECT id, data, created_at,"
+        " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=checkins.id)"
+        " AS revision FROM checkins WHERE user_id=? AND type='training'"
         " ORDER BY created_at DESC, id DESC", (user_id,)).fetchall()
     for row in rows:
         try:
@@ -164,6 +167,7 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
             dist_sets = [s for s in working if s["type"] == "distance_time" and s["distance_m"]]
             sessions.append({
                 "checkin_id": row["id"],
+                "revision": row["revision"],
                 "date": session_local_date(row["created_at"], data),
                 "working_sets": len(working),
                 "reps_total": sum(s["reps"] or 0 for s in working),
