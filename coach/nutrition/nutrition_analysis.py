@@ -52,7 +52,12 @@ def _confidence(meal_types: list[str], complete_mark: bool,
 
 
 def analyze_daily_nutrition(db, user_id: str, input_refs: dict) -> dict:
-    """某日饮食回顾（确定性）。input_refs: {"local_date": "YYYY-MM-DD"}"""
+    """某日饮食回顾（确定性）。input_refs: {"local_date": "YYYY-MM-DD"}
+
+    P2 联动：有体重测量时附加「体重趋势 × 饮食目标」观察——只做相关
+    陈述并严格标注局限，不做因果归因；饮食记录不完整时不得声称实际
+    摄入不足。
+    """
     local_date = str(input_refs.get("local_date") or "")
     try:
         _date.fromisoformat(local_date)
@@ -68,6 +73,28 @@ def analyze_daily_nutrition(db, user_id: str, input_refs: dict) -> dict:
     history_days = len({m["local_date"] for m in history})
     complete_mark = summary["complete_mark"]
     meal_types = summary["meal_types_recorded"]
+
+    # P2：体重上下文（最近 30 天体重趋势，确定性）
+    from ..body import body_metrics, measurement_service
+    from ..body.trend_service import trend_for
+    body_measurements = db.list_body_measurements(user_id, limit=100)
+    body_facts: list[dict] = []
+    body_revision: dict[str, str] = {}
+    weight_note = None
+    if body_measurements:
+        for m in body_measurements:
+            body_revision[str(m["id"])] = str(m.get("revision") or 0)
+        weight_trend = trend_for(db, user_id, "weight_kg", 30)
+        summary_body = body_metrics.summarize(body_measurements, window_days=30)
+        body_facts = [f for f in summary_body["facts"]
+                      if f["metric"].startswith("weight")]
+        if weight_trend["change"]:
+            ch = weight_trend["change"]
+            weight_note = (f"近 30 天体重 {ch['first']:g}kg（{ch['first_date'][5:]}）"
+                           f"→ {ch['last']:g}kg（{ch['last_date'][5:]}），"
+                           f"变化 {ch['delta']:+g}kg（{ch['points']} 次记录）")
+        else:
+            weight_note = "体重仅 1 次记录，无趋势可判"
 
     window = {"start": local_date, "end": local_date, "days": 1}
     srcs = [f"meal:{m['id']}" for m in meals]
@@ -131,6 +158,30 @@ def analyze_daily_nutrition(db, user_id: str, input_refs: dict) -> dict:
         "fact_ids": [], "source_ids": srcs,
         "evidence": "context"})
 
+    # ---- P2 联动：体重趋势 × 饮食目标（相关观察，非因果） ----
+    if body_facts and weight_note:
+        body_srcs = sorted({s for f in body_facts for s in f["source_ids"]})
+        consistency = ""
+        goal_dir = (targets.get("preferences") or {}).get("weight_direction") \
+            if isinstance(targets.get("preferences"), dict) else None
+        change_fact = next((f for f in body_facts if f["metric"] == "weight_kg-change"), None)
+        if change_fact and targets.get("energy_kcal"):
+            delta = change_fact["data_quality"]
+            consistency = ("；目标方向未在营养偏好中设置，仅呈现变化本身"
+                           if not goal_dir else
+                           f"；你在偏好中记录的方向为「{goal_dir}」，可自行对照")
+        findings.append({
+            "finding_id": "f-weight-context", "kind": "weight-context",
+            "text": (f"体重参考（身体模块数据）：{weight_note}"
+                     + (consistency if consistency else
+                        "；与饮食目标的一致性需更长周期的完整记录才能讨论"))
+                     + ("。注意：这是相关观察——不能据此断言当前摄入导致体重变化"
+                        if not complete_mark else
+                        "。注意：即使记录完整，体重变化也是多因素结果，"
+                        "不能断言由当前摄入单一导致"),
+            "fact_ids": [f["fact_id"] for f in body_facts],
+            "source_ids": body_srcs})
+
     # ---- 方案（确定性规则；完整才给方向，不完整只建议补记录） ----
     options = [{
         "option_id": "keep-observing", "title": "维持当前记录习惯，继续观察",
@@ -187,13 +238,19 @@ def analyze_daily_nutrition(db, user_id: str, input_refs: dict) -> dict:
     if missing:
         limitations.append(f"部分条目营养素未知：{'、'.join(missing)}（保留缺失，未按 0 计）")
     if not complete_mark:
-        limitations.append("当天未标记记录完整，不做全天摄入充分性判断")
+        limitations.append("当天未标记记录完整，不做全天摄入充分性判断，"
+                           "也不声称实际摄入不足或充足")
     if not (targets.get("energy_kcal") or targets.get("protein_g")):
         limitations.append("未设置营养目标，未做目标比较（可在营养目标页设置）")
+    if body_facts:
+        limitations.append("体重为不同来源的测量记录，短期波动受水分等多因素影响，"
+                           "不作为摄入是否「正确」的判据")
     limitations.append("本分析不构成医疗饮食处方；疾病治疗/临床营养需求请咨询专业人员")
 
     src_revision = {"meals": {local_date: day_version(db, user_id, local_date)},
                     "targets_updated_at": targets.get("updated_at")}
+    if body_revision:
+        src_revision["body"] = body_revision
     title = f"饮食回顾 · {local_date}"
     summary_text = (f"已记录 {totals['energy_kcal']:g} kcal、蛋白质 {totals['protein_g']:g}g"
                     f"（{len(meal_types)} 个餐次"
@@ -207,8 +264,11 @@ def analyze_daily_nutrition(db, user_id: str, input_refs: dict) -> dict:
         "summary": summary_text,
         "findings": findings,
         "evidence_refs": sorted({fid for f in findings for fid in f["fact_ids"]}),
-        "facts_snapshot": {"window": window, "facts": facts,
-                           "caliber": "nutrient_calculator 快照求和；未知项保留缺失"},
+        "facts_snapshot": {"window": window,
+                           "facts": facts + body_facts,
+                           "caliber": "nutrient_calculator 快照求和；未知项保留缺失"
+                                      + ("；体重事实来自身体测量模块（同源口径）"
+                                         if body_facts else "")},
         "knowledge_refs": [],
         "options": options,
         "limitations": limitations,

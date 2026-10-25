@@ -579,3 +579,127 @@ export interface Recipe {
   items: MealItem[]
   updated_at: string
 }
+
+// ---- P2 身体数据与恢复管理（后端 coach/body + coach/recovery） ----
+
+export interface BodyMeasurement {
+  id: number
+  user_id: string
+  measured_at: string
+  local_date: string
+  timezone: string | null
+  weight_kg: number | null
+  waist_cm: number | null
+  hip_cm: number | null
+  chest_cm: number | null
+  body_fat_percent: number | null
+  muscle_mass_kg: number | null
+  measurement_method: string | null
+  device_source: string | null
+  notes: string | null
+  migrated_from: string | null
+  revision: number
+  created_at: string
+  updated_at: string
+}
+
+export type BodyMetricKey =
+  | 'weight_kg' | 'waist_cm' | 'hip_cm' | 'chest_cm'
+  | 'body_fat_percent' | 'muscle_mass_kg'
+
+export interface BodyFact {
+  fact_id: string
+  metric: string
+  value: number | null
+  unit: string
+  measurement_type: string
+  window: Record<string, unknown>
+  source_ids: string[]
+  calculation: string
+  data_quality: Record<string, unknown>
+  status: string
+  note?: string
+  method?: string | null
+  device_source?: string | null
+}
+
+export interface BodySummary {
+  window: { start: string; end: string; days: number; label: string }
+  measurement_days: number
+  latest: Record<string, { value: number; measured_at: string; source_id: string
+                           method: string | null; device_source: string | null }>
+  facts: BodyFact[]
+  observations: string[]
+  limitations: string[]
+  total_records: number
+}
+
+export interface BodyTrend {
+  metric: BodyMetricKey
+  label: string
+  unit: string
+  days_window: number | null
+  points: { date: string; value: number }[]
+  change: { first: number; last: number; delta: number; first_date: string
+            last_date: string; span_days: number | null; points: number } | null
+  note: string
+}
+
+export interface RecoveryCheckin {
+  id: number
+  user_id: string
+  local_date: string
+  recorded_at: string
+  timezone: string | null
+  sleep_hours: number | null
+  sleep_quality: number | null
+  fatigue: number | null
+  muscle_soreness: number | null
+  training_readiness: number | null
+  soreness_regions: string[]
+  notes: string | null
+  revision: number
+  updated_at: string
+}
+
+export interface RecoveryFact {
+  fact_id: string
+  metric: string
+  value: number | null
+  unit: string
+  measurement_type: string    // recovery / session（负荷上下文）
+  window: Record<string, unknown>
+  source_ids: string[]
+  calculation: string
+  data_quality: Record<string, unknown>
+  status: string
+  note?: string
+}
+
+export interface RecoverySummary {
+  window: { start: string; end: string; days: number }
+  records_count: number
+  records: (Pick<RecoveryCheckin, 'id' | 'local_date' | 'revision' |
+    'sleep_hours' | 'sleep_quality' | 'fatigue' | 'muscle_soreness' |
+    'training_readiness' | 'soreness_regions' | 'notes'>)[]
+  facts: RecoveryFact[]
+  observations: string[]
+  data_quality: Record<string, string>
+  limitations: string[]
+}
+
+export interface RecoveryBrief {
+  user_id: string
+  stance: 'restricted' | 'caution' | 'clear'
+  headline: string
+  observations: string[]
+  signals: string[]
+  restrictions: string[]
+  options: { option_id: string; title: string }[]
+  latest_recovery: { local_date: string; sleep_hours: number | null
+    sleep_quality: number | null; fatigue: number | null
+    muscle_soreness: number | null; training_readiness: number | null } | null
+  training_load_7d: { metric: string; value: number; unit: string }[]
+  plan_today: string | null
+  note: string
+}

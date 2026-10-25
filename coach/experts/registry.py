@@ -9,8 +9,9 @@
 - triggers → task_types：本领域订阅的业务事件与对应分析类型。
 
 P0 实装：training_science 的 post-workout-review；P1 实装：nutrition 的
-daily-nutrition-review（两者均为确定性，复用 fact_service / 确定性营养计算）。
-其余触发源（RecoveryRecorded 等）在枚举中登记，待对应领域数据系统落地后接线。
+daily-nutrition-review；P2 实装：recovery 的 recovery-review（三者均为
+确定性，复用 fact_service / 确定性营养计算 / 确定性恢复指标）。
+其余触发源在枚举中登记，待对应领域数据系统落地后接线。
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ TRIGGERS = ("WorkoutSaved", "MealRecorded", "RecoveryRecorded",
 TASK_TYPES: dict[str, str] = {
     "post-workout-review": "coach.experts.training_science.analyze_post_workout",
     "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
+    "recovery-review": "coach.recovery.recovery_analysis.analyze_recovery",
 }
 
 SPECIALISTS: dict[str, dict] = {
@@ -46,16 +48,21 @@ SPECIALISTS: dict[str, dict] = {
         "workbench": "ready",
         "workbench_path": "/experts/nutrition",
         "triggers": {"MealRecorded": ["daily-nutrition-review"],
+                     "BodyMeasurementRecorded": ["daily-nutrition-review"],
                      "UserRequested": ["daily-nutrition-review"]},
     },
     "recovery": {
         "label": "恢复顾问",
         "domain": "睡眠、疲劳、恢复状态",
-        "data_sources": [],
-        "tools": [],
-        "workbench": "planned",   # P2
-        "workbench_note": "恢复打卡（睡眠/疲劳/酸痛）将在身体与恢复管理阶段提供",
-        "triggers": {"RecoveryRecorded": []},
+        "data_sources": ["恢复打卡（睡眠/疲劳/酸痛，自报 1-5）",
+                         "训练事实（同源口径的负荷上下文）"],
+        "tools": ["确定性恢复指标（窗口均值/高分计数/区域汇总）",
+                  "训练前简报（确定性）"],
+        "workbench": "ready",
+        "workbench_path": "/experts/recovery",
+        "triggers": {"RecoveryRecorded": ["recovery-review"],
+                     "WorkoutSaved": ["recovery-review"],
+                     "UserRequested": ["recovery-review"]},
     },
     "rehabilitation": {
         "label": "康复与伤痛风险顾问",

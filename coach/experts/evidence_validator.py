@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import re
 
-_SRC_PATTERN = re.compile(r"^(checkin|meal):(\d+)(?::revision:(\d+))?$")
+_SRC_PATTERN = re.compile(r"^(checkin|meal|body|recovery):(\d+)(?::revision:(\d+))?$")
 
 
 def _source_exists(db, user_id: str, kind: str, ref_id: int) -> bool:
-    table = "checkins" if kind == "checkin" else "meal_entries"
+    table = {"checkin": "checkins", "meal": "meal_entries",
+             "body": "body_measurements",
+             "recovery": "recovery_checkins"}[kind]
     row = db.conn.execute(
         f"SELECT 1 FROM {table} WHERE user_id=? AND id=?", (user_id, ref_id)
     ).fetchone()

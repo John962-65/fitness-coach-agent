@@ -63,6 +63,23 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if str(current) != str(stored_version):
             return (f"{local_date} 的饮食记录已变化，该分析基于旧数据，"
                     "请重新分析")
+    for local_date, stored in (rev.get("recovery") or {}).items():
+        from ..recovery.checkin_service import version as recovery_version
+        current = recovery_version(db, user_id, local_date)
+        if str(current) != str(stored):
+            return (f"{local_date} 的恢复记录已变化，该分析基于旧数据，"
+                    "请重新分析")
+    for mid, stored in (rev.get("body") or {}).items():
+        row = db.conn.execute(
+            "SELECT (SELECT COUNT(*) FROM body_measurement_revisions r"
+            " WHERE r.measurement_id=m.id) AS rev"
+            " FROM body_measurements m WHERE m.user_id=? AND m.id=?",
+            (user_id, int(mid))).fetchone()
+        if not row:
+            return f"引用的身体测量 #{mid} 已不存在"
+        if str(row["rev"]) != str(stored):
+            return (f"引用的身体测量 #{mid} 已被修订，分析基于旧数据，"
+                    "请重新分析")
     targets_at = rev.get("targets_updated_at")
     if targets_at:
         targets = db.get_nutrition_targets(user_id)

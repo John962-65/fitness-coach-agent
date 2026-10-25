@@ -1574,6 +1574,134 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=404, detail={"error": str(e)}) from None
         return {"deleted": recipe_id}
 
+    # ---- P2 身体数据与恢复管理 ----
+
+    @api.get("/users/{uid}/body-measurements")
+    def body_measurements_list(uid: str, request: Request,
+                               start: str = "", end: str = "",
+                               limit: int = Query(200, ge=1, le=1000)):
+        import re as _re
+        if (start and not _re.match(r"^\d{4}-\d{2}-\d{2}$", start)) \
+                or (end and not _re.match(r"^\d{4}-\d{2}-\d{2}$", end)):
+            raise HTTPException(status_code=422,
+                                detail={"error": "start/end 需为 YYYY-MM-DD"})
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"measurements": db.list_body_measurements(uid, start or None,
+                                                          end or None, limit)}
+
+    @api.post("/users/{uid}/body-measurements")
+    def body_measurements_add(uid: str, request: Request, payload: dict = Body(...)):
+        """新增测量（指标全部可选但至少一项；幂等 submission_id 可选）。"""
+        from coach.body import measurement_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            result = measurement_service.record_measurement(
+                db, uid, payload.get("data") or payload,
+                submission_id=str(payload.get("submission_id") or "")[:64] or None)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        measurement = db.get_body_measurement(uid, result["measurement_id"])
+        return {**result, "measurement": measurement}
+
+    @api.patch("/users/{uid}/body-measurements/{mid}")
+    def body_measurement_update(uid: str, mid: int, request: Request,
+                                payload: dict = Body(...)):
+        """编辑测量 = 修订（保留原值；纠错需 reason+evidence）。"""
+        from coach.body import measurement_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            updated = measurement_service.update_measurement(
+                db, uid, mid, int(payload.get("expected_revision", 0)),
+                payload.get("data") or {}, str(payload.get("reason") or ""),
+                str(payload.get("evidence") or ""))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return updated
+
+    @api.delete("/users/{uid}/body-measurements/{mid}")
+    def body_measurement_delete(uid: str, mid: int, request: Request):
+        from coach.body import measurement_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            measurement_service.delete_measurement(db, uid, mid)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"deleted": mid}
+
+    @api.get("/users/{uid}/body-measurements/{mid}/revisions")
+    def body_measurement_revisions(uid: str, mid: int, request: Request):
+        _user_profile(request.app.state.db, uid)
+        return {"revisions": request.app.state.db.body_measurement_revisions(uid, mid)}
+
+    @api.get("/users/{uid}/body-summary")
+    def body_summary(uid: str, request: Request, days: int = Query(30, ge=1, le=3650)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.body import body_metrics
+        measurements = db.list_body_measurements(uid)
+        return body_metrics.summarize(measurements, window_days=days)
+
+    @api.get("/users/{uid}/body-trend")
+    def body_trend(uid: str, request: Request, metric: str = "weight_kg",
+                   days: int = Query(0, ge=0, le=3650)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.body import trend_service
+        try:
+            return trend_service.trend_for(db, uid, metric, days or None)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.get("/users/{uid}/recovery-checkins")
+    def recovery_list(uid: str, request: Request,
+                      days: int = Query(90, ge=1, le=365)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"checkins": db.list_recovery_checkins(uid, days)}
+
+    @api.post("/users/{uid}/recovery-checkins")
+    def recovery_record(uid: str, request: Request, payload: dict = Body(...)):
+        """记录/更新当天恢复（当天一条；更新需 reason+evidence 走修订）。"""
+        from coach.recovery import checkin_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return checkin_service.record_checkin(
+                db, uid, payload.get("data") or payload,
+                submission_id=str(payload.get("submission_id") or "")[:64] or None)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.delete("/users/{uid}/recovery-checkins/{rid}")
+    def recovery_delete(uid: str, rid: int, request: Request):
+        from coach.recovery import checkin_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            checkin_service.delete_checkin(db, uid, rid)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"deleted": rid}
+
+    @api.get("/users/{uid}/recovery-summary")
+    def recovery_summary(uid: str, request: Request,
+                         days: int = Query(14, ge=1, le=90)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.recovery import recovery_metrics
+        return recovery_metrics.recovery_snapshot(db, uid, window_days=days)
+
+    @api.get("/users/{uid}/pre-training-recovery-brief")
+    def recovery_brief(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.recovery import recovery_analysis
+        return recovery_analysis.pre_training_brief(db, uid)
+
     # ---- AI 教练对话 ----
 
     @api.post("/users/{uid}/chat")

@@ -24,7 +24,7 @@
 |---|---|---|---|
 | P0 | 专家工作台 + ExpertInsight + 任务调度 | ✅ 已交付（2026-10-25） | [p0-expert-platform.md](p0-expert-platform.md) |
 | P1 | 食物库 + 饮食记录 + 营养顾问 | ✅ 已交付（2026-10-25） | [p1-nutrition.md](p1-nutrition.md) |
-| P2 | 身体与恢复管理 | ⬜ 未开始 | — |
+| P2 | 身体与恢复管理 | ✅ 已交付（2026-10-25） | [p2-body-recovery.md](p2-body-recovery.md) |
 | P3 | 康复辅助及风险管理 | ⬜ 未开始 | — |
 | P4 | 动作技术工作台 | ⬜ 未开始 | — |
 | P5 | 进阶训练功能（组法/有氧/器械） | ⬜ 未开始 | — |
@@ -35,7 +35,8 @@
 
 一级导航：**今日｜训练｜饮食｜专家｜我的**
 
-P1 已完成完整五栏。旧路径 `/coach`、`/explore` 保留重定向：
+P1 已完成完整五栏；P2 新增 `/mine/body`（身体数据）与 `/experts/recovery`
+（恢复工作台）。旧路径 `/coach`、`/explore` 保留重定向：
 
 | 旧路径 | 新路径 |
 |---|---|
@@ -47,11 +48,11 @@ P1 已完成完整五栏。旧路径 `/coach`、`/explore` 保留重定向：
 一个主教练 + 五个专业顾问 + 一个共享知识研究服务（原 Knowledge Agent
 收编为后台能力，不单开聊天窗口）：
 
-| Agent | 领域 | 工作台状态（P1 后） |
+| Agent | 领域 | 工作台状态（P2 后） |
 |---|---|---|
 | TrainingScienceAgent | 训练计划、进阶、负荷与周期 | ✅ ready（训练后回顾） |
 | NutritionAgent | 食物、营养目标、饮食分析 | ✅ ready（日常养回顾） |
-| RecoveryAgent | 睡眠、疲劳、恢复状态 | planned（P2） |
+| RecoveryAgent | 睡眠、疲劳、恢复状态 | ✅ ready（恢复回顾+训练前简报） |
 | RehabilitationAgent | 症状记录、训练限制、风险提示 | planned（P3） |
 | MovementAgent | 动作教学、视频分析、技术反馈 | planned（P4） |
 
@@ -78,9 +79,6 @@ P1 已完成完整五栏。旧路径 `/coach`、`/explore` 保留重定向：
 
 ## 后续阶段接入方式
 
-- **P2 恢复**：`RecoveryRecorded`、`BodyMeasurementRecorded` 接线；
-  `recovery` 领域同样产出 ExpertInsight（懒失效对恢复记录同样适用——
-  source_revision 扩展记录类型即可）。
 - **P3 康复**：`SymptomReported` + 安全分流为确定性前置步骤（分流不过
   不进入建议生成），训练限制管理复用医疗安全门。
 - **P4 动作技术**：`VideoAnalysisCompleted` 接线，洞察类型

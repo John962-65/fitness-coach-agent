@@ -47,6 +47,13 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
     # P1 营养系统：启动装载内置食物目录（幂等 upsert）
     from coach.nutrition import meal_service
     meal_service.init_nutrition(app.state.db)
+    # P2 身体数据：旧 body 打卡一次性迁移（幂等；原行保留+标记，单一权威存储）
+    from coach.body import measurement_service
+    migrated = measurement_service.migrate_legacy_body_checkins(app.state.db)
+    if migrated:
+        import logging
+        logging.getLogger("uvicorn").info("P2 迁移：旧身体打卡 %s 条 → body_measurements",
+                                          migrated)
     token = access_token if access_token is not None else (os.getenv("API_ACCESS_TOKEN") or "")
     app.state.access_token = token
 

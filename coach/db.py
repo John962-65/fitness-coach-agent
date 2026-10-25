@@ -369,6 +369,75 @@ CREATE TABLE IF NOT EXISTS nutrition_recipes (
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS body_measurements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    measured_at TEXT NOT NULL,          -- 测量时间（ISO；缺省=录入时间）
+    local_date  TEXT NOT NULL,          -- YYYY-MM-DD
+    timezone    TEXT,
+    weight_kg   REAL,                   -- 以下指标全部可选；NULL=未测量（绝不用 0 冒充）
+    waist_cm    REAL,
+    hip_cm      REAL,
+    chest_cm    REAL,
+    body_fat_percent REAL,
+    muscle_mass_kg REAL,
+    measurement_method TEXT,            -- home_scale / tape / dexa / import / ...
+    device_source TEXT,                 -- 设备/来源（不同来源估算值不可默认可比）
+    notes       TEXT,
+    migrated_from TEXT,                 -- checkin:{id}（旧 body 打卡迁移来源）
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_body_user_date ON body_measurements(user_id, local_date);
+CREATE TABLE IF NOT EXISTS body_measurement_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    measurement_id INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    old_data TEXT NOT NULL,
+    new_data TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(measurement_id, revision)
+);
+CREATE TABLE IF NOT EXISTS recovery_checkins (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    local_date  TEXT NOT NULL,          -- 每用户每天一条（编辑走修订）
+    recorded_at TEXT NOT NULL,
+    timezone    TEXT,
+    sleep_hours REAL,                   -- 全部可选；NULL=未填写（不默认"正常"）
+    sleep_quality INTEGER,              -- 主观 1-5（5=非常好，方向全局统一）
+    fatigue     INTEGER,                -- 1-5（5=非常疲劳）
+    muscle_soreness INTEGER,            -- 1-5（5=非常酸痛）
+    training_readiness INTEGER,         -- 1-5（5=状态很好想练）
+    soreness_regions TEXT NOT NULL DEFAULT '[]',  -- JSON list
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE(user_id, local_date)
+);
+CREATE TABLE IF NOT EXISTS recovery_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    recovery_id INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    old_data TEXT NOT NULL,
+    new_data TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(recovery_id, revision)
+);
+CREATE TABLE IF NOT EXISTS record_submissions (
+    user_id     TEXT NOT NULL,
+    submission_id TEXT NOT NULL,        -- 客户端幂等提交 ID（body/recovery 通用）
+    kind        TEXT NOT NULL,          -- body / recovery
+    record_id   INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, submission_id)
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -488,7 +557,14 @@ class Database:
 
     # ---- checkins ----
     def record_checkin(self, user_id: str, type_: str, data: dict) -> int:
-        """运行时打卡、派生指标和旧规则建议失效一起提交，失败时一起回滚。"""
+        """运行时打卡、派生指标和旧规则建议失效一起提交，失败时一起回滚。
+
+        P2 兼容：type='body' 统一转发到身体测量模块（单一权威存储），
+        返回测量记录 id——旧接口（含 agent 打卡）无感，新旧数据不分裂。
+        """
+        if type_ == "body":
+            from .body.measurement_service import record_from_checkin
+            return record_from_checkin(self, user_id, data)
         from .exercises import library
         with self.conn:
             if not self.conn.in_transaction:
@@ -1952,3 +2028,221 @@ class Database:
         if cur.rowcount != 1:
             raise ValueError("食谱不存在或不属于当前用户")
         self.conn.commit()
+
+    # ---- P2 身体数据 / 恢复记录 ----
+    #
+    # 纪律：指标全部可选且 NULL=未测量；修订保留原始值（纠错需 reason+evidence，
+    # 与训练打卡同一纪律）；幂等提交走 record_submissions；来源（设备/方法）
+    # 随记录保存，不同来源估算值不默认可比。
+
+    def get_record_submission(self, user_id: str, submission_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT kind, record_id, created_at FROM record_submissions"
+            " WHERE user_id=? AND submission_id=?", (user_id, submission_id)).fetchone()
+        return dict(row) if row else None
+
+    def record_submission(self, user_id: str, submission_id: str,
+                          kind: str, record_id: int) -> bool:
+        try:
+            self.conn.execute(
+                "INSERT INTO record_submissions(user_id, submission_id, kind,"
+                " record_id, created_at) VALUES(?,?,?,?,?)",
+                (user_id, submission_id, kind, record_id, _now()))
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    # ---- body_measurements ----
+
+    @staticmethod
+    def _measurement_row(row) -> dict:
+        d = dict(row)
+        rev = d.pop("_revision", None)
+        if rev is not None:
+            d["revision"] = rev
+        return d
+
+    def create_body_measurement(self, user_id: str, m: dict) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO body_measurements(user_id, measured_at, local_date,"
+            " timezone, weight_kg, waist_cm, hip_cm, chest_cm, body_fat_percent,"
+            " muscle_mass_kg, measurement_method, device_source, notes,"
+            " migrated_from, created_at, updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, m["measured_at"], m["local_date"], m.get("timezone"),
+             m.get("weight_kg"), m.get("waist_cm"), m.get("hip_cm"),
+             m.get("chest_cm"), m.get("body_fat_percent"), m.get("muscle_mass_kg"),
+             m.get("measurement_method"), m.get("device_source"),
+             m.get("notes"), m.get("migrated_from"), _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_body_measurement(self, user_id: str, mid: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT m.*, (SELECT COUNT(*) FROM body_measurement_revisions r"
+            " WHERE r.measurement_id=m.id) AS _revision"
+            " FROM body_measurements m WHERE m.user_id=? AND m.id=?",
+            (user_id, mid)).fetchone()
+        return self._measurement_row(row) if row else None
+
+    def list_body_measurements(self, user_id: str, start: str | None = None,
+                               end: str | None = None, limit: int = 200) -> list[dict]:
+        sql = ("SELECT m.*, (SELECT COUNT(*) FROM body_measurement_revisions r"
+               " WHERE r.measurement_id=m.id) AS _revision"
+               " FROM body_measurements m WHERE m.user_id=?")
+        params: list = [user_id]
+        if start:
+            sql += " AND m.local_date>=?"
+            params.append(start)
+        if end:
+            sql += " AND m.local_date<=?"
+            params.append(end)
+        rows = self.conn.execute(sql + " ORDER BY m.measured_at DESC, m.id DESC LIMIT ?",
+                                 params + [limit]).fetchall()
+        return [self._measurement_row(r) for r in rows]
+
+    def body_measurement_revision_count(self, user_id: str, mid: int) -> int:
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM body_measurement_revisions"
+            " WHERE measurement_id=?", (mid,)).fetchone()[0]
+
+    def revise_body_measurement(self, user_id: str, mid: int, expected_revision: int,
+                                patch: dict, reason: str, evidence: str) -> dict:
+        """身体记录纠错：保留原值快照，修订号 +1（与训练打卡同一纪律）。"""
+        if not reason.strip() or not evidence.strip():
+            raise ValueError("纠错必须说明原因并附用户原话")
+        current = self.get_body_measurement(user_id, mid)
+        if not current:
+            raise ValueError("测量记录不存在")
+        if current["revision"] != expected_revision:
+            raise ValueError("记录已被修订，请先重新读取最新版本")
+        fields = ("measured_at", "local_date", "timezone", "weight_kg", "waist_cm",
+                  "hip_cm", "chest_cm", "body_fat_percent", "muscle_mass_kg",
+                  "measurement_method", "device_source", "notes")
+        new = {k: current.get(k) for k in fields}
+        for k, v in patch.items():
+            if k in fields:
+                new[k] = v
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO body_measurement_revisions(user_id, measurement_id,"
+                " revision, old_data, new_data, reason, evidence, created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (user_id, mid, expected_revision + 1,
+                 json.dumps(current, ensure_ascii=False, default=str),
+                 json.dumps(new, ensure_ascii=False), reason, evidence, _now()))
+            self.conn.execute(
+                "UPDATE body_measurements SET measured_at=?, local_date=?,"
+                " timezone=?, weight_kg=?, waist_cm=?, hip_cm=?, chest_cm=?,"
+                " body_fat_percent=?, muscle_mass_kg=?, measurement_method=?,"
+                " device_source=?, notes=?, updated_at=? WHERE user_id=? AND id=?",
+                (new["measured_at"], new["local_date"], new["timezone"],
+                 new["weight_kg"], new["waist_cm"], new["hip_cm"], new["chest_cm"],
+                 new["body_fat_percent"], new["muscle_mass_kg"],
+                 new["measurement_method"], new["device_source"], new["notes"],
+                 _now(), user_id, mid))
+        return self.get_body_measurement(user_id, mid)
+
+    def delete_body_measurement(self, user_id: str, mid: int) -> bool:
+        cur = self.conn.execute(
+            "DELETE FROM body_measurements WHERE user_id=? AND id=?", (user_id, mid))
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def body_measurement_revisions(self, user_id: str, mid: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT revision, reason, evidence, created_at FROM"
+            " body_measurement_revisions WHERE measurement_id=? ORDER BY revision DESC",
+            (mid,)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- recovery_checkins ----
+
+    @staticmethod
+    def _recovery_row(row) -> dict:
+        d = dict(row)
+        d["soreness_regions"] = json.loads(d.get("soreness_regions") or "[]")
+        rev = d.pop("_revision", None)
+        if rev is not None:
+            d["revision"] = rev
+        return d
+
+    def upsert_recovery_checkin(self, user_id: str, r: dict) -> tuple[int, bool]:
+        """当天一条：已存在则覆盖并记修订，返回 (id, created?)。"""
+        existing = self.conn.execute(
+            "SELECT id, (SELECT COUNT(*) FROM recovery_revisions rr"
+            " WHERE rr.recovery_id=recovery_checkins.id) AS _revision"
+            " FROM recovery_checkins WHERE user_id=? AND local_date=?",
+            (user_id, r["local_date"])).fetchone()
+        if existing:
+            rid, rev = existing["id"], existing["_revision"]
+            old = self.get_recovery_checkin(user_id, rid)
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO recovery_revisions(user_id, recovery_id, revision,"
+                    " old_data, new_data, reason, evidence, created_at)"
+                    " VALUES(?,?,?,?,?,?,?,?)",
+                    (user_id, rid, rev + 1,
+                     json.dumps(old, ensure_ascii=False, default=str),
+                     json.dumps(r, ensure_ascii=False),
+                     r.get("reason") or "更新当日恢复记录", r.get("evidence") or "", _now()))
+                self.conn.execute(
+                    "UPDATE recovery_checkins SET recorded_at=?, timezone=?,"
+                    " sleep_hours=?, sleep_quality=?, fatigue=?, muscle_soreness=?,"
+                    " training_readiness=?, soreness_regions=?, notes=?, updated_at=?"
+                    " WHERE user_id=? AND id=?",
+                    (r["recorded_at"], r.get("timezone"), r.get("sleep_hours"),
+                     r.get("sleep_quality"), r.get("fatigue"), r.get("muscle_soreness"),
+                     r.get("training_readiness"),
+                     json.dumps(r.get("soreness_regions") or [], ensure_ascii=False),
+                     r.get("notes"), _now(), user_id, rid))
+            return rid, False
+        cur = self.conn.execute(
+            "INSERT INTO recovery_checkins(user_id, local_date, recorded_at,"
+            " timezone, sleep_hours, sleep_quality, fatigue, muscle_soreness,"
+            " training_readiness, soreness_regions, notes, created_at, updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, r["local_date"], r["recorded_at"], r.get("timezone"),
+             r.get("sleep_hours"), r.get("sleep_quality"), r.get("fatigue"),
+             r.get("muscle_soreness"), r.get("training_readiness"),
+             json.dumps(r.get("soreness_regions") or [], ensure_ascii=False),
+             r.get("notes"), _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid, True
+
+    def get_recovery_checkin(self, user_id: str, rid: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT rc.*, (SELECT COUNT(*) FROM recovery_revisions rr"
+            " WHERE rr.recovery_id=rc.id) AS _revision"
+            " FROM recovery_checkins rc WHERE rc.user_id=? AND rc.id=?",
+            (user_id, rid)).fetchone()
+        return self._recovery_row(row) if row else None
+
+    def get_recovery_by_date(self, user_id: str, local_date: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT rc.*, (SELECT COUNT(*) FROM recovery_revisions rr"
+            " WHERE rr.recovery_id=rc.id) AS _revision"
+            " FROM recovery_checkins rc WHERE rc.user_id=? AND rc.local_date=?",
+            (user_id, local_date)).fetchone()
+        return self._recovery_row(row) if row else None
+
+    def list_recovery_checkins(self, user_id: str, days: int = 90) -> list[dict]:
+        cutoff = (datetime.now() - timedelta(days=days)).date().isoformat()
+        rows = self.conn.execute(
+            "SELECT rc.*, (SELECT COUNT(*) FROM recovery_revisions rr"
+            " WHERE rr.recovery_id=rc.id) AS _revision"
+            " FROM recovery_checkins rc WHERE rc.user_id=? AND rc.local_date>=?"
+            " ORDER BY rc.local_date DESC", (user_id, cutoff)).fetchall()
+        return [self._recovery_row(r) for r in rows]
+
+    def recovery_revision_count(self, user_id: str, rid: int) -> int:
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM recovery_revisions WHERE recovery_id=?",
+            (rid,)).fetchone()[0]
+
+    def delete_recovery_checkin(self, user_id: str, rid: int) -> bool:
+        cur = self.conn.execute(
+            "DELETE FROM recovery_checkins WHERE user_id=? AND id=?", (user_id, rid))
+        self.conn.commit()
+        return cur.rowcount == 1

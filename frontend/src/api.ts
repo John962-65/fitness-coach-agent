@@ -5,8 +5,9 @@ import type {
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
   NutritionTrendDay, PlanOp,
-  PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, Recipe, TodayBrief,
-  TrainingCalendar, TrainingTemplate, Trial,
+  BodyMeasurement, BodySummary, BodyTrend, PlanResponse, PlanRevision,
+  PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief, RecoveryCheckin,
+  RecoverySummary, TodayBrief, TrainingCalendar, TrainingTemplate, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -52,6 +53,9 @@ const post = <T>(path: string, body: unknown) =>
 
 const put = <T>(path: string, body: unknown) =>
   req<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+
+const patch = <T>(path: string, body: unknown) =>
+  req<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 
 export interface OnboardingPayload {
   basic: { age: number; gender: string; height_cm: number; weight_kg: number }
@@ -296,5 +300,44 @@ export const api = {
   deleteRecipe: (uid: string, recipeId: number) =>
     req<{ deleted: number }>(`/users/${uid}/nutrition/recipes/${recipeId}`,
                               { method: 'DELETE' }),
-}
 
+  // ---- P2 身体数据与恢复管理 ----
+  bodyMeasurements: (uid: string, opts: { start?: string; end?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(opts).filter(([, v]) => v) as [string, string][])
+    return req<{ measurements: BodyMeasurement[] }>(
+      `/users/${uid}/body-measurements${qs.size ? `?${qs}` : ''}`)
+  },
+  addBodyMeasurement: (uid: string, data: Record<string, unknown>, submissionId?: string) =>
+    post<{ measurement_id: number; existing: boolean; measurement: BodyMeasurement }>(
+      `/users/${uid}/body-measurements`,
+      { data, ...(submissionId ? { submission_id: submissionId } : {}) }),
+  updateBodyMeasurement: (uid: string, mid: number, payload: {
+    expected_revision: number; data: Record<string, unknown>
+    reason: string; evidence: string }) =>
+    patch<BodyMeasurement>(`/users/${uid}/body-measurements/${mid}`, payload),
+  deleteBodyMeasurement: (uid: string, mid: number) =>
+    req<{ deleted: number }>(`/users/${uid}/body-measurements/${mid}`,
+                              { method: 'DELETE' }),
+  bodyMeasurementRevisions: (uid: string, mid: number) =>
+    req<{ revisions: { revision: number; reason: string; evidence: string
+                       created_at: string }[] }>(
+      `/users/${uid}/body-measurements/${mid}/revisions`),
+  bodySummary: (uid: string, days = 30) =>
+    req<BodySummary>(`/users/${uid}/body-summary?days=${days}`),
+  bodyTrend: (uid: string, metric: string, days: number) =>
+    req<BodyTrend>(`/users/${uid}/body-trend?metric=${metric}&days=${days}`),
+
+  recoveryCheckins: (uid: string, days = 90) =>
+    req<{ checkins: RecoveryCheckin[] }>(`/users/${uid}/recovery-checkins?days=${days}`),
+  saveRecoveryCheckin: (uid: string, data: Record<string, unknown>, submissionId?: string) =>
+    post<{ recovery_id: number; revision: number; created: boolean; existing?: boolean }>(
+      `/users/${uid}/recovery-checkins`,
+      { data, ...(submissionId ? { submission_id: submissionId } : {}) }),
+  deleteRecoveryCheckin: (uid: string, rid: number) =>
+    req<{ deleted: number }>(`/users/${uid}/recovery-checkins/${rid}`,
+                              { method: 'DELETE' }),
+  recoverySummary: (uid: string, days = 14) =>
+    req<RecoverySummary>(`/users/${uid}/recovery-summary?days=${days}`),
+  recoveryBrief: (uid: string) =>
+    req<RecoveryBrief>(`/users/${uid}/pre-training-recovery-brief`),
+}

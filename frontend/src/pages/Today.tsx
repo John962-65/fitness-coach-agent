@@ -10,7 +10,7 @@ import {
 } from '../components/Bits'
 import InsightCard from '../components/experts/InsightCard'
 import { useApp } from '../store'
-import { ExpertInsightSummary, PlanResponse, TodayBrief } from '../types'
+import { ExpertInsightSummary, PlanResponse, RecoveryBrief, TodayBrief } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
@@ -30,6 +30,7 @@ export default function Today() {
   const [brief, setBrief] = useState<TodayBrief | null>(null)
   const [plan, setPlan] = useState<PlanResponse | null>(null)
   const [insights, setInsights] = useState<ExpertInsightSummary[]>([])
+  const [recoveryBrief, setRecoveryBrief] = useState<RecoveryBrief | null>(null)
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
@@ -41,6 +42,8 @@ export default function Today() {
     api.expertInsights(uid, { status: 'ready', limit: 3 })
       .then((r) => setInsights(r.insights))
       .catch(() => setInsights([]))
+    // P2：训练前恢复简报（确定性；有恢复记录或限制时才有内容）
+    api.recoveryBrief(uid).then(setRecoveryBrief).catch(() => setRecoveryBrief(null))
   }, [uid])
 
   if (error) return <div className="pt-4"><ErrorBox message={error} /></div>
@@ -219,6 +222,37 @@ export default function Today() {
             <Stat value={brief.days_since_last_training ?? '—'} label="距上次（天）" />
             <Stat value={brief.open_pain_flags} label="待跟进安全记录" tone={brief.open_pain_flags > 0 ? 'warn' : 'default'} />
           </div>
+
+          {/* P2 训练前恢复简报（确定性；仅在有信号/限制/数据时展示） */}
+          {recoveryBrief && (recoveryBrief.stance !== 'clear' || recoveryBrief.latest_recovery) && (
+            <div className={`card ${recoveryBrief.stance === 'restricted'
+              ? 'border-2 border-red-300 bg-red-50/70'
+              : recoveryBrief.stance === 'caution' ? 'border-2 border-amber-200 bg-amber-50/70' : ''}`}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">训练前简报</h3>
+                <Link to="/experts/recovery" className="text-xs font-medium text-accent-deep hover:underline">
+                  恢复工作台
+                </Link>
+              </div>
+              <p className={`mt-1.5 text-[13px] font-medium leading-relaxed ${
+                recoveryBrief.stance === 'restricted' ? 'text-red-700'
+                : recoveryBrief.stance === 'caution' ? 'text-amber-800' : 'text-ink'}`}>
+                {recoveryBrief.headline}
+              </p>
+              {recoveryBrief.signals.length > 0 && (
+                <p className="mt-1 text-xs text-muted">信号：{recoveryBrief.signals.join('；')}</p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {recoveryBrief.options.map((o) => (
+                  <span key={o.option_id}
+                        className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium">
+                    {o.title}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-2xs text-faint">{recoveryBrief.note}</p>
+            </div>
+          )}
 
           {/* P0 专业分析卡片（训练后自动生成，点击直达工作台，不经聊天） */}
           {insights.length > 0 && (

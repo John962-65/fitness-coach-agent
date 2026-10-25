@@ -71,10 +71,12 @@ def test_post_workout_review_end_to_end(tmp_path):
     last = seed_progressive("exp", db)
     created = task_dispatcher.on_event(db, "exp", "WorkoutSaved",
                                        {"checkin_id": last})
-    assert len(created) == 1
-    task = created[0]
-    assert task["specialist"] == "training_science"
+    # P2：训练保存同时通知训练科学与恢复顾问；无恢复记录时恢复侧如实失败
+    assert len(created) == 2
+    task = next(t for t in created if t["specialist"] == "training_science")
     assert task["status"] == "ready" and task["insight_id"]
+    recovery_task = next(t for t in created if t["specialist"] == "recovery")
+    assert recovery_task["status"] == "failed"  # 无恢复记录：如实失败不伪造
     insights = insight_service.list_insights(db, "exp")
     assert len(insights) == 1
     ins = insight_service.get_insight(db, "exp", insights[0]["id"])  # 详情含完整载荷
@@ -117,8 +119,8 @@ def test_api_save_workout_triggers_insight_today_visible(client):
     assert len(listed) == 1 and listed[0]["status"] == "ready"
     assert listed[0]["specialist"] == "training_science"
     tasks = c.get("/api/users/u1/experts/tasks").json()["tasks"]
-    assert tasks[0]["status"] == "ready"
-    assert tasks[0]["trigger_source"] == "WorkoutSaved"
+    ts = next(t for t in tasks if t["specialist"] == "training_science")
+    assert ts["status"] == "ready" and ts["trigger_source"] == "WorkoutSaved"
 
 
 def test_event_idempotent_same_checkin_not_reanalyzed(tmp_path):
@@ -127,7 +129,9 @@ def test_event_idempotent_same_checkin_not_reanalyzed(tmp_path):
     task_dispatcher.on_event(db, "exp", "WorkoutSaved", {"checkin_id": last})
     task_dispatcher.on_event(db, "exp", "WorkoutSaved", {"checkin_id": last})
     tasks = db.list_expert_tasks("exp")
-    assert len(tasks) == 1  # dedup_key 唯一约束：同一事件重放不重复分析
+    # dedup_key 唯一约束：同一事件重放不重复分析（每顾问各一条）
+    assert len(tasks) == 2
+    assert len({t["specialist"] for t in tasks}) == 2
     assert len(db.list_expert_insights("exp")) == 1
 
 
@@ -336,7 +340,8 @@ def test_analyzer_failure_does_not_block_checkin(client, monkeypatch):
         "data": {"exercises": [bench_entry(70)],
                  "session_meta": {"mode": "free", "local_date": date.today().isoformat()}}})
     assert resp.status_code == 200  # 打卡主流程不受专家失败影响
-    task = db.list_expert_tasks("u1")[0]
+    task = next(t for t in db.list_expert_tasks("u1")
+                if t["specialist"] == "training_science")
     assert task["status"] == "pending"  # 可重试失败：留在队列
     assert task["retry_count"] == 1
     # 重试用尽 → failed 留痕
@@ -427,7 +432,9 @@ def test_overview_lists_registry_and_settings(client):
                            "rehabilitation", "movement"}
     assert labels["training_science"]["workbench"] == "ready"
     assert labels["nutrition"]["workbench"] == "ready"          # P1 已上线
-    assert labels["recovery"]["workbench"] == "planned"         # P2 待建
+    assert labels["recovery"]["workbench"] == "ready"           # P2 已上线
+    assert labels["rehabilitation"]["workbench"] == "planned"   # P3 待建
+    assert labels["movement"]["workbench"] == "planned"         # P4 待建
     assert body["settings"]["proactive_enabled"] is True
     # 关闭主动分析
     resp = c.post("/api/users/u1/experts/settings",

@@ -14,6 +14,8 @@ import MineSettings from './pages/MineSettings'
 import Onboarding from './pages/Onboarding'
 import PlanEditor from './pages/PlanEditor'
 import Today from './pages/Today'
+import Recovery from './pages/experts/Recovery'
+import BodyMetrics from './pages/BodyMetrics'
 import TrainingExpert from './pages/experts/TrainingExpert'
 import Nutrition from './pages/Nutrition'
 import NutritionHistory from './pages/nutrition/NutritionHistory'
@@ -73,6 +75,8 @@ function Shell() {
           <Route path="/experts" element={<Experts />} />
           <Route path="/experts/training" element={<TrainingExpert />} />
           <Route path="/experts/nutrition" element={<NutritionExpert />} />
+          <Route path="/experts/recovery" element={<Recovery />} />
+          <Route path="/mine/body" element={<BodyMetrics />} />
           <Route path="/experts/chat" element={<Coach />} />
           <Route path="/experts/knowledge" element={<Explore />} />
           <Route path="/experts/knowledge/:exerciseId" element={<ExploreDetail />} />
