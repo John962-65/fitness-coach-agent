@@ -15,6 +15,10 @@ import Onboarding from './pages/Onboarding'
 import PlanEditor from './pages/PlanEditor'
 import Today from './pages/Today'
 import TrainingExpert from './pages/experts/TrainingExpert'
+import Nutrition from './pages/Nutrition'
+import NutritionHistory from './pages/nutrition/NutritionHistory'
+import NutritionTargets from './pages/nutrition/NutritionTargets'
+import NutritionExpert from './pages/experts/NutritionExpert'
 import Training from './pages/Training'
 import Workout from './pages/Workout'
 import { useApp } from './store'
@@ -63,8 +67,12 @@ function Shell() {
           <Route path="/workout/template/:templateId" element={<Workout />} />
           <Route path="/workout/:day" element={<Workout />} />
           {/* P0 专家平台：中心页 / 训练科学工作台 / 主教练聊天 / 知识检索 */}
+          <Route path="/nutrition" element={<Nutrition />} />
+          <Route path="/nutrition/history" element={<NutritionHistory />} />
+          <Route path="/nutrition/targets" element={<NutritionTargets />} />
           <Route path="/experts" element={<Experts />} />
           <Route path="/experts/training" element={<TrainingExpert />} />
+          <Route path="/experts/nutrition" element={<NutritionExpert />} />
           <Route path="/experts/chat" element={<Coach />} />
           <Route path="/experts/knowledge" element={<Explore />} />
           <Route path="/experts/knowledge/:exerciseId" element={<ExploreDetail />} />

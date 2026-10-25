@@ -470,3 +470,112 @@ export interface ExpertOverview {
   settings: ExpertSettings
   pending_tasks: ExpertTask[]
 }
+
+// ---- P1 营养系统（后端 coach/nutrition/） ----
+
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+
+export interface ServingUnit { unit: string; grams: number }
+
+export interface FoodItem {
+  id: string
+  user_id: string | null
+  name: string
+  aliases: string[]
+  brand: string | null
+  category: string
+  serving_units: ServingUnit[]
+  energy_kcal: number | null
+  protein_g: number | null
+  carbohydrate_g: number | null
+  fat_g: number | null
+  fiber_g: number | null
+  sodium_mg: number | null
+  reference_amount: number
+  reference_unit: string
+  source_name: string | null
+  source_url: string | null
+  source_version: string | null
+  license: string | null
+  verified_status: string
+}
+
+export interface MealItem {
+  food_id: string
+  food_name: string
+  amount: number
+  unit: string
+  grams: number
+  nutrition_snapshot: Record<string, number | null>
+  snapshot_meta: { reference_amount?: number; reference_unit?: string
+                   source_name?: string; verified_status?: string }
+  intake: Record<string, number | null>
+}
+
+export interface NutrientTotals {
+  energy_kcal: number; protein_g: number; carbohydrate_g: number
+  fat_g: number; fiber_g: number; sodium_mg: number
+}
+
+export interface NutritionSummaryBlock {
+  totals: NutrientTotals
+  items_count: number
+  data_quality: Record<string, { known: number; unknown: number }>
+}
+
+export interface MealRecord {
+  id: number
+  meal_type: MealType
+  notes: string
+  items: MealItem[]
+  /** 汇总块与服务端 summarize 输出同构（列表页由前端重算或后端给出） */
+  totals?: NutrientTotals
+}
+
+export interface DayNutrition {
+  user_id: string
+  local_date: string
+  meals: (NutritionSummaryBlock & { id: number; meal_type: MealType; notes: string
+                                    items: MealItem[] })[]
+  by_meal: Record<string, NutritionSummaryBlock & { meal_id: number; notes: string }>
+  day: NutritionSummaryBlock
+  meal_types_recorded: MealType[]
+  complete_mark: boolean
+  note: string
+}
+
+export interface NutritionTrendDay {
+  local_date: string
+  complete_mark: boolean
+  meal_types: MealType[]
+  totals: NutrientTotals
+  data_quality: Record<string, { known: number; unknown: number }>
+}
+
+export interface NutritionTargets {
+  energy_kcal: number | null
+  protein_g: number | null
+  carbohydrate_g: number | null
+  fat_g: number | null
+  preferences: Record<string, unknown>
+  allergies: string[]
+  budget_note: string | null
+  precision_willing: string | null
+  updated_at?: string
+}
+
+export interface NutritionReference {
+  bmr?: number
+  activity_factors?: Record<string, { label: string; tdee: number }>
+  protein_reference?: { note: string; per_kg_range: number[]; at_weight_kg: number }
+  goal_primary?: string
+  energy_kcal?: number | null
+  note: string
+}
+
+export interface Recipe {
+  id: number
+  name: string
+  items: MealItem[]
+  updated_at: string
+}

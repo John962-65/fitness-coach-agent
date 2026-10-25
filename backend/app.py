@@ -44,6 +44,9 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
     # P0 专家任务恢复：崩溃残留的 running → 重试或失败；pending 留在队列可继续执行
     from coach.experts import task_dispatcher
     task_dispatcher.recover_stale(app.state.db)
+    # P1 营养系统：启动装载内置食物目录（幂等 upsert）
+    from coach.nutrition import meal_service
+    meal_service.init_nutrition(app.state.db)
     token = access_token if access_token is not None else (os.getenv("API_ACCESS_TOKEN") or "")
     app.state.access_token = token
 

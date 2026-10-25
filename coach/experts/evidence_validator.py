@@ -12,7 +12,15 @@ from __future__ import annotations
 
 import re
 
-_SRC_PATTERN = re.compile(r"^checkin:(\d+):revision:(\d+)$")
+_SRC_PATTERN = re.compile(r"^(checkin|meal):(\d+)(?::revision:(\d+))?$")
+
+
+def _source_exists(db, user_id: str, kind: str, ref_id: int) -> bool:
+    table = "checkins" if kind == "checkin" else "meal_entries"
+    row = db.conn.execute(
+        f"SELECT 1 FROM {table} WHERE user_id=? AND id=?", (user_id, ref_id)
+    ).fetchone()
+    return bool(row)
 
 
 def validate_evidence(payload: dict, db=None, user_id: str = "") -> dict:
@@ -39,10 +47,7 @@ def validate_evidence(payload: dict, db=None, user_id: str = "") -> dict:
                 report["dropped_source_refs"] += 1
                 continue
             if db is not None and user_id:
-                row = db.conn.execute(
-                    "SELECT 1 FROM checkins WHERE user_id=? AND id=?",
-                    (user_id, int(m.group(1)))).fetchone()
-                if not row:
+                if not _source_exists(db, user_id, m.group(1), int(m.group(2))):
                     report["dropped_source_refs"] += 1
                     continue
             kept_src.append(str(src))

@@ -23,7 +23,7 @@
 | 阶段 | 核心能力 | 状态 | 交付文档 |
 |---|---|---|---|
 | P0 | 专家工作台 + ExpertInsight + 任务调度 | ✅ 已交付（2026-10-25） | [p0-expert-platform.md](p0-expert-platform.md) |
-| P1 | 食物库 + 饮食记录 + 营养顾问 | ⬜ 未开始 | — |
+| P1 | 食物库 + 饮食记录 + 营养顾问 | ✅ 已交付（2026-10-25） | [p1-nutrition.md](p1-nutrition.md) |
 | P2 | 身体与恢复管理 | ⬜ 未开始 | — |
 | P3 | 康复辅助及风险管理 | ⬜ 未开始 | — |
 | P4 | 动作技术工作台 | ⬜ 未开始 | — |
@@ -35,8 +35,7 @@
 
 一级导航：**今日｜训练｜饮食｜专家｜我的**
 
-P0 已完成：今日｜训练｜专家｜我的（饮食页在 P1 营养系统落地后加入，不用
-空壳标签冒充功能）。旧路径 `/coach`、`/explore` 保留重定向：
+P1 已完成完整五栏。旧路径 `/coach`、`/explore` 保留重定向：
 
 | 旧路径 | 新路径 |
 |---|---|
@@ -48,10 +47,10 @@ P0 已完成：今日｜训练｜专家｜我的（饮食页在 P1 营养系统�
 一个主教练 + 五个专业顾问 + 一个共享知识研究服务（原 Knowledge Agent
 收编为后台能力，不单开聊天窗口）：
 
-| Agent | 领域 | 工作台状态（P0 后） |
+| Agent | 领域 | 工作台状态（P1 后） |
 |---|---|---|
 | TrainingScienceAgent | 训练计划、进阶、负荷与周期 | ✅ ready（训练后回顾） |
-| NutritionAgent | 食物、营养目标、饮食分析 | planned（P1） |
+| NutritionAgent | 食物、营养目标、饮食分析 | ✅ ready（日常养回顾） |
 | RecoveryAgent | 睡眠、疲劳、恢复状态 | planned（P2） |
 | RehabilitationAgent | 症状记录、训练限制、风险提示 | planned（P3） |
 | MovementAgent | 动作教学、视频分析、技术反馈 | planned（P4） |
@@ -79,9 +78,6 @@ P0 已完成：今日｜训练｜专家｜我的（饮食页在 P1 营养系统�
 
 ## 后续阶段接入方式
 
-- **P1 营养**：`MealRecorded` 事件接线；`nutrition` 注册表补 task_types
-  与确定性营养计算器；`nutrition` 工作台状态 planned → ready；一级导航
-  加「饮食」。
 - **P2 恢复**：`RecoveryRecorded`、`BodyMeasurementRecorded` 接线；
   `recovery` 领域同样产出 ExpertInsight（懒失效对恢复记录同样适用——
   source_revision 扩展记录类型即可）。

@@ -35,7 +35,11 @@ def create_insight(db, user_id: str, payload: dict, task_id: str | None = None) 
 
 
 def _revision_drift(db, user_id: str, insight: dict) -> str | None:
-    """数据漂移检查：返回失效原因（None=仍有效）。"""
+    """数据漂移检查：返回失效原因（None=仍有效）。
+
+    覆盖三类依赖：训练打卡修订、生效计划版本、当日饮食记录版本
+    （P1）——任何一类漂移都意味着分析基于旧数据。
+    """
     rev = insight.get("source_revision") or {}
     for cid, stored in (rev.get("checkins") or {}).items():
         row = db.conn.execute(
@@ -53,6 +57,19 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if record and record["version"] > int(plan_version):
             return (f"训练计划已更新（v{plan_version} → v{record['version']}），"
                     "该分析基于旧计划，请重新分析")
+    for local_date, stored_version in (rev.get("meals") or {}).items():
+        from ..nutrition.meal_service import day_version
+        current = day_version(db, user_id, local_date)
+        if str(current) != str(stored_version):
+            return (f"{local_date} 的饮食记录已变化，该分析基于旧数据，"
+                    "请重新分析")
+    targets_at = rev.get("targets_updated_at")
+    if targets_at:
+        targets = db.get_nutrition_targets(user_id)
+        if (targets.get("updated_at") or "") != str(targets_at) \
+                and targets.get("updated_at") is not None:
+            # 目标变更不影响「已记录摄入量」事实，只影响目标比较——保守失效
+            return "营养目标已更新，目标比较基于旧目标，请重新分析"
     if insight.get("expires_at") and insight["expires_at"] <= _now():
         return "分析已过有效期（数据窗口久远）"
     return None

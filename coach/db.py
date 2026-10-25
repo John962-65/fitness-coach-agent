@@ -306,6 +306,69 @@ CREATE TABLE IF NOT EXISTS expert_settings (
     min_interval_minutes INTEGER NOT NULL DEFAULT 0, -- 同类任务最小间隔（频率限制）
     updated_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS foods (
+    id          TEXT PRIMARY KEY,       -- food-<uuid>（自定义）/ bi-<slug>（内置）
+    user_id     TEXT,                   -- NULL=内置公共；自定义按用户隔离
+    name        TEXT NOT NULL,
+    aliases     TEXT NOT NULL,          -- JSON list
+    brand       TEXT,
+    category    TEXT NOT NULL,          -- staple/meat/seafood/egg_dairy/soy/vegetable/fruit/nuts/oil/processed/beverage/other
+    serving_units TEXT NOT NULL,        -- JSON：[{unit,grams}] 首项为基准（克/毫升）
+    energy_kcal REAL,                   -- 以下营养值均对应 reference_amount；NULL=未知（绝不用 0 冒充）
+    protein_g   REAL,
+    carbohydrate_g REAL,
+    fat_g       REAL,
+    fiber_g     REAL,
+    sodium_mg   REAL,
+    reference_amount REAL NOT NULL DEFAULT 100,
+    reference_unit TEXT NOT NULL DEFAULT 'g',
+    source_name TEXT,
+    source_url  TEXT,
+    source_version TEXT,
+    license     TEXT,
+    verified_status TEXT NOT NULL,      -- reference（公开参考值）/ user_created
+    created_at  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foods_builtin_name ON foods(name) WHERE user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foods_user_name ON foods(user_id, name);
+CREATE TABLE IF NOT EXISTS meal_entries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    local_date  TEXT NOT NULL,          -- YYYY-MM-DD
+    meal_type   TEXT NOT NULL,          -- breakfast/lunch/dinner/snack
+    items       TEXT NOT NULL,          -- JSON MealItem[]（含记录时营养快照）
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meal_entries(user_id, local_date);
+CREATE TABLE IF NOT EXISTS nutrition_days (
+    user_id     TEXT NOT NULL,
+    local_date  TEXT NOT NULL,
+    complete    INTEGER NOT NULL DEFAULT 0,  -- 用户标记当天记录是否完整
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, local_date)
+);
+CREATE TABLE IF NOT EXISTS nutrition_targets (
+    user_id     TEXT PRIMARY KEY,
+    energy_kcal REAL,                   -- 手动设置；NULL=未设置（估算建议另算，不代填）
+    protein_g   REAL,
+    carbohydrate_g REAL,
+    fat_g       REAL,
+    preferences TEXT NOT NULL DEFAULT '{}',  -- JSON：饮食偏好
+    allergies   TEXT NOT NULL DEFAULT '[]',  -- JSON：过敏与限制
+    budget_note TEXT,
+    precision_willing TEXT,             -- willing_precise / rough / minimal
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS nutrition_recipes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    items       TEXT NOT NULL,          -- JSON MealItem[]（快照，可整餐复用）
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -1541,7 +1604,7 @@ class Database:
         if status:
             sql += " AND status=?"
             params.append(status)
-        rows = self.conn.execute(sql + " ORDER BY generated_at DESC LIMIT ?",
+        rows = self.conn.execute(sql + " ORDER BY generated_at DESC, rowid DESC LIMIT ?",
                                  params + [limit]).fetchall()
         return [self._insight_row(r) for r in rows]
 
@@ -1582,3 +1645,310 @@ class Database:
              int(proactive_enabled), min_interval_minutes, _now()))
         self.conn.commit()
         return self.expert_settings(user_id)
+
+    # ---- P1 营养系统：食物库 / 餐次记录 / 目标 / 食谱 ----
+    #
+    # 设计要点：
+    # - 营养值挂在 reference_amount（默认每 100g/ml）上，快照随餐保存——
+    #   食物库后续更新不改变历史记录；
+    # - 未知营养素 = NULL，读取与计算层绝不用 0 冒充；
+    # - 内置食物 user_id IS NULL（公共），自定义食物按用户隔离。
+
+    def upsert_food(self, food: dict) -> None:
+        """插入或按 id 更新食物（内置目录装载与自定义共用）。"""
+        self.conn.execute(
+            "INSERT INTO foods(id, user_id, name, aliases, brand, category,"
+            " serving_units, energy_kcal, protein_g, carbohydrate_g, fat_g,"
+            " fiber_g, sodium_mg, reference_amount, reference_unit,"
+            " source_name, source_url, source_version, license,"
+            " verified_status, created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET name=excluded.name,"
+            " aliases=excluded.aliases, brand=excluded.brand,"
+            " category=excluded.category, serving_units=excluded.serving_units,"
+            " energy_kcal=excluded.energy_kcal, protein_g=excluded.protein_g,"
+            " carbohydrate_g=excluded.carbohydrate_g, fat_g=excluded.fat_g,"
+            " fiber_g=excluded.fiber_g, sodium_mg=excluded.sodium_mg,"
+            " reference_amount=excluded.reference_amount,"
+            " reference_unit=excluded.reference_unit,"
+            " source_name=excluded.source_name, source_url=excluded.source_url,"
+            " source_version=excluded.source_version,"
+            " license=excluded.license,"
+            " verified_status=excluded.verified_status",
+            (food["id"], food.get("user_id"), food["name"],
+             json.dumps(food.get("aliases") or [], ensure_ascii=False),
+             food.get("brand"), food["category"],
+             json.dumps(food.get("serving_units") or [{"unit": "克", "grams": 1}],
+                        ensure_ascii=False),
+             food.get("energy_kcal"), food.get("protein_g"),
+             food.get("carbohydrate_g"), food.get("fat_g"),
+             food.get("fiber_g"), food.get("sodium_mg"),
+             food.get("reference_amount", 100), food.get("reference_unit", "g"),
+             food.get("source_name"), food.get("source_url"),
+             food.get("source_version"), food.get("license"),
+             food.get("verified_status", "user_created"),
+             food.get("created_at") or _now()))
+        self.conn.commit()
+
+    def add_custom_food(self, user_id: str, food: dict) -> str | None:
+        """自定义食物：同名拒绝（含与内置同名/别名冲突，避免搜索歧义）。"""
+        import uuid as _uuid
+        name = str(food.get("name") or "").strip()
+        row = self.conn.execute(
+            "SELECT 1 FROM foods WHERE user_id IS NULL AND name=?"
+            " UNION SELECT 1 FROM foods WHERE user_id=? AND name=?",
+            (name, user_id, name)).fetchone()
+        if row:
+            return None
+        food = dict(food)
+        food["id"] = "food-" + _uuid.uuid4().hex
+        food["user_id"] = user_id
+        food["verified_status"] = "user_created"
+        try:
+            self.upsert_food(food)
+        except sqlite3.IntegrityError:
+            return None
+        return food["id"]
+
+    def update_custom_food(self, user_id: str, food_id: str, patch: dict) -> bool:
+        """仅允许改本人的自定义食物；改后由调用方触发漂移失效提示。"""
+        row = self.conn.execute(
+            "SELECT id FROM foods WHERE id=? AND user_id=?", (food_id, user_id)
+        ).fetchone()
+        if not row:
+            return False
+        cols = ("name", "aliases", "brand", "category", "serving_units",
+                "energy_kcal", "protein_g", "carbohydrate_g", "fat_g",
+                "fiber_g", "sodium_mg", "reference_amount", "reference_unit",
+                "source_name", "source_url", "source_version", "license")
+        sets, params = [], []
+        for col in cols:
+            if col in patch:
+                val = patch[col]
+                if col in ("aliases", "serving_units"):
+                    val = json.dumps(val, ensure_ascii=False)
+                sets.append(f"{col}=?")
+                params.append(val)
+        if not sets:
+            return True
+        params.append(food_id)
+        self.conn.execute(
+            f"UPDATE foods SET {', '.join(sets)} WHERE id=?", params)
+        self.conn.commit()
+        return True
+
+    @staticmethod
+    def _food_row(row) -> dict:
+        d = dict(row)
+        for key in ("aliases", "serving_units"):
+            try:
+                d[key] = json.loads(d.get(key) or "[]")
+            except (ValueError, TypeError):
+                d[key] = []
+        return d
+
+    def get_food(self, user_id: str | None, food_id: str) -> dict | None:
+        """取食物：内置（user_id IS NULL）或本人的自定义。"""
+        row = self.conn.execute(
+            "SELECT * FROM foods WHERE id=? AND (user_id IS NULL OR user_id=?)",
+            (food_id, user_id)).fetchone()
+        return self._food_row(row) if row else None
+
+    def search_foods(self, user_id: str | None, q: str = "",
+                     category: str = "", scope: str = "",
+                     limit: int = 40) -> list[dict]:
+        """中文搜索（名称/别名/品牌子串）+ 分类/范围过滤。"""
+        rows = self.conn.execute(
+            "SELECT * FROM foods WHERE user_id IS NULL OR user_id=?"
+            " ORDER BY (user_id IS NULL) DESC, id", (user_id or "",)).fetchall()
+        items = [self._food_row(r) for r in rows]
+        if category:
+            items = [f for f in items if f["category"] == category]
+        if scope == "builtin":
+            items = [f for f in items if f["user_id"] is None]
+        elif scope == "mine" and user_id:
+            items = [f for f in items if f["user_id"] == user_id]
+        if q:
+            ql = q.strip().lower()
+            def hit(f):
+                return ql in f["name"].lower() or ql in (f.get("brand") or "").lower() \
+                    or any(ql in str(a).lower() for a in (f.get("aliases") or []))
+            items = [f for f in items if hit(f)]
+        return items[:limit]
+
+    def builtin_food_count(self) -> int:
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM foods WHERE user_id IS NULL").fetchone()[0]
+
+    # ---- 餐次记录 ----
+
+    def _meal_row(self, row) -> dict:
+        d = dict(row)
+        d["items"] = json.loads(d["items"])
+        return d
+
+    def save_meal(self, user_id: str, local_date: str, meal_type: str,
+                  items: list, notes: str = "") -> int:
+        if meal_type not in ("breakfast", "lunch", "dinner", "snack"):
+            raise ValueError("meal_type 必须是 breakfast/lunch/dinner/snack")
+        cur = self.conn.execute(
+            "INSERT INTO meal_entries(user_id, local_date, meal_type, items,"
+            " notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
+            (user_id, local_date, meal_type,
+             json.dumps(items, ensure_ascii=False), notes[:500], _now(), _now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def update_meal(self, user_id: str, meal_id: int, items: list,
+                    notes: str | None = None, meal_type: str | None = None) -> bool:
+        sets = ["items=?", "updated_at=?"]
+        params: list = [json.dumps(items, ensure_ascii=False), _now()]
+        if notes is not None:
+            sets.append("notes=?")
+            params.append(notes[:500])
+        if meal_type is not None:
+            if meal_type not in ("breakfast", "lunch", "dinner", "snack"):
+                raise ValueError("非法 meal_type")
+            sets.append("meal_type=?")
+            params.append(meal_type)
+        params += [user_id, meal_id]
+        cur = self.conn.execute(
+            f"UPDATE meal_entries SET {', '.join(sets)} WHERE user_id=? AND id=?",
+            params)
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def delete_meal(self, user_id: str, meal_id: int) -> bool:
+        cur = self.conn.execute(
+            "DELETE FROM meal_entries WHERE user_id=? AND id=?", (user_id, meal_id))
+        self.conn.commit()
+        return cur.rowcount == 1
+
+    def get_meal(self, user_id: str, meal_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM meal_entries WHERE user_id=? AND id=?",
+            (user_id, meal_id)).fetchone()
+        return self._meal_row(row) if row else None
+
+    def meals_on(self, user_id: str, local_date: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM meal_entries WHERE user_id=? AND local_date=?"
+            " ORDER BY id", (user_id, local_date)).fetchall()
+        return [self._meal_row(r) for r in rows]
+
+    def copy_day_meals(self, user_id: str, from_date: str, to_date: str) -> int:
+        """复制某天全部餐次到另一天（沿用快照，不重算）。"""
+        count = 0
+        for meal in self.meals_on(user_id, from_date):
+            self.save_meal(user_id, to_date, meal["meal_type"], meal["items"],
+                           meal.get("notes") or "")
+            count += 1
+        return count
+
+    def meal_history(self, user_id: str, days: int = 90) -> list[dict]:
+        """近 N 天餐次（趋势与最近食物用）。"""
+        cutoff = (datetime.now() - timedelta(days=days)).date().isoformat()
+        rows = self.conn.execute(
+            "SELECT * FROM meal_entries WHERE user_id=? AND local_date>=?"
+            " ORDER BY local_date DESC, id DESC", (user_id, cutoff)).fetchall()
+        return [self._meal_row(r) for r in rows]
+
+    def set_day_complete(self, user_id: str, local_date: str, complete: bool) -> None:
+        self.conn.execute(
+            "INSERT INTO nutrition_days(user_id, local_date, complete, updated_at)"
+            " VALUES(?,?,?,?) ON CONFLICT(user_id, local_date) DO UPDATE SET"
+            " complete=excluded.complete, updated_at=excluded.updated_at",
+            (user_id, local_date, int(complete), _now()))
+        self.conn.commit()
+
+    def day_complete(self, user_id: str, local_date: str) -> bool:
+        row = self.conn.execute(
+            "SELECT complete FROM nutrition_days WHERE user_id=? AND local_date=?",
+            (user_id, local_date)).fetchone()
+        return bool(row and row["complete"])
+
+    def complete_days(self, user_id: str, days: int = 90) -> set[str]:
+        cutoff = (datetime.now() - timedelta(days=days)).date().isoformat()
+        rows = self.conn.execute(
+            "SELECT local_date FROM nutrition_days WHERE user_id=? AND complete=1"
+            " AND local_date>=?", (user_id, cutoff)).fetchall()
+        return {r["local_date"] for r in rows}
+
+    # ---- 目标与食谱 ----
+
+    def get_nutrition_targets(self, user_id: str) -> dict:
+        row = self.conn.execute(
+            "SELECT * FROM nutrition_targets WHERE user_id=?", (user_id,)).fetchone()
+        if not row:
+            return {"energy_kcal": None, "protein_g": None,
+                    "carbohydrate_g": None, "fat_g": None,
+                    "preferences": {}, "allergies": [],
+                    "budget_note": None, "precision_willing": None}
+        d = dict(row)
+        d["preferences"] = json.loads(d.get("preferences") or "{}")
+        d["allergies"] = json.loads(d.get("allergies") or "[]")
+        return d
+
+    def save_nutrition_targets(self, user_id: str, t: dict) -> dict:
+        for key in ("energy_kcal", "protein_g", "carbohydrate_g", "fat_g"):
+            v = t.get(key)
+            if v is not None and (not isinstance(v, (int, float))
+                                  or isinstance(v, bool) or v < 0 or v > 10000):
+                raise ValueError(f"{key} 必须是 0-10000 的数值或留空")
+        precision = t.get("precision_willing")
+        if precision is not None and precision not in (
+                "willing_precise", "rough", "minimal"):
+            raise ValueError("precision_willing 必须是 willing_precise/rough/minimal")
+        self.conn.execute(
+            "INSERT INTO nutrition_targets(user_id, energy_kcal, protein_g,"
+            " carbohydrate_g, fat_g, preferences, allergies, budget_note,"
+            " precision_willing, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(user_id) DO UPDATE SET energy_kcal=excluded.energy_kcal,"
+            " protein_g=excluded.protein_g,"
+            " carbohydrate_g=excluded.carbohydrate_g, fat_g=excluded.fat_g,"
+            " preferences=excluded.preferences, allergies=excluded.allergies,"
+            " budget_note=excluded.budget_note,"
+            " precision_willing=excluded.precision_willing,"
+            " updated_at=excluded.updated_at",
+            (user_id, t.get("energy_kcal"), t.get("protein_g"),
+             t.get("carbohydrate_g"), t.get("fat_g"),
+             json.dumps(t.get("preferences") or {}, ensure_ascii=False),
+             json.dumps(t.get("allergies") or [], ensure_ascii=False),
+             t.get("budget_note"), precision, _now()))
+        self.conn.commit()
+        return self.get_nutrition_targets(user_id)
+
+    def save_recipe(self, user_id: str, name: str, items: list,
+                    recipe_id: int | None = None) -> int:
+        now = _now()
+        if recipe_id is None:
+            cur = self.conn.execute(
+                "INSERT INTO nutrition_recipes(user_id, name, items, created_at,"
+                " updated_at) VALUES(?,?,?,?,?)",
+                (user_id, name[:40], json.dumps(items, ensure_ascii=False), now, now))
+            self.conn.commit()
+            return cur.lastrowid
+        cur = self.conn.execute(
+            "UPDATE nutrition_recipes SET name=?, items=?, updated_at=?"
+            " WHERE user_id=? AND id=?",
+            (name[:40], json.dumps(items, ensure_ascii=False), now, user_id, recipe_id))
+        if cur.rowcount != 1:
+            raise ValueError("食谱不存在或不属于当前用户")
+        self.conn.commit()
+        return recipe_id
+
+    def list_recipes(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM nutrition_recipes WHERE user_id=? ORDER BY id DESC",
+            (user_id,)).fetchall()
+        return [{"id": r["id"], "name": r["name"],
+                 "items": json.loads(r["items"]),
+                 "updated_at": r["updated_at"]} for r in rows]
+
+    def delete_recipe(self, user_id: str, recipe_id: int) -> None:
+        cur = self.conn.execute(
+            "DELETE FROM nutrition_recipes WHERE user_id=? AND id=?",
+            (user_id, recipe_id))
+        if cur.rowcount != 1:
+            raise ValueError("食谱不存在或不属于当前用户")
+        self.conn.commit()

@@ -39,17 +39,18 @@ def _analyzer(task_type: str):
 
 def _dedup_key(specialist: str, task_type: str, trigger: str,
                input_refs: dict) -> str | None:
-    """事件级幂等键：引用同一对象的同一分析只做一次。
+    """事件级幂等键：引用同一数据状态的同一分析只做一次。
 
-    UserRequested / regenerate 不设键（用户可以主动重复请求，
-    由频率限制约束）。
+    - 锚点 = 输入引用整体摘要（如 MealRecorded 的 {local_date, day_version}：
+      同日新增餐次会改变 day_version，从而触发新一轮分析而不是被去重掉）；
+    - UserRequested / regenerate 不设键（用户可以主动重复请求，
+      由频率限制约束）。
     """
     if trigger == "UserRequested":
         return None
-    anchor = input_refs.get("checkin_id") or input_refs.get("recovery_date") \
-        or input_refs.get("local_date") or ""
-    if not anchor:
+    if not input_refs:
         return None
+    anchor = "-".join(f"{k}:{v}" for k, v in sorted(input_refs.items()))
     return f"{specialist}:{task_type}:{trigger}:{anchor}"
 
 

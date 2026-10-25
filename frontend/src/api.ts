@@ -1,9 +1,11 @@
 // API 客户端：错误统一为 ApiError（status + 人可读 message + details 列表）
 import type {
-  ApproachRevision, ApproachView, Checkin, Consultation, ExerciseDetail,
+  ApproachRevision, ApproachView, Checkin, Consultation, DayNutrition, ExerciseDetail,
   ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, ExpertInsight,
-  ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, PlanOp,
-  PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, TodayBrief,
+  ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
+  MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
+  NutritionTrendDay, PlanOp,
+  PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, Recipe, TodayBrief,
   TrainingCalendar, TrainingTemplate, Trial,
 } from './types'
 
@@ -47,6 +49,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T>(path: string, body: unknown) =>
   req<T>(path, { method: 'POST', body: JSON.stringify(body) })
+
+const put = <T>(path: string, body: unknown) =>
+  req<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 
 export interface OnboardingPayload {
   basic: { age: number; gender: string; height_cm: number; weight_kg: number }
@@ -240,4 +245,56 @@ export const api = {
   stageInsightProposal: (uid: string, insightId: string, optionId: string) =>
     post<{ proposal: { proposal_id: string; status: string }; note: string }>(
       `/users/${uid}/expert-insights/${insightId}/options/${optionId}/proposal`, {}),
+
+  // ---- P1 营养系统 ----
+  foods: (uid: string, opts: { q?: string; category?: string; scope?: string } = {}) => {
+    const qs = new URLSearchParams({ uid, ...Object.fromEntries(
+      Object.entries(opts).filter(([, v]) => v) as [string, string][]) })
+    return req<{ count: number; categories: Record<string, string>; foods: FoodItem[] }>(
+      `/nutrition/foods?${qs}`)
+  },
+  foodDetail: (foodId: string, uid: string) =>
+    req<FoodItem>(`/nutrition/foods/${encodeURIComponent(foodId)}?uid=${encodeURIComponent(uid)}`),
+  addFood: (uid: string, payload: Partial<FoodItem>) =>
+    post<{ food_id: string; food: FoodItem }>(`/users/${uid}/nutrition/foods`, payload),
+  dayNutrition: (uid: string, date: string) =>
+    req<DayNutrition>(`/users/${uid}/nutrition/summary?date=${date}`),
+  saveMeal: (uid: string, payload: { date: string; meal_type: MealType
+                                     items: { food_id: string; amount: number; unit: string }[]
+                                     notes?: string }) =>
+    post<{ meal_id: number; summary: NutritionSummaryBlock }>(`/users/${uid}/meals`, payload),
+  updateMeal: (uid: string, mealId: number, payload: {
+    items: { food_id: string; amount: number; unit: string }[]; notes?: string
+    meal_type?: MealType }) =>
+    put<{ meal_id: number; summary: NutritionSummaryBlock }>(
+      `/users/${uid}/meals/${mealId}`, payload),
+  deleteMeal: (uid: string, mealId: number) =>
+    req<{ deleted: number }>(`/users/${uid}/meals/${mealId}`, { method: 'DELETE' }),
+  copyDayMeals: (uid: string, fromDate: string, toDate: string) =>
+    post<{ copied: number }>(`/users/${uid}/meals/copy-day`,
+                              { from_date: fromDate, to_date: toDate }),
+  nutritionTrends: (uid: string, days: number) =>
+    req<{ days_window: number; days: NutritionTrendDay[]; note: string }>(
+      `/users/${uid}/nutrition/trends?days=${days}`),
+  setDayComplete: (uid: string, date: string, complete: boolean) =>
+    post<{ date: string; complete: boolean }>(
+      `/users/${uid}/nutrition/days/${date}/complete`, { complete }),
+  nutritionTargets: (uid: string) =>
+    req<{ targets: NutritionTargets; reference: NutritionReference }>(
+      `/users/${uid}/nutrition/targets`),
+  saveNutritionTargets: (uid: string, payload: Partial<NutritionTargets>) =>
+    post<{ targets: NutritionTargets }>(`/users/${uid}/nutrition/targets`, payload),
+  frequentFoods: (uid: string) =>
+    req<{ foods: { food_id: string; food_name: string; count: number
+                   last_unit?: string; last_amount?: number
+                   serving_units?: import('./types').ServingUnit[] }[] }>(
+      `/users/${uid}/nutrition/frequent`),
+  recipes: (uid: string) => req<{ recipes: Recipe[] }>(`/users/${uid}/nutrition/recipes`),
+  saveRecipe: (uid: string, payload: { name: string
+    items: { food_id: string; amount: number; unit: string }[]; id?: number }) =>
+    post<{ recipe_id: number }>(`/users/${uid}/nutrition/recipes`, payload),
+  deleteRecipe: (uid: string, recipeId: number) =>
+    req<{ deleted: number }>(`/users/${uid}/nutrition/recipes/${recipeId}`,
+                              { method: 'DELETE' }),
 }
+

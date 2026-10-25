@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Dumbbell, Sun, UsersRound, UserRound } from 'lucide-react'
+import { Dumbbell, Sun, UsersRound, UtensilsCrossed, UserRound } from 'lucide-react'
 
-// P0 信息架构（2.0 §1.1）：今日｜训练｜专家｜我的。
-// 饮食页在 P1 营养系统落地后加入，不用空壳标签冒充功能。
+// P1 信息架构（2.0 §1.1）：今日｜训练｜饮食｜专家｜我的
 const TABS = [
   { to: '/today', label: '今日', icon: Sun },
   { to: '/training', label: '训练', icon: Dumbbell },
+  { to: '/nutrition', label: '饮食', icon: UtensilsCrossed },
   { to: '/experts', label: '专家', icon: UsersRound },
   { to: '/mine', label: '我的', icon: UserRound },
 ]
@@ -16,7 +16,7 @@ export default function BottomNav() {
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur
                     lg:hidden"
          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} aria-label="主导航">
-      <div className="mx-auto grid h-14 max-w-2xl grid-cols-4">
+      <div className="mx-auto grid h-14 max-w-2xl grid-cols-5">
         {TABS.map((t) => (
           <NavLink key={t.to} to={t.to} aria-label={t.label}
                    className={({ isActive }) =>

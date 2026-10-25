@@ -1363,6 +1363,217 @@ def register_routes(app) -> None:
         except ValueError as e:
             raise HTTPException(status_code=422, detail={"error": str(e)}) from None
 
+    # ---- P1 营养系统：食物库 / 餐次 / 汇总与趋势 / 目标 / 食谱 ----
+
+    @api.get("/nutrition/foods")
+    def nutrition_foods(request: Request, uid: str = "", q: str = "",
+                        category: str = "", scope: str = "",
+                        limit: int = Query(40, ge=1, le=200)):
+        from coach.nutrition import food_catalog, meal_service
+        meal_service.init_nutrition(request.app.state.db)  # 首次访问装载内置目录
+        foods = request.app.state.db.search_foods(uid or None, q, category, scope, limit)
+        return {"count": len(foods), "categories": food_catalog.CATEGORIES,
+                "foods": foods}
+
+    @api.post("/users/{uid}/nutrition/foods")
+    def nutrition_add_food(uid: str, request: Request, payload: dict = Body(...)):
+        """自定义食物（营养标签录入；按用户隔离，与内置同名不允许）。"""
+        from coach.nutrition import food_catalog
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            food = food_catalog.validate_custom_food(payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        food["source_name"] = "用户录入（营养标签/自估）"
+        food["license"] = "用户自录数据"
+        food_id = db.add_custom_food(uid, food)
+        if food_id is None:
+            raise HTTPException(status_code=422,
+                                detail={"error": "已有同名食物（内置或你的自定义），请换名称"})
+        return {"food_id": food_id, "food": db.get_food(uid, food_id)}
+
+    @api.put("/users/{uid}/nutrition/foods/{food_id}")
+    def nutrition_update_food(uid: str, food_id: str, request: Request,
+                              payload: dict = Body(...)):
+        from coach.nutrition import food_catalog
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            patch = food_catalog.validate_custom_food(payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        if not db.update_custom_food(uid, food_id, patch):
+            raise HTTPException(status_code=404,
+                                detail={"error": "食物不存在或不是你的自定义食物"})
+        return {"food": db.get_food(uid, food_id)}
+
+    @api.get("/nutrition/foods/{food_id}")
+    def nutrition_food_detail(request: Request, food_id: str, uid: str = ""):
+        food = request.app.state.db.get_food(uid or None, food_id)
+        if not food:
+            raise HTTPException(status_code=404, detail={"error": "食物不存在"})
+        return food
+
+    @api.get("/users/{uid}/meals")
+    def nutrition_meals(uid: str, request: Request, date: str = Query(...)):
+        import re as _re
+        if not _re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise HTTPException(status_code=422, detail={"error": "date 需为 YYYY-MM-DD"})
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.nutrition import meal_service
+        return meal_service.day_summary(db, uid, date)
+
+    @api.post("/users/{uid}/meals")
+    def nutrition_save_meal(uid: str, request: Request, payload: dict = Body(...)):
+        """记录餐次（快照服务端构造；保存成功触发 MealRecorded→营养分析）。"""
+        from coach.nutrition import meal_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            result = meal_service.record_meal(
+                db, uid, str(payload.get("date") or ""), str(payload.get("meal_type") or ""),
+                payload.get("items") or [], str(payload.get("notes") or ""))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return result
+
+    @api.put("/users/{uid}/meals/{meal_id}")
+    def nutrition_update_meal(uid: str, meal_id: int, request: Request,
+                              payload: dict = Body(...)):
+        from coach.nutrition import meal_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return meal_service.update_meal(
+                db, uid, meal_id, payload.get("items") or [],
+                payload.get("notes"), payload.get("meal_type"))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.delete("/users/{uid}/meals/{meal_id}")
+    def nutrition_delete_meal(uid: str, meal_id: int, request: Request):
+        from coach.nutrition import meal_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            meal_service.delete_meal(db, uid, meal_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"deleted": meal_id}
+
+    @api.post("/users/{uid}/meals/copy-day")
+    def nutrition_copy_day(uid: str, request: Request, payload: dict = Body(...)):
+        """复制某天全部餐次到另一天（沿用当时快照，不重算）。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from_date, to_date = str(payload.get("from_date") or ""), str(payload.get("to_date") or "")
+        import re as _re
+        if not (_re.match(r"^\d{4}-\d{2}-\d{2}$", from_date)
+                and _re.match(r"^\d{4}-\d{2}-\d{2}$", to_date)):
+            raise HTTPException(status_code=422,
+                                detail={"error": "from_date/to_date 需为 YYYY-MM-DD"})
+        count = db.copy_day_meals(uid, from_date, to_date)
+        if count:
+            from coach.nutrition.meal_service import _fire_meal_recorded
+            _fire_meal_recorded(db, uid, to_date)
+        return {"copied": count}
+
+    @api.get("/users/{uid}/nutrition/summary")
+    def nutrition_summary(uid: str, request: Request, date: str = Query(...)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.nutrition import meal_service
+        return meal_service.day_summary(db, uid, date)
+
+    @api.get("/users/{uid}/nutrition/trends")
+    def nutrition_trends(uid: str, request: Request, days: int = Query(7, ge=1, le=90)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.nutrition import meal_service
+        return meal_service.trends(db, uid, days)
+
+    @api.post("/users/{uid}/nutrition/days/{date}/complete")
+    def nutrition_day_complete(uid: str, date: str, request: Request,
+                                complete: bool = Body(..., embed=True)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        db.set_day_complete(uid, date, complete)
+        # 完整性变化会改变分析结论边界 → 重新分析该日
+        from coach.nutrition.meal_service import _fire_meal_recorded
+        _fire_meal_recorded(db, uid, date)
+        return {"date": date, "complete": complete}
+
+    @api.get("/users/{uid}/nutrition/targets")
+    def nutrition_targets_get(uid: str, request: Request):
+        db = request.app.state.db
+        profile = _user_profile(db, uid)
+        from coach.nutrition import target_service
+        return {"targets": db.get_nutrition_targets(uid),
+                "reference": target_service.estimate_reference(profile)}
+
+    @api.post("/users/{uid}/nutrition/targets")
+    def nutrition_targets_save(uid: str, request: Request, payload: dict = Body(...)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            targets = db.save_nutrition_targets(uid, {
+                "energy_kcal": payload.get("energy_kcal"),
+                "protein_g": payload.get("protein_g"),
+                "carbohydrate_g": payload.get("carbohydrate_g"),
+                "fat_g": payload.get("fat_g"),
+                "preferences": payload.get("preferences") or {},
+                "allergies": payload.get("allergies") or [],
+                "budget_note": payload.get("budget_note"),
+                "precision_willing": payload.get("precision_willing")})
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        # 目标变化改变"目标比较"维度 → 重新分析当天（幂等由 day_version 保证）
+        from coach.nutrition.meal_service import _fire_meal_recorded
+        if db.meals_on(uid, date.today().isoformat()):
+            _fire_meal_recorded(db, uid, date.today().isoformat())
+        return {"targets": targets}
+
+    @api.get("/users/{uid}/nutrition/frequent")
+    def nutrition_frequent(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        from coach.nutrition import meal_service
+        return {"foods": meal_service.frequent_foods(db, uid)}
+
+    @api.get("/users/{uid}/nutrition/recipes")
+    def nutrition_recipes(uid: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"recipes": db.list_recipes(uid)}
+
+    @api.post("/users/{uid}/nutrition/recipes")
+    def nutrition_save_recipe(uid: str, request: Request, payload: dict = Body(...)):
+        """把一组食物存为食谱（快照复用）。name + items 必填。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail={"error": "食谱名称必填"})
+        try:
+            from coach.nutrition import meal_service
+            items = meal_service.resolve_items(db, uid, payload.get("items") or [])
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        recipe_id = db.save_recipe(uid, name, items, payload.get("id"))
+        return {"recipe_id": recipe_id}
+
+    @api.delete("/users/{uid}/nutrition/recipes/{recipe_id}")
+    def nutrition_delete_recipe(uid: str, recipe_id: int, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            db.delete_recipe(uid, recipe_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"deleted": recipe_id}
+
     # ---- AI 教练对话 ----
 
     @api.post("/users/{uid}/chat")

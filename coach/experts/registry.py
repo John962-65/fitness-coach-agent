@@ -8,9 +8,9 @@
   系统尚未建设（P1-P4），只保留咨询入口，不伪造分析能力；
 - triggers → task_types：本领域订阅的业务事件与对应分析类型。
 
-P0 实装：training_science 的 post-workout-review（确定性，复用
-fact_service / exercise_metrics / progress_analysis 同一套口径）。
-其余触发源（MealRecorded 等）在枚举中登记，待对应领域数据系统落地后接线。
+P0 实装：training_science 的 post-workout-review；P1 实装：nutrition 的
+daily-nutrition-review（两者均为确定性，复用 fact_service / 确定性营养计算）。
+其余触发源（RecoveryRecorded 等）在枚举中登记，待对应领域数据系统落地后接线。
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ TRIGGERS = ("WorkoutSaved", "MealRecorded", "RecoveryRecorded",
 # 任务类型 → 执行器（task_dispatcher 按表派发；确定性函数，不调 LLM）
 TASK_TYPES: dict[str, str] = {
     "post-workout-review": "coach.experts.training_science.analyze_post_workout",
+    "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
 }
 
 SPECIALISTS: dict[str, dict] = {
@@ -39,11 +40,13 @@ SPECIALISTS: dict[str, dict] = {
     "nutrition": {
         "label": "营养顾问",
         "domain": "食物、营养目标、饮食分析",
-        "data_sources": ["饮食打卡（文本记录）"],
-        "tools": [],
-        "workbench": "planned",   # P1：食物库 + 营养计算落地后开放
-        "workbench_note": "饮食记录与营养分析将在下一阶段提供；现在可以就饮食方式咨询",
-        "triggers": {"MealRecorded": []},
+        "data_sources": ["饮食记录（含营养快照）", "营养目标（你设置的）",
+                         "食物库（内置参考值 + 你的自定义）"],
+        "tools": ["确定性营养计算（份量换算/快照求和）", "记录完整度与趋势汇总"],
+        "workbench": "ready",
+        "workbench_path": "/experts/nutrition",
+        "triggers": {"MealRecorded": ["daily-nutrition-review"],
+                     "UserRequested": ["daily-nutrition-review"]},
     },
     "recovery": {
         "label": "恢复顾问",
