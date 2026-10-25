@@ -21,6 +21,8 @@ PHASES = [
     {"key": "finish", "label": "结束（回到悬垂）", "t": [3.0, 3.6]},
 ]
 DURATION = 3.6
+# 质量检查阈值（按动作类型声明）：俯身划船为固定铰链姿态
+QUALITY_BOUNDS = {"max_hip_sag": 150.0}
 GRIP_HALF = 0.26
 LEAN = 42.0
 TORSO = 0.47
@@ -31,9 +33,9 @@ ANKLES = {"Left": np.array([0.13, 0.12, 0.01]),
 
 def _torso() -> dict[str, np.ndarray]:
     return {
-        "Hips": pitch(0.30 * LEAN),
-        "Spine": pitch(0.35 * LEAN),
-        "Spine1": pitch(0.35 * LEAN),
+        "Hips": pitch(0.30 * LEAN),      # 世界目标分配（胸部世界俯仰=LEAN）
+        "Spine": pitch(0.65 * LEAN),
+        "Spine1": pitch(LEAN),
         "Neck": pitch(-0.4 * LEAN),   # 头颈中立（不抬头看镜子）
         "Head": pitch(-0.4 * LEAN),
     }

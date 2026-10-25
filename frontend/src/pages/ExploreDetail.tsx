@@ -469,6 +469,26 @@ function StructuredTeaching({ content }: { content: TeachingContent }) {
           </span>
         )}
       </div>
+      {(content.review_notes || []).flatMap((n) => (n.pending || [])).length > 0 && (
+        <div className="card border-amber-200 bg-amber-50/60">
+          <div className="flex items-start gap-2">
+            <TriangleAlert size={16} className="mt-0.5 shrink-0 text-amber-500" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-amber-800">
+                部分表述待专业复核（不作为通用标准）
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {(content.review_notes || []).flatMap((n) => (n.pending || []).map((p, i) => (
+                  <li key={i} className="text-xs leading-relaxed text-amber-800/90">· {p}</li>
+                )))}
+              </ul>
+              <p className="mt-1.5 text-2xs text-amber-700/70">
+                以下内容为来源体系的教学表述，其中被标记的绝对化说法在专业复核完成前请按自身条件理解。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {order.map((key) => {
         const sec = content.sections[key]
         if (!sec) return null

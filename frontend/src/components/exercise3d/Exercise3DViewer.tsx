@@ -69,6 +69,14 @@ export default function Exercise3DViewer({ demo, onFallback }: {
     setFailed(false)
   }, [])
 
+  // 单次模式播完：动画自停，按钮/时间轴同步回"暂停"态（P1-1）
+  const handleFinished = useCallback(() => {
+    setPlaying(false)
+    const t = apiRef.current?.getTime() ?? 0
+    timeRef.current = t
+    setTime(t)
+  }, [])
+
   const toggle = useCallback(() => {
     const api = apiRef.current
     if (!api) return
@@ -76,10 +84,12 @@ export default function Exercise3DViewer({ demo, onFallback }: {
       api.pause()
       setPlaying(false)
     } else {
+      // 单次模式播完（停在末帧）后再点播放：从头开始
+      if (!loop && api.getTime() >= durationRef.current - 1e-3) api.seek(0)
       api.play()
       setPlaying(true)
     }
-  }, [playing])
+  }, [playing, loop])
 
   const seek = useCallback((t: number) => {
     apiRef.current?.seek(t)
@@ -136,6 +146,7 @@ export default function Exercise3DViewer({ demo, onFallback }: {
                 loop={loop}
                 onTick={onTick}
                 onReady={handleReady}
+                onFinished={handleFinished}
               />
             </Suspense>
             <OrbitControls makeDefault enablePan={false}

@@ -102,6 +102,10 @@ def load_one(ex_id: str) -> dict | None:
         raise TeachingError(f"{path.name}: 结构必须为映射")
     doc = _validate(doc, path)
     doc["content_version"] = int(doc.get("content_version") or 1)
+    # review_notes：交付/复核审查挂起的争议点（可追溯，不改写原文）
+    notes = doc.get("review_notes")
+    if notes is not None and not isinstance(notes, list):
+        raise TeachingError(f"{path.name}: review_notes 必须为列表")
     return doc
 
 
@@ -151,4 +155,5 @@ def public_teaching(ex_id: str) -> dict | None:
         "sources": doc["sources"],
         "sections": {k: doc["sections"][k] for k in SECTION_KEYS
                      if k in doc["sections"]},
+        "review_notes": doc.get("review_notes") or [],
     }

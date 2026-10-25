@@ -42,8 +42,9 @@ def upsert(exercise_id: str) -> dict:
     glb = ASSETS / "exercise_3d" / "exports" / f"{exercise_id}.glb"
     if not glb.is_file():
         raise SystemExit(f"缺少导出文件：{glb}（先运行 tools.exercise3d.build）")
-    asset_id = f"3d_{exercise_id}_v1"
     preview = ASSETS / "exercise_3d" / "exports" / f"preview_{exercise_id}.png"
+    has_preview = preview.is_file()
+    asset_id = f"3d_{exercise_id}_v1"
     entry = {
         "asset_id": asset_id,
         "exercise_id": exercise_id,
@@ -51,7 +52,7 @@ def upsert(exercise_id: str) -> dict:
         "source_kind": "project_created",
         "file_path": f"exercise_3d/exports/{exercise_id}.glb",
         "poster_path": (f"exercise_3d/exports/preview_{exercise_id}.png"
-                        if preview.is_file() else None),
+                        if has_preview else None),
         "source_name": "fitness-coach-agent tools/exercise3d",
         "source_url": None,
         "license": ASSET_LICENSE,
@@ -64,11 +65,35 @@ def upsert(exercise_id: str) -> dict:
         "size_bytes": glb.stat().st_size,
         "created_at": str(date.today()),
     }
+    entries = [entry]
+    if has_preview:
+        # 预览图 = 独立授权资产（image 条目，自带 sha256 完整性），
+        # 与模型同一授权来源（P0-1：完整性校验不因是"附属图"而豁免）
+        entries.append({
+            "asset_id": f"3d_{exercise_id}_preview_v1",
+            "exercise_id": exercise_id,
+            "media_type": "image",
+            "source_kind": "project_created",
+            "file_path": entry["poster_path"],
+            "poster_path": None,
+            "source_name": "fitness-coach-agent tools/exercise3d（浏览器关键帧截图）",
+            "source_url": None,
+            "license": ASSET_LICENSE,
+            "license_evidence": ASSET_LICENSE_EVIDENCE,
+            "redistribution_allowed": False,
+            "scope": "global",
+            "review_status": ASSET_REVIEW_STATUS,
+            "content_version": 1,
+            "sha256": sha256(preview),
+            "size_bytes": preview.stat().st_size,
+            "created_at": str(date.today()),
+        })
     data = {"version": 1, "assets": []}
     if MEDIA_MANIFEST.is_file():
         data = json.loads(MEDIA_MANIFEST.read_text(encoding="utf-8"))
-    data["assets"] = [a for a in data["assets"] if a["asset_id"] != asset_id]
-    data["assets"].append(entry)
+    keep_ids = {e["asset_id"] for e in entries}
+    data["assets"] = [a for a in data["assets"] if a["asset_id"] not in keep_ids]
+    data["assets"].extend(entries)
     MEDIA_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MEDIA_MANIFEST.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                               encoding="utf-8")

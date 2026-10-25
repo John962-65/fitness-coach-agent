@@ -24,12 +24,14 @@ PHASES = [
     {"key": "finish", "label": "结束（杆落回地面）", "t": [3.1, 3.6]},
 ]
 DURATION = 3.6
+# 质量检查阈值（按动作类型声明）：铰链模式髋矢状面角天然深于蹲类
+QUALITY_BOUNDS = {"max_hip_sag": 155.0}
 GRIP_HALF = 0.26
 BAR_Z = 0.05                    # 杆在脚中正上方（教学示例垂直杆轨迹）
 BAR_Y_FLOOR, BAR_Y_LOCK = 0.225, 0.83
 ARM_HANG = 0.52                 # 肩→握点垂直悬垂距（< 臂展 0.54，肘微屈）
 TORSO = 0.47                    # 髋→肩沿躯干长
-LEAN_FLOOR, LEAN_LOCK = 40.0, 10.0
+LEAN_FLOOR, LEAN_LOCK = 68.0, 10.0   # 起始躯干约 22° 高于水平（本骨架臂/躯干比例下的传统硬拉背角）；锁定微屈髋
 ANKLES = {"Left": np.array([0.13, 0.12, 0.02]),
           "Right": np.array([-0.13, 0.12, 0.02])}
 
@@ -51,9 +53,9 @@ def frame(rig: Rig, t: float) -> dict:
     bar = np.array([0.0, BAR_Y_FLOOR + (BAR_Y_LOCK - BAR_Y_FLOOR) * s, BAR_Z])
     lean = LEAN_FLOOR + (LEAN_LOCK - LEAN_FLOOR) * s
     torso = {
-        "Hips": pitch(0.30 * lean),
-        "Spine": pitch(0.35 * lean),
-        "Spine1": pitch(0.35 * lean),
+        "Hips": pitch(0.30 * lean),      # 世界目标分配（胸部世界俯仰=lean）
+        "Spine": pitch(0.65 * lean),
+        "Spine1": pitch(lean),
         "Neck": pitch(-0.5 * lean),
         "Head": pitch(-0.5 * lean),
     }

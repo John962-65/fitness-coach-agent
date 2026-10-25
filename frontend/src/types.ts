@@ -186,6 +186,8 @@ export interface TeachingContent {
   completeness: string
   sources: { type?: string; ref?: string; note?: string }[]
   sections: Record<string, TeachingSection>
+  /** 交付/复核审查挂起的争议点（可追溯；不改写原文） */
+  review_notes?: { date?: string; by?: string; pending?: string[] }[]
 }
 
 export interface ApproachRevision {

@@ -97,6 +97,91 @@ def test_unauthorized_assets_never_published():
         "review_status": "approved"}) is False
 
 
+# ---- P0-1：直接文件访问与入口透出共用同一授权判定 ----
+
+def _patch_assets(tmp_path, monkeypatch):
+    """把 assets 树拷到临时目录并指向模块（可安全篡改）。"""
+    import shutil as sh
+    dst = tmp_path / "assets"
+    sh.copytree(ROOT / "assets", dst)
+    monkeypatch.setattr(teaching_media, "ASSETS_DIR", dst.resolve())
+    monkeypatch.setattr(teaching_media, "MEDIA_MANIFEST",
+                        dst / "teaching_media" / "manifest.json")
+    monkeypatch.setattr(teaching_media, "MANIFESTS_3D_DIR",
+                        dst / "exercise_3d" / "manifests")
+    return dst
+
+
+def test_tampered_model_hidden_and_unservable(tmp_path, monkeypatch):
+    """模型被篡改（sha 不一致）→ 入口隐藏 且 直链 404（同一保证）。"""
+    _patch_assets(tmp_path, monkeypatch)
+    glb = teaching_media.ASSETS_DIR / "exercise_3d/exports/deadlift.glb"
+    glb.write_bytes(glb.read_bytes() + b"\x00tamper")
+    assert teaching_media.demo_3d("deadlift") is None
+    assert teaching_media.asset_file_for_serving("deadlift", "deadlift.glb") is None
+
+
+def test_descriptor_drift_is_not_authorization(tmp_path, monkeypatch):
+    """三维描述指向未授权路径 ≠ 授权：描述里的 model_path/preview_path
+    不得作为下发依据（入口与直链都必须拒绝）。"""
+    dst = _patch_assets(tmp_path, monkeypatch)
+    # 场景 1：描述的 model_path 改指向别的文件（与授权资产 file_path 不一致）
+    p = dst / "exercise_3d/manifests/deadlift.json"
+    d = json.loads(p.read_text(encoding="utf-8"))
+    d["model_path"] = "exercise_3d/exports/barbell_row.glb"
+    p.write_text(json.dumps(d), encoding="utf-8")
+    assert teaching_media.demo_3d("deadlift") is None
+    # 描述里的路径本身也拿不到 deadlift 名下的服务授权
+    assert teaching_media.asset_file_for_serving("deadlift", "barbell_row.glb") is None
+    # 场景 2：未经登记的新文件放进目录 → 直链 404
+    ghost = dst / "exercise_3d/exports/ghost.png"
+    ghost.write_bytes(b"png")
+    assert teaching_media.asset_file_for_serving("deadlift", "ghost.png") is None
+
+
+def test_preview_needs_own_authorized_entry(tmp_path, monkeypatch):
+    """预览图必须有独立授权条目：只挂在模型条目 poster_path 上、
+    没有对应 image 资产登记时，入口不透出预览且直链 404。"""
+    _patch_assets(tmp_path, monkeypatch)
+    m = teaching_media.MEDIA_MANIFEST
+    data = json.loads(m.read_text(encoding="utf-8"))
+    data["assets"] = [a for a in data["assets"] if a["media_type"] != "image"]
+    m.write_text(json.dumps(data), encoding="utf-8")
+    d = teaching_media.demo_3d("deadlift")
+    assert d is not None and d["preview_path"] == ""
+    assert teaching_media.asset_file_for_serving(
+        "deadlift", "preview_deadlift.png") is None
+
+
+def test_revoked_license_unservable(tmp_path, monkeypatch):
+    """授权登记被下架（条目从 manifest 移除，文件仍在磁盘）→ 素材整体
+    不可发布（入口 + 直链）——文件存在不构成授权。"""
+    _patch_assets(tmp_path, monkeypatch)
+    m = teaching_media.MEDIA_MANIFEST
+    data = json.loads(m.read_text(encoding="utf-8"))
+    data["assets"] = [a for a in data["assets"] if a["exercise_id"] != "deadlift"]
+    m.write_text(json.dumps(data), encoding="utf-8")
+    assert teaching_media.demo_3d("deadlift") is None
+    assert teaching_media.asset_file_for_serving("deadlift", "deadlift.glb") is None
+    assert teaching_media.asset_file_for_serving(
+        "deadlift", "preview_deadlift.png") is None
+
+
+def test_http_404_when_tampered(tmp_path, monkeypatch):
+    """端到端：篡改后 /api/assets/exercise-3d/... 必须返回 404。"""
+    from backend.app import create_app
+    from fastapi.testclient import TestClient
+    _patch_assets(tmp_path, monkeypatch)
+    glb = teaching_media.ASSETS_DIR / "exercise_3d/exports/deadlift.glb"
+    glb.write_bytes(glb.read_bytes() + b"\x00tamper")
+    app = create_app(db_path=tmp_path / "t.db", frontend_dist=tmp_path)
+    c = TestClient(app)
+    r = c.get("/api/assets/exercise-3d/deadlift/deadlift.glb")
+    assert r.status_code == 404
+    d = c.get("/api/exercises/deadlift").json()
+    assert d["demos"]["model_3d"] is None
+
+
 def test_manifest_rejects_user_upload_as_global(tmp_path):
     p = tmp_path / "m.json"
     p.write_text(json.dumps({"version": 1, "assets": [{

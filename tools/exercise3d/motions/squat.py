@@ -61,9 +61,9 @@ def _torso_pose(lean_deg: float) -> dict[str, np.ndarray]:
         return mat_from_axis_angle(X, deg)
 
     return {
-        "Hips": pitch(0.30 * lean_deg),
-        "Spine": pitch(0.35 * lean_deg),
-        "Spine1": pitch(0.35 * lean_deg),
+        "Hips": pitch(0.30 * lean_deg),   # 世界目标分配：胸部世界俯仰=lean，
+        "Spine": pitch(0.65 * lean_deg),   # 经 fk 反解局部后逐节累加（0.3/0.35/0.35）
+        "Spine1": pitch(lean_deg),
         "Neck": pitch(-0.5 * lean_deg),
         "Head": pitch(-0.5 * lean_deg),
     }

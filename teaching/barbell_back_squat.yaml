@@ -2,9 +2,28 @@
 # 内容整理自仓库 knowledge/20_exercises/leg/squat_technique.md（谭成义-腿部教学，
 # 公开视频整理稿）；AI 辅助整理，未人工复核——review_status 如实为 draft。
 exercise_id: barbell_back_squat
-content_version: 1
+content_version: 2
 updated: 2026-10-25
 review_status: draft        # draft=AI 整理稿，未经人工审核；不得从动作库 status 继承
+# 交付审查（2026-10-25，项目所有者）提出的复核点——不改写原文（不以 AI 文字
+# 替代人工审核），逐条挂起待专业复核后决定保留/改写/加适用条件：
+review_notes:
+  - date: 2026-10-25
+    by: M6.4-B 交付审查（项目所有者）
+    pending:
+      - >-
+        「臀部是发动机、股四头肌是辅助」「先动髋，不要膝盖先动」为来源体系的
+        教学口诀，属绝对化表述：髋膝协调与力矩分配随杠位、身体比例、关节活动度
+        与训练目标而异（审查引用：限制膝前移改变髋/膝力矩分配的研究 Fry et al.
+        2003, PMID 14636100；及 2024 年深蹲生物力学综述）。待专业复核后改为
+        有适用条件的教学原则。
+      - >-
+        「躯干保持直立」应理解为保持脊柱中立与整体稳定，而非要求躯干竖直：
+        合理躯干前倾角随杠位（高/低杠）与个体比例变化。待专业复核措辞。
+      - >-
+        「髋部低于膝盖（全蹲）」作为默认深度表述的适用边界（目标、活动度、
+        控制能力）待专业复核；「膝盖内扣→受伤风险」需区分失控性动态内移与
+        个体正常差异。
 sources:
   - type: knowledge
     ref: 20_exercises/leg/squat_technique.md

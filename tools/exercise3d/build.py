@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from . import motions
+from . import quality
 from .equipment import barbell, bench, bench_upright, dumbbell, floor
 from .gltfbuild import GlbBuilder
 from .meshgen import build_body
@@ -29,8 +30,13 @@ MESHES = {"barbell": barbell, "dumbbell": dumbbell, "bench": bench,
 
 
 def export(exercise_id: str) -> Path:
-    doc = motions.MOTIONS[exercise_id].build()
+    mod = motions.MOTIONS[exercise_id]
+    doc = mod.build()
     rig = Rig.create()
+    # P1-2：导出前跑动作质量检查（连续性/关节角/器械间隙/足底/对称性）。
+    # 关节角阈值按动作类型声明（铰链类髋角天然更深），不搞统一标准。
+    bounds = dict(getattr(mod, "QUALITY_BOUNDS", {}))
+    worst = quality.check(doc, rig, **bounds)
     g = GlbBuilder()
 
     joints = g.add_joint_nodes(rig)                  # 节点 0..N-1 = 骨骼树
@@ -79,6 +85,7 @@ def export(exercise_id: str) -> Path:
     g.add_animation(doc["animation_name"], times, rot_channels, trans_channels)
     out = EXPORTS / f"{exercise_id}.glb"
     g.save(out, scene_children)
+    print(f"  质量检查: {worst}")
     return out
 
 

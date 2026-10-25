@@ -7,14 +7,20 @@
   model_path/preview_path/animation_name/duration/loop/supported_views/
   teaching_phases/license/review_status/version），通过 asset_id 回链索引。
 
-发布纪律（B0 验收）：任何未确认授权的素材不得作为公共演示内容发布。
+发布纪律（B0 验收 + M6.4-B 交付审查 P0-1 修复）：任何未确认授权的
+素材不得作为公共演示内容发布，**隐藏入口与拒绝直接访问必须是同一个
+安全保证**：
 - scope=global 才是公共素材；用户上传媒体只存在于既有 per-user SQLite/
   media 目录体系，绝不进入本 manifest（隔离从结构上保证）。
 - 授权判定：source_kind=project_created（本项目自制，授权明确）需
   license+license_evidence；third_party_licensed 必须提供许可证证据且
   review_status=approved 才可发布；user_uploaded 一律不得为 global。
 - 完整性：发布前校验文件存在且 sha256 与 manifest 一致，不一致视为
-  未授权（损坏/被篡改）素材，不予发布。
+  未授权（损坏/被篡改）素材，不予发布——**入口透出与静态文件下发共用
+  同一 authorized_assets 判定**；三维描述（manifests/*.json）中的路径
+  不构成额外授权来源，只能引用已授权资产的路径。
+- redistribution_allowed 仅表示"允许随仓库对外分发"；false 表示仅限
+  本项目内部演示（demo_3d 透出该字段，供发布层区分内部使用与对外发布）。
 
 动作三维入口只按稳定 exercise_id 关联；不按中文名称拼接路径。
 """
@@ -135,10 +141,29 @@ def load_3d_descriptor(ex_id: str) -> dict | None:
     return d
 
 
+def _asset_ok(entry: dict, path_key: str) -> str | None:
+    """条目内某路径（file_path/poster_path）已授权且 sha 一致时返回相对路径。
+
+    poster_path 属于其所属资产条目的授权范围（预览图在 manifest 中有
+    独立的完整性登记，见 manifest.py 生成的 image 资产条目）。
+    """
+    rel = entry.get(path_key)
+    if not rel:
+        return None
+    f = ASSETS_DIR / rel
+    if not f.is_file() or not str(f).startswith(str(ASSETS_DIR)):
+        return None
+    if _sha256(f) != entry["sha256"]:
+        return None
+    return rel
+
+
 def demo_3d(ex_id: str) -> dict | None:
     """动作详情三维演示入口：资产已授权 + 文件完整才透出。
 
-    返回播放器所需信息（URL 由路由层拼），不含内部路径细节。
+    三维描述只允许引用已授权资产：model_path 必须与授权资产的 file_path
+    一致，preview_path 必须与该资产（或独立预览资产）登记的路径一致；
+    描述文件与授权清单漂移时一律不透出（P0-1：描述不构成授权来源）。
     """
     desc = load_3d_descriptor(ex_id)
     if not desc:
@@ -147,18 +172,22 @@ def demo_3d(ex_id: str) -> dict | None:
                   if a["asset_id"] == desc.get("asset_id")), None)
     if not asset or not authorized(asset):
         return None
-    model = ASSETS_DIR / asset["file_path"]
-    if not model.is_file() or _sha256(model) != asset["sha256"]:
+    model_rel = _asset_ok(asset, "file_path")
+    if not model_rel or model_rel != desc.get("model_path"):
         return None
     preview_url = ""
-    if desc.get("preview_path"):
-        preview = ASSETS_DIR / desc["preview_path"]
-        if preview.is_file() and str(preview).startswith(str(ASSETS_DIR)):
-            preview_url = str(desc["preview_path"])
+    poster = asset.get("poster_path")
+    if poster and poster == desc.get("preview_path"):
+        # 预览图必须是已授权的独立资产（image 条目，sha 校验通过）
+        poster_entry = next((a for a in authorized_assets(ex_id)
+                             if a.get("file_path") == poster
+                             and a["media_type"] == "image"), None)
+        if poster_entry:
+            preview_url = poster
     return {
         "exercise_id": ex_id,
         "asset_id": asset["asset_id"],
-        "model_path": asset["file_path"],
+        "model_path": model_rel,
         "preview_path": preview_url,
         "animation_name": desc["animation_name"],
         "duration": float(desc["duration"]),
@@ -167,15 +196,20 @@ def demo_3d(ex_id: str) -> dict | None:
         "teaching_phases": desc["teaching_phases"],
         "license": asset["license"],
         "review_status": asset["review_status"],
+        "redistribution_allowed": bool(asset.get("redistribution_allowed")),
         "content_version": asset.get("content_version"),
-        "size_bytes": model.stat().st_size,
+        "size_bytes": (ASSETS_DIR / model_rel).stat().st_size,
     }
 
 
 def asset_file_for_serving(ex_id: str, name: str) -> Path | None:
-    """静态路由用：文件必须在该动作已授权资产/描述清单内才可下发。
+    """静态路由用：**只**下发 authorized_assets 已确认授权的文件。
 
-    防目录穿越 + 防未授权素材借 URL 直接发布（双保险，与 manifest 校验独立）。
+    允许列表 = 每条已授权资产（sha 校验通过）的 file_path——模型 GLB 与
+    预览图（预览图在 manifest 中有独立的 image 资产条目，完整性同样由
+    sha256 保证）。三维描述文件中的任何路径都不加入允许列表，与入口透出
+    （demo_3d）共用同一授权判定，杜绝"入口已隐藏但直链仍可下载"
+    （M6.4-B 交付审查 P0-1）。
     """
     if not re_name_ok(name):
         return None
@@ -183,16 +217,6 @@ def asset_file_for_serving(ex_id: str, name: str) -> Path | None:
     for a in authorized_assets(ex_id):
         f = ASSETS_DIR / a["file_path"]
         allowed.setdefault(f.name, f)
-        if a.get("poster_path"):
-            poster = ASSETS_DIR / a["poster_path"]
-            allowed.setdefault(poster.name, poster)
-    desc = load_3d_descriptor(ex_id)
-    if desc:
-        for key in ("model_path", "preview_path"):
-            if desc.get(key):
-                f = ASSETS_DIR / desc[key]
-                if f.is_file():
-                    allowed.setdefault(f.name, f)
     f = allowed.get(name)
     if f and f.is_file() and str(f.resolve()).startswith(str(ASSETS_DIR)):
         return f
