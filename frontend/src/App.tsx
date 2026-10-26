@@ -24,6 +24,7 @@ import NutritionHistory from './pages/nutrition/NutritionHistory'
 import NutritionTargets from './pages/nutrition/NutritionTargets'
 import NutritionExpert from './pages/experts/NutritionExpert'
 import Training from './pages/Training'
+import TrainingLocations from './pages/TrainingLocations'
 import Workout from './pages/Workout'
 import { useApp } from './store'
 
@@ -81,6 +82,7 @@ function Shell() {
           <Route path="/experts/rehabilitation" element={<Rehab />} />
           <Route path="/experts/movement" element={<MovementExpert />} />
           <Route path="/mine/body" element={<BodyMetrics />} />
+          <Route path="/mine/locations" element={<TrainingLocations />} />
           <Route path="/experts/chat" element={<Coach />} />
           <Route path="/experts/knowledge" element={<Explore />} />
           <Route path="/experts/knowledge/:exerciseId" element={<ExploreDetail />} />

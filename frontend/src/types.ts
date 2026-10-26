@@ -139,10 +139,72 @@ export interface ExerciseSummary {
   pattern: string
   primary: string[]
   equipment: string[]
+  equipment_names?: string[]
   location: string[]
   status: string
   measurement?: MeasurementType   // 记录类型（缺省 weight_reps）
   activity?: 'strength' | 'cardio'  // P5-B：活动类别（缺省 strength）
+  available?: boolean | null
+  missing_equipment?: string[]
+  missing_optional_equipment?: string[]
+  location_ok?: boolean | null
+  frequent?: boolean
+}
+
+export interface EquipmentItem {
+  id: string
+  name: string
+  category: string
+  aliases: string[]
+  fulfills?: string | null
+  scope: 'system' | 'user'
+}
+
+export type LocationKind = 'gym' | 'home' | 'outdoor' | 'custom'
+
+export interface TrainingLocation {
+  id: number
+  name: string
+  kind: LocationKind
+  required_equipment: EquipmentItem[]
+  optional_equipment: EquipmentItem[]
+  required_equipment_ids: string[]
+  optional_equipment_ids: string[]
+  is_current: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LocationsResponse {
+  locations: TrainingLocation[]
+  current_id: number | null
+  equipment: EquipmentItem[]
+  categories: Record<string, string>
+}
+
+export interface SubstituteCandidate {
+  id: string
+  name: string
+  pattern: string
+  primary: string[]
+  secondary: string[]
+  equipment: string[]
+  equipment_names: string[]
+  measurement: MeasurementType
+  measurement_compatible: boolean
+  level_min: string
+  score: number
+  reasons: string[]
+  differences: string[]
+}
+
+export interface SubstituteResult {
+  source: { id: string; name: string; pattern: string; measurement: MeasurementType }
+  location: { id: number; name: string; kind: LocationKind }
+  candidates: SubstituteCandidate[]
+  excluded: Record<string, number>
+  goal: string
+  disclaimer: string
 }
 
 export interface TrainingTemplate {

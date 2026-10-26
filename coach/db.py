@@ -540,6 +540,30 @@ CREATE TABLE IF NOT EXISTS motion_tech_profiles (
     updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mtp_user_ex ON motion_tech_profiles(user_id, exercise_id);
+CREATE TABLE IF NOT EXISTS user_equipment (
+    user_id      TEXT NOT NULL,
+    equipment_id TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    aliases      TEXT NOT NULL DEFAULT '[]',
+    fulfills     TEXT,                  -- 可选：等效的系统器械稳定 ID
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (user_id, equipment_id)
+);
+CREATE TABLE IF NOT EXISTS training_locations (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id            TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    kind               TEXT NOT NULL,   -- gym / home / outdoor / custom
+    required_equipment TEXT NOT NULL DEFAULT '[]',
+    optional_equipment TEXT NOT NULL DEFAULT '[]',
+    is_current         INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE(user_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_locations_user ON training_locations(user_id, is_current);
 """
 
 # C1 记忆契约：笔记必须可回答"这是谁说的/怎么知道的"（DESIGN 26.2）
@@ -2664,3 +2688,183 @@ class Database:
             (notes[:500], _now(), user_id, analysis_id))
         self.conn.commit()
         return cur.rowcount == 1
+
+    # ---- P5-B2：训练地点与用户器械 ----
+
+    @staticmethod
+    def _location_row(row: sqlite3.Row | None) -> dict | None:
+        if not row:
+            return None
+        doc = dict(row)
+        for key in ("required_equipment", "optional_equipment"):
+            try:
+                doc[key] = json.loads(doc.get(key) or "[]")
+            except (ValueError, TypeError):
+                doc[key] = []
+        doc["is_current"] = bool(doc.get("is_current"))
+        return doc
+
+    def list_training_locations(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM training_locations WHERE user_id=?"
+            " ORDER BY is_current DESC, id", (user_id,)).fetchall()
+        return [self._location_row(row) for row in rows]
+
+    def get_training_location(self, user_id: str, location_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM training_locations WHERE user_id=? AND id=?",
+            (user_id, location_id)).fetchone()
+        return self._location_row(row)
+
+    def create_training_location(self, user_id: str, data: dict,
+                                 make_current: bool = False) -> dict:
+        with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            if not self.conn.execute(
+                    "SELECT 1 FROM training_locations WHERE user_id=?", (user_id,)).fetchone():
+                make_current = True
+            if make_current:
+                self.conn.execute(
+                    "UPDATE training_locations SET is_current=0 WHERE user_id=?", (user_id,))
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO training_locations(user_id,name,kind,"
+                    " required_equipment,optional_equipment,is_current,created_at,updated_at)"
+                    " VALUES(?,?,?,?,?,?,?,?)",
+                    (user_id, data["name"], data["kind"],
+                     json.dumps(data.get("required_equipment") or [], ensure_ascii=False),
+                     json.dumps(data.get("optional_equipment") or [], ensure_ascii=False),
+                     int(make_current), _now(), _now()))
+            except sqlite3.IntegrityError:
+                raise ValueError("地点名称已存在") from None
+        return self.get_training_location(user_id, cur.lastrowid)
+
+    def update_training_location(self, user_id: str, location_id: int,
+                                 data: dict) -> dict:
+        current = self.get_training_location(user_id, location_id)
+        if not current:
+            raise ValueError("训练地点不存在")
+        next_doc = {**current, **data}
+        with self.conn:
+            try:
+                self.conn.execute(
+                    "UPDATE training_locations SET name=?, kind=?, required_equipment=?,"
+                    " optional_equipment=?, updated_at=? WHERE user_id=? AND id=?",
+                    (next_doc["name"], next_doc["kind"],
+                     json.dumps(next_doc.get("required_equipment") or [], ensure_ascii=False),
+                     json.dumps(next_doc.get("optional_equipment") or [], ensure_ascii=False),
+                     _now(), user_id, location_id))
+            except sqlite3.IntegrityError:
+                raise ValueError("地点名称已存在") from None
+        return self.get_training_location(user_id, location_id)
+
+    def select_training_location(self, user_id: str, location_id: int) -> dict:
+        if not self.get_training_location(user_id, location_id):
+            raise ValueError("训练地点不存在")
+        with self.conn:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute(
+                "UPDATE training_locations SET is_current=0 WHERE user_id=?", (user_id,))
+            self.conn.execute(
+                "UPDATE training_locations SET is_current=1, updated_at=?"
+                " WHERE user_id=? AND id=?", (_now(), user_id, location_id))
+        return self.get_training_location(user_id, location_id)
+
+    def delete_training_location(self, user_id: str, location_id: int) -> bool:
+        row = self.get_training_location(user_id, location_id)
+        if not row:
+            return False
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM training_locations WHERE user_id=? AND id=?",
+                (user_id, location_id))
+            if row["is_current"]:
+                nxt = self.conn.execute(
+                    "SELECT id FROM training_locations WHERE user_id=? ORDER BY id LIMIT 1",
+                    (user_id,)).fetchone()
+                if nxt:
+                    self.conn.execute(
+                        "UPDATE training_locations SET is_current=1 WHERE user_id=? AND id=?",
+                        (user_id, nxt["id"]))
+        return True
+
+    def list_user_equipment(self, user_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM user_equipment WHERE user_id=? ORDER BY name",
+            (user_id,)).fetchall()
+        out = []
+        for row in rows:
+            doc = dict(row)
+            doc["id"] = doc["equipment_id"]
+            try:
+                doc["aliases"] = json.loads(doc.get("aliases") or "[]")
+            except (ValueError, TypeError):
+                doc["aliases"] = []
+            doc["scope"] = "user"
+            out.append(doc)
+        return out
+
+    def get_user_equipment(self, user_id: str, equipment_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM user_equipment WHERE user_id=? AND equipment_id=?",
+            (user_id, equipment_id)).fetchone()
+        if not row:
+            return None
+        doc = dict(row)
+        doc["id"] = doc["equipment_id"]
+        try:
+            doc["aliases"] = json.loads(doc.get("aliases") or "[]")
+        except (ValueError, TypeError):
+            doc["aliases"] = []
+        doc["scope"] = "user"
+        return doc
+
+    def add_user_equipment(self, user_id: str, equipment_id: str, data: dict) -> dict:
+        with self.conn:
+            try:
+                self.conn.execute(
+                    "INSERT INTO user_equipment(user_id,equipment_id,name,category,"
+                    " aliases,fulfills,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (user_id, equipment_id, data["name"], data["category"],
+                     json.dumps(data.get("aliases") or [], ensure_ascii=False),
+                     data.get("fulfills") or None, _now(), _now()))
+            except sqlite3.IntegrityError:
+                raise ValueError("器械 ID 已存在") from None
+        return self.get_user_equipment(user_id, equipment_id)
+
+    def update_user_equipment(self, user_id: str, equipment_id: str, data: dict) -> dict:
+        current = self.get_user_equipment(user_id, equipment_id)
+        if not current:
+            raise ValueError("自定义器械不存在")
+        doc = {**current, **data}
+        with self.conn:
+            self.conn.execute(
+                "UPDATE user_equipment SET name=?, category=?, aliases=?, fulfills=?,"
+                " updated_at=? WHERE user_id=? AND equipment_id=?",
+                (doc["name"], doc["category"],
+                 json.dumps(doc.get("aliases") or [], ensure_ascii=False),
+                 doc.get("fulfills") or None, _now(), user_id, equipment_id))
+        return self.get_user_equipment(user_id, equipment_id)
+
+    def delete_user_equipment(self, user_id: str, equipment_id: str) -> bool:
+        if not self.get_user_equipment(user_id, equipment_id):
+            return False
+        rows = self.list_training_locations(user_id)
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM user_equipment WHERE user_id=? AND equipment_id=?",
+                (user_id, equipment_id))
+            for row in rows:
+                required = [x for x in row["required_equipment"] if x != equipment_id]
+                optional = [x for x in row["optional_equipment"] if x != equipment_id]
+                if (required != row["required_equipment"]
+                        or optional != row["optional_equipment"]):
+                    self.conn.execute(
+                        "UPDATE training_locations SET required_equipment=?,"
+                        " optional_equipment=?, updated_at=? WHERE user_id=? AND id=?",
+                        (json.dumps(required, ensure_ascii=False),
+                         json.dumps(optional, ensure_ascii=False),
+                         _now(), user_id, row["id"]))
+        return True

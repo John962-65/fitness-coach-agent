@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  BookMarked, BookOpen, Check, ChevronDown, ChevronUp, Plus, Repeat2, Timer,
+  AlertTriangle, BookMarked, BookOpen, Check, ChevronDown, ChevronUp, MapPin,
+  Plus, Repeat2, Timer,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
 import { Button, ErrorBox, Sheet, Spinner, SuccessBlock } from '../components/Bits'
@@ -10,10 +11,11 @@ import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { parseTrainingNumber, validateSetDraft } from '../lib/validate'
 import CardioTimer, { createCardioState } from '../components/workout/CardioTimer'
 import HiitRunner, { createHiitRun, createIdleHiitRun, HiitPlanner } from '../components/workout/HiitRunner'
+import ExerciseSubstituteSheet from '../components/workout/ExerciseSubstituteSheet'
 import { hiitPlanExerciseId } from '../lib/hiit'
 import { formatSetCompact, formatSetRecord } from '../lib/setDisplay'
 import { LoggedSet, SessionEntry, useApp } from '../store'
-import type { MeasurementType } from '../types'
+import type { ExerciseSummary, LocationsResponse, MeasurementType } from '../types'
 
 export default function Workout() {
   const { day, templateId } = useParams()
@@ -22,10 +24,12 @@ export default function Workout() {
   const { startSession, startFreeSession, addFreeExercise, removeEntry, replaceExercise,
           setSessionNotes, clearSession, restEndsAt, settings } = useApp((s) => s)
   const [error, setError] = useState('')
-  const [pickerIdx, setPickerIdx] = useState<number | null>(null)
   const [addingCardio, setAddingCardio] = useState(false)
   const [hiitPlanning, setHiitPlanning] = useState(false)
   const [addingFree, setAddingFree] = useState(false)
+  const [locations, setLocations] = useState<LocationsResponse | null>(null)
+  const [availability, setAvailability] = useState<Record<string, ExerciseSummary>>({})
+  const [substituteIdx, setSubstituteIdx] = useState<number | null>(null)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const [templateNote, setTemplateNote] = useState('')
@@ -47,6 +51,24 @@ export default function Workout() {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
+
+  const loadPlaceContext = useCallback(async () => {
+    const data = await api.locations(uid)
+    setLocations(data)
+    const current = data.locations.find((x) => x.id === data.current_id)
+    if (!current) { setAvailability({}); return }
+    const exercises = await api.exercises({ uid, location_id: current.id })
+    setAvailability(Object.fromEntries(exercises.exercises.map((ex) => [ex.id, ex])))
+  }, [uid])
+
+  useEffect(() => {
+    loadPlaceContext().catch(() => { setLocations(null); setAvailability({}) })
+  }, [loadPlaceContext])
+
+  const selectTrainingLocation = async (locationId: number) => {
+    await api.selectLocation(uid, locationId)
+    await loadPlaceContext()
+  }
 
   useEffect(() => {
     if (!day && !templateId) return
@@ -145,12 +167,13 @@ export default function Workout() {
       ]).then(([statesRes, sums]) => {
         const last = new Map(statesRes.states.map((s) => [s.exercise_id, s.last_weight]))
         const typeMap = new Map(sums.exercises.map((x) => [x.id, x.measurement]))
-        const plannedEntries = planDay.exercises.map((ex) => ({
+        const plannedEntries = planDay.exercises.map((ex, planIndex) => ({
           exercise_id: ex.exercise_id,
           name: ex.name,
           measurement: typeMap.get(ex.exercise_id) || 'weight_reps',
           target: { sets: ex.sets, reps: ex.reps, weight: last.get(ex.exercise_id) ?? ex.weight_kg ?? null },
           note: ex.note,
+          planIndex,
           logged: [],
         }))
         const r = startSession(decodeURIComponent(day || ""), plannedEntries,
@@ -159,7 +182,8 @@ export default function Workout() {
         if (r.kept) {
           const cur = useApp.getState().session!
           const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)
-          const begin = () => startSession(decodeURIComponent(day || ""), plannedEntries)
+          const begin = () => startSession(decodeURIComponent(day || ""), plannedEntries,
+                                           { planId: p.plan_id, planVersion: p.version })
           switchBeginRef.current = begin
           setSwitchPrompt({
             activeLabel: `${cur.mode === 'free' ? '自由训练' : cur.day}（已记录 ${n} 组）`,
@@ -239,6 +263,24 @@ export default function Workout() {
 
   const totalSets = entries.reduce((n, e) => n + e.logged.filter((l) => !l.warmup).length, 0)
   const hiitCount = entries.filter((e) => e.activity === 'hiit').length
+  const currentLocation = locations?.locations.find((x) => x.id === locations.current_id)
+  const equipmentList = currentLocation
+    ? [...currentLocation.required_equipment, ...currentLocation.optional_equipment]
+    : []
+  const unavailableEntries = entries.flatMap((e) => {
+    const info = availability[e.replace_exercise_id || e.exercise_id]
+    return info?.available === false
+      ? [{ name: e.replaced_with || e.name, missing: info.missing_equipment || [] }] : []
+  })
+  const substituteEntry = substituteIdx != null ? entries[substituteIdx] : undefined
+  const planReplacementContext = substituteEntry?.planIndex != null
+    && session?.mode === 'planned' && session.planId && session.planVersion
+    ? {
+        day: session.day,
+        index: substituteEntry.planIndex,
+        baseVersion: { plan_id: session.planId, plan_version: session.planVersion },
+      }
+    : undefined
   // P5-A：复杂组容量=各执行段求和（与后端 exercise_metrics.set_volume 同公式）
   const segVolume = (l: LoggedSet): number => {
     const m = l as { method?: string; segments?: Record<string, number>[] }
@@ -277,6 +319,7 @@ export default function Workout() {
       return [{
         name, exercise_id: exerciseId,
         superset_group: e.supersetGroup || undefined,
+        session_replacement_of: e.replaced_from_id || undefined,
         set_logs: e.logged.map((l) => ({
           type: l.type || 'weight_reps',
           method: (l as { method?: string }).method,
@@ -368,6 +411,48 @@ export default function Workout() {
       <main className="mx-auto w-full max-w-xl space-y-4 px-4 pb-52 pt-4">
         {saveError && <ErrorBox message={saveError.message} details={saveError.details} />}
 
+        {locations && (
+          <div className="card !p-3">
+            <div className="flex items-center gap-2">
+              <MapPin size={16} className="shrink-0 text-accent-deep" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">
+                  {currentLocation?.name || '未选择训练地点'}
+                </p>
+                <p className="truncate text-2xs text-muted">
+                  {equipmentList.length
+                    ? equipmentList.map((x) => x.name).join('、')
+                    : '尚未配置器械，仅自重动作可确认可用'}
+                </p>
+              </div>
+              {locations.locations.length > 0 && (
+                <select className="input input-sm w-28 shrink-0"
+                        aria-label="当前训练地点"
+                        value={locations.current_id ?? ''}
+                        onChange={(e) => selectTrainingLocation(Number(e.target.value))
+                          .catch((err) => setSaveError({ message: (err as Error).message }))}>
+                  {locations.locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                  ))}
+                </select>
+              )}
+              <Link to="/mine/locations" className="btn-plain shrink-0 text-xs">管理</Link>
+            </div>
+            {unavailableEntries.length > 0 && (
+              <div className="mt-2.5 rounded-xl bg-amber-50 p-2.5 text-2xs leading-relaxed text-amber-800">
+                <p className="flex items-start gap-1.5 font-medium">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  当前地点有动作器械不完整；不会自动删除，请自行选择替代。
+                </p>
+                <p className="mt-1">
+                  {unavailableEntries.map((x) =>
+                    `${x.name}（缺少${x.missing.join('、') || '适用场地'}）`).join('；')}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 自由训练：空会话引导 */}
         {isFree && entries.length === 0 && (
           <div className="card flex flex-col items-center gap-3 py-8 text-center">
@@ -391,7 +476,8 @@ export default function Workout() {
 
         {entries.map((e, idx) => (
           <ExerciseBlock key={idx} idx={idx} entry={e} isFree={isFree}
-                         onPickReplace={() => setPickerIdx(idx)}
+                         availability={availability[e.replace_exercise_id || e.exercise_id]}
+                         onPickReplace={() => setSubstituteIdx(idx)}
                          onRemove={() => removeEntry(idx)} />
         ))}
 
@@ -458,14 +544,22 @@ export default function Workout() {
         </div>
       </div>
 
-      {pickerIdx !== null && (
-        <ExercisePicker
-          onClose={() => setPickerIdx(null)}
-          onPick={(ex) => replaceExercise(pickerIdx, ex.name, ex.id)}
+      {substituteEntry && (
+        <ExerciseSubstituteSheet
+          uid={uid}
+          entry={substituteEntry}
+          locationId={currentLocation?.id}
+          planContext={planReplacementContext}
+          onClose={() => setSubstituteIdx(null)}
+          onSessionReplace={(candidate) => {
+            if (substituteIdx == null) return
+            replaceExercise(substituteIdx, candidate.name, candidate.id,
+                            candidate.measurement)
+          }}
         />
       )}
       {addingFree && (
-        <ExercisePicker
+        <ExercisePicker uid={uid} strengthOnly locationId={currentLocation?.id}
           onClose={() => setAddingFree(false)}
           onPick={(ex) => addFreeExercise({
             exercise_id: ex.id, name: ex.name, measurement: ex.measurement,
@@ -475,7 +569,7 @@ export default function Workout() {
       )}
       {/* P5-B：有氧动作选择（activity=cardio） */}
       {addingCardio && (
-        <ExercisePicker cardioOnly
+        <ExercisePicker uid={uid} cardioOnly locationId={currentLocation?.id}
           onClose={() => setAddingCardio(false)}
           onPick={(ex) => addFreeExercise({
             exercise_id: ex.id, name: ex.name,
@@ -556,8 +650,9 @@ export default function Workout() {
 }
 
 /** 单个动作卡：大标题 + 教学入口 + 组记录表 + 快速输入 */
-function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
+function ExerciseBlock({ idx, entry, isFree, availability, onPickReplace, onRemove }: {
   idx: number; entry: SessionEntry; isFree: boolean
+  availability?: ExerciseSummary
   onPickReplace: () => void; onRemove: () => void
 }) {
   const logSet = useApp((s) => s.logSet)
@@ -610,6 +705,15 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
           )}
         </div>
       </div>
+      {availability?.available === false && (
+        <p className="mx-4 mb-2.5 flex items-start gap-1.5 rounded-xl bg-amber-50 p-2.5
+                      text-2xs leading-relaxed text-amber-800">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          {availability.location_ok === false
+            ? '该动作不适用于当前地点类型；可查看替代候选，原动作不会被自动删除。'
+            : `当前地点缺少${(availability.missing_equipment || []).join('、') || '必要器械'}；可查看替代候选，原动作不会被自动删除。`}
+        </p>
+      )}
       {(!entry.activity || entry.activity === 'strength') && (
         <>
           <div className="flex items-center gap-1.5 px-4 pb-2.5" aria-label="超级组分组">

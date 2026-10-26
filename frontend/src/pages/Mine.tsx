@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  CalendarRange, ChevronRight, FlaskConical, Scale, Settings, Sparkles, TriangleAlert,
+  CalendarRange, ChevronRight, FlaskConical, MapPin, Scale, Settings, Sparkles,
+  TriangleAlert,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
 import {
@@ -159,6 +160,7 @@ export default function Mine() {
         <ul className="rows">
           {[
             { to: '/history', icon: CalendarRange, label: '训练历史', desc: '最近 20 条记录与纠错' },
+            { to: '/mine/locations', icon: MapPin, label: '训练地点与器械', desc: '当前地点、可用器械与自定义器械' },
             { to: '/mine/body', icon: Scale, label: '身体数据', desc: '体重/围度/成分与趋势（P2）' },
             { to: '/mine/approach', icon: Sparkles, label: '训练方式（编辑与版本）', desc: '五维度直改，历史可恢复' },
             { to: '/mine/settings', icon: Settings, label: '设置与数据', desc: '离线同步、导出、访问令牌' },

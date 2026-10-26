@@ -23,6 +23,8 @@ export interface SessionEntry {
   logged: LoggedSet[]
   replaced_with?: string // 训练中临时替换（只影响本次记录，不改计划）
   replace_exercise_id?: string // M6.3：临时替换后动作的稳定 ID（保存时随记录提交）
+  replaced_from_id?: string // P5-B2：本次替换的原动作 ID（只用于本次会话）
+  planIndex?: number // P5-B2：计划日内原下标（长期替换提案定位）
 }
 
 /** M6.4-B B4.2：逐组输入草稿（进教学页返回后不丢；随会话持久化）。
@@ -110,7 +112,8 @@ interface AppState {
   removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
   removeLastSet: (entryIdx: number) => void
-  replaceExercise: (entryIdx: number, newName: string, exerciseId?: string) => void
+  replaceExercise: (entryIdx: number, newName: string, exerciseId?: string,
+                    measurement?: import('./types').MeasurementType) => void
   setSessionNotes: (notes: string) => void
   setSupersetConfig: (group: string, cfg: Partial<SupersetConfig>) => void
   /** M6.4-B B4.2：逐组输入草稿写入（教学页往返/刷新不丢） */
@@ -152,14 +155,15 @@ export const useApp = create<AppState>()((set) => ({
   setUid: (uid) => set({ uid, session: null }),
 
   session: null,
-  startSession: (day, entries) => {
+  startSession: (day, entries, meta) => {
     const cur = useApp.getState().session
     // 同目标重复启动：直接恢复现有会话，绝不重新初始化（P1）
     if (cur && cur.mode === 'planned' && cur.day === day) return { kept: true, resumed: true }
     // 目标不同且已有记录：保留现有会话，由调用方提示用户选择（P0-1）
     if (cur && hasProgress(cur)) return { kept: true }
     set({ session: { id: newSessionId(), mode: 'planned', day, date: today(),
-                     entries, started_at: new Date().toISOString(), notes: '' } })
+                     entries, started_at: new Date().toISOString(), notes: '',
+                     planId: meta?.planId, planVersion: meta?.planVersion } })
     return { kept: false }
   },
   startFreeSession: (opts) => {
@@ -220,12 +224,19 @@ export const useApp = create<AppState>()((set) => ({
             i === entryIdx ? { ...e, logged: e.logged.slice(0, -1) } : e) }
         : st.session,
     })),
-  replaceExercise: (entryIdx, newName, exerciseId) =>
+  replaceExercise: (entryIdx, newName, exerciseId, measurement) =>
     set((st) => ({
       session: st.session
-        ? { ...st.session, entries: st.session.entries.map((e, i) =>
-            i === entryIdx ? { ...e, replaced_with: newName,
-                               replace_exercise_id: exerciseId } : e) }
+        ? { ...st.session, entries: st.session.entries.map((e, i) => {
+            if (i !== entryIdx) return e
+            const measurementChanged = !!measurement && measurement !== e.measurement
+            return { ...e, replaced_with: newName,
+              replace_exercise_id: exerciseId,
+              replaced_from_id: e.replaced_from_id ?? e.exercise_id,
+              ...(measurement ? { measurement } : {}),
+              ...(measurementChanged
+                ? { target: { ...e.target, weight: null } } : {}) }
+          }) }
         : st.session,
     })),
   setSessionNotes: (notes) =>

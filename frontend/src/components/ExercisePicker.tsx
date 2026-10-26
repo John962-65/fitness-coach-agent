@@ -12,11 +12,14 @@ const MUSCLE_LABEL: Record<string, string> = {
 }
 
 // 动作选择器：搜索 + 肌群筛选。选择结果只给官方名，校验在后端。
-export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
+export default function ExercisePicker({ onPick, onClose, uid, cardioOnly,
+  strengthOnly, locationId }: {
   onPick: (ex: ExerciseSummary) => void
   onClose: () => void
   uid?: string
   cardioOnly?: boolean   // P5-B：仅显示有氧动作（activity=cardio）
+  strengthOnly?: boolean
+  locationId?: number
 }) {
   const [q, setQ] = useState('')
   const [muscle, setMuscle] = useState('')
@@ -26,7 +29,9 @@ export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      fetch(`/api/exercises?q=${encodeURIComponent(q)}${muscle ? `&muscle=${muscle}` : ''}` + (me ? `&uid=${encodeURIComponent(me)}` : ''), {
+      fetch(`/api/exercises?q=${encodeURIComponent(q)}${muscle ? `&muscle=${muscle}` : ''}`
+        + (me ? `&uid=${encodeURIComponent(me)}` : '')
+        + (locationId != null ? `&location_id=${locationId}` : ''), {
         cache: 'no-store',   // 代理故障期的 HTML 回退响应不允许被 HTTP 缓存复用
         headers: localStorage.getItem('fc-access-token')
           ? { 'X-Access-Token': localStorage.getItem('fc-access-token') || '' } : {},
@@ -35,7 +40,7 @@ export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
         .catch((e) => setError(e.message))
     }, 200)
     return () => clearTimeout(t)
-  }, [q, muscle, me])
+  }, [q, muscle, me, locationId])
 
   return (
     <Sheet open onClose={onClose} title="选择动作" wide>
@@ -55,8 +60,11 @@ export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
       {!items && !error && <Spinner />}
       {items?.length === 0 && <Empty title="没有匹配的动作">换个关键词试试。</Empty>}
       <ul className="rows -mx-4">
-        {items?.filter((ex) => (cardioOnly ? ex.activity === 'cardio' : true))
-          .map((ex) => (
+        {items?.filter((ex) => {
+          if (cardioOnly) return ex.activity === 'cardio'
+          if (strengthOnly) return ex.activity !== 'cardio'
+          return true
+        }).map((ex) => (
           <li key={ex.id}>
             <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-canvas"
                     onClick={() => { onPick({ ...ex, measurement: ex.measurement }); onClose() }}>
@@ -66,6 +74,11 @@ export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
                 <p className="truncate text-sm font-medium">{ex.name}</p>
                 <p className="truncate text-xs text-muted">{ex.pattern}{ex.primary.length ? ` · ${ex.primary.join('、')}` : ''}</p>
               </div>
+              {ex.available === false && (
+                <span className="tag shrink-0 bg-amber-50 text-amber-700">
+                  缺{ex.missing_equipment?.join('/') || '器械'}
+                </span>
+              )}
               {ex.status !== 'approved' && (
                 <span className="tag shrink-0 bg-amber-50 text-amber-700">未审核</span>
               )}

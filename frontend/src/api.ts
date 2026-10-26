@@ -5,10 +5,11 @@ import type {
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
   NutritionTrendDay, PlanOp,
-  BodyMeasurement, BodySummary, BodyTrend, CarePlan, PlanResponse, PlanRevision,
-  PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief, RecoveryCheckin,
-  RecoverySummary, SymptomEpisode, TodayBrief, TriageResult,
-  TrainingCalendar, TrainingTemplate, TrainingRestriction, Trial,
+  BodyMeasurement, BodySummary, BodyTrend, CarePlan, EquipmentItem, LocationsResponse,
+  PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief,
+  RecoveryCheckin, RecoverySummary, SubstituteResult, SymptomEpisode, TodayBrief,
+  TriageResult, TrainingCalendar, TrainingLocation, TrainingTemplate,
+  TrainingRestriction, Trial,
 } from './types'
 
 export class ApiError extends Error {
@@ -117,14 +118,54 @@ export const api = {
                    payload: { expected_revision: number; data: unknown; reason: string; evidence: string }) =>
     post<Checkin>(`/users/${uid}/checkins/${checkinId}/correct`, payload),
 
-  exercises: (params: { q?: string; muscle?: string; status?: string; uid?: string } = {}) => {
-    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][])
+  exercises: (params: {
+    q?: string; muscle?: string; status?: string; uid?: string
+    equipment?: string; pattern?: string; location?: string
+    location_id?: number; available?: boolean; frequent?: boolean
+  } = {}) => {
+    const qs = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === '' || value === false) continue
+      qs.set(key, String(value))
+    }
     return req<{ count: number; exercises: ExerciseSummary[] }>(
       `/exercises${qs.size ? `?${qs}` : ''}`)
   },
   exerciseDetail: (id: string) => req<ExerciseDetail>(`/exercises/${id}`),
   exerciseStates: (uid: string) =>
     req<{ states: ExerciseState[] }>(`/users/${uid}/exercise-states`),
+  locations: (uid: string) => req<LocationsResponse>(`/users/${uid}/locations`),
+  createLocation: (uid: string, payload: {
+    name: string; kind: TrainingLocation['kind']
+    required_equipment: string[]; optional_equipment: string[]
+  }) => post<{ location: TrainingLocation }>(`/users/${uid}/locations`, payload),
+  updateLocation: (uid: string, locationId: number, payload: {
+    name?: string; kind?: TrainingLocation['kind']
+    required_equipment?: string[]; optional_equipment?: string[]
+  }) => patch<{ location: TrainingLocation }>(`/users/${uid}/locations/${locationId}`, payload),
+  selectLocation: (uid: string, locationId: number) =>
+    post<{ location: TrainingLocation }>(`/users/${uid}/locations/${locationId}/select`, {}),
+  deleteLocation: (uid: string, locationId: number) =>
+    req<{ deleted: number }>(`/users/${uid}/locations/${locationId}`, { method: 'DELETE' }),
+  createEquipment: (uid: string, payload: {
+    name: string; category: string; aliases?: string[]; fulfills?: string | null }) =>
+    post<{ equipment: EquipmentItem }>(`/users/${uid}/equipment`, payload),
+  updateEquipment: (uid: string, equipmentId: string,
+                    payload: Partial<EquipmentItem>) =>
+    patch<{ equipment: EquipmentItem }>(`/users/${uid}/equipment/${equipmentId}`, payload),
+  deleteEquipment: (uid: string, equipmentId: string) =>
+    req<{ deleted: string }>(`/users/${uid}/equipment/${equipmentId}`, { method: 'DELETE' }),
+  exerciseSubstitutes: (uid: string, exerciseId: string, locationId?: number) => {
+    const qs = new URLSearchParams({ exercise_id: exerciseId })
+    if (locationId != null) qs.set('location_id', String(locationId))
+    return req<SubstituteResult>(`/users/${uid}/exercise-substitutes?${qs}`)
+  },
+  validateSubstitution: (uid: string, payload: {
+    source_exercise_id: string; target_exercise_id: string; location_id?: number }) =>
+    post<{
+      source: { id: string; name: string }; target: { id: string; name: string };
+      differences: string[]; safety_checked: boolean
+    }>(`/users/${uid}/exercise-substitutions/validate`, payload),
 
   approach: (uid: string) => req<ApproachView>(`/users/${uid}/approach`),
   initApproach: (uid: string) => post<ApproachView>(`/users/${uid}/approach/initialize`, {}),
@@ -142,6 +183,10 @@ export const api = {
   changes: (uid: string, status?: string) =>
     req<{ proposals: Proposal[] }>(
       `/users/${uid}/changes${status ? `?status=${status}` : ''}`),
+  stageChange: (uid: string, target: string, operations: unknown[], reason: string,
+                baseVersion: Record<string, unknown>) =>
+    post<{ proposal_id: string; status: string; warnings: string[] }>(
+      `/users/${uid}/changes/ai`, { target, operations, reason, base_version: baseVersion }),
   confirmChange: (uid: string, proposalId: string, message: string) =>
     post<{ proposal_id: string; status: string; decision?: string; note?: string }>(
       `/users/${uid}/changes/${proposalId}/confirm`, { message }),

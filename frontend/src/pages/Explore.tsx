@@ -7,7 +7,7 @@ import {
 } from '../components/Bits'
 import { ExerciseCover } from '../components/media'
 import KnowledgePanel from '../components/KnowledgePanel'
-import { ExerciseSummary } from '../types'
+import { ExerciseSummary, LocationsResponse } from '../types'
 import { useApp } from '../store'
 
 const MUSCLES = ['chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -20,7 +20,11 @@ const MUSCLE_LABEL: Record<string, string> = {
 
 export const PATTERN_LABEL: Record<string, string> = {
   squat: '蹲', hinge: '髋铰链', lunge: '弓步', h_push: '水平推', v_push: '垂直推',
-  h_pull: '水平拉', v_pull: '垂直拉', isolation: '孤立', core: '核心', carry: '负重行走',
+  h_pull: '水平拉', v_pull: '垂直拉', isolation: '孤立', core: '核心',
+  carry: '负重行走', cardio: '有氧',
+}
+const LOCATION_LABEL: Record<string, string> = {
+  gym: '健身房', home: '居家', outdoor: '户外',
 }
 
 export default function Explore() {
@@ -29,17 +33,33 @@ export default function Explore() {
   const [pane, setPane] = useState<'exercises' | 'knowledge'>('exercises')
   const [q, setQ] = useState('')
   const [muscle, setMuscle] = useState('')
+  const [pattern, setPattern] = useState('')
+  const [equipment, setEquipment] = useState('')
+  const [location, setLocation] = useState('')
+  const [availableOnly, setAvailableOnly] = useState(false)
+  const [frequentOnly, setFrequentOnly] = useState(false)
+  const [places, setPlaces] = useState<LocationsResponse | null>(null)
   const [items, setItems] = useState<ExerciseSummary[] | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    api.locations(uid).then(setPlaces).catch(() => setPlaces(null))
+  }, [uid])
+
+  useEffect(() => {
     const t = setTimeout(() => {
-      api.exercises({ q, muscle })
-        .then((r) => setItems(r.exercises))
+      const current = places?.locations.find((x) => x.id === places.current_id)
+      api.exercises({
+        uid, q, muscle, pattern, equipment, location,
+        ...(current ? { location_id: current.id } : {}),
+        available: availableOnly, frequent: frequentOnly,
+      })
+        .then((r) => { setItems(r.exercises); setError('') })
         .catch((e) => setError(e.message))
     }, 200)
     return () => clearTimeout(t)
-  }, [q, muscle])
+  }, [q, muscle, pattern, equipment, location, availableOnly, frequentOnly,
+      places, uid])
 
   const openDetail = useCallback((id: string) => {
     navigate(`/explore/${encodeURIComponent(id)}`)
@@ -75,6 +95,49 @@ export default function Explore() {
             ))}
           </div>
 
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <select className="input input-sm" aria-label="动作模式"
+                    value={pattern} onChange={(e) => setPattern(e.target.value)}>
+              <option value="">全部动作模式</option>
+              {Object.entries(PATTERN_LABEL).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </select>
+            <select className="input input-sm" aria-label="器械筛选"
+                    value={equipment} onChange={(e) => setEquipment(e.target.value)}>
+              <option value="">全部器械</option>
+              {places?.equipment.filter((x) =>
+                x.scope === 'system' && x.id !== 'bodyweight').map((eq) => (
+                  <option key={eq.id} value={eq.id}>{eq.name}</option>
+                ))}
+            </select>
+            <select className="input input-sm" aria-label="地点类型"
+                    value={location} onChange={(e) => setLocation(e.target.value)}>
+              <option value="">全部地点类型</option>
+              {Object.entries(LOCATION_LABEL).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </select>
+            <div className="flex gap-1.5">
+              <Chip active={availableOnly}
+                    onClick={() => {
+                      if (!places?.current_id) { setError('请先在“我的 → 训练地点与器械”设置当前地点'); return }
+                      setAvailableOnly(!availableOnly)
+                    }}>
+                仅可执行
+              </Chip>
+              <Chip active={frequentOnly}
+                    onClick={() => setFrequentOnly(!frequentOnly)}>
+                常用
+              </Chip>
+            </div>
+          </div>
+          <p className="mt-1.5 text-2xs text-faint">
+            “仅可执行”按当前地点
+            {places?.locations.find((x) => x.id === places.current_id)?.name || '（未设置）'}
+            的器械配置判断。
+          </p>
+
           {error && <div className="mt-3"><ErrorBox message={error} /></div>}
           {!items && !error && <Spinner />}
           {items?.length === 0 && (
@@ -105,8 +168,15 @@ export default function Explore() {
                       {PATTERN_LABEL[ex.pattern] || ex.pattern}
                       {ex.primary.length > 0 && ` · ${ex.primary.map((m) => MUSCLE_LABEL[m] || m).join('、')}`}
                     </p>
-                    <p className="mt-auto pt-1.5 text-2xs text-faint">
-                      {ex.equipment.length > 0 ? ex.equipment.join(' / ') : '自重'}
+                    <p className="mt-auto flex flex-wrap items-center gap-1 pt-1.5 text-2xs text-faint">
+                      {ex.equipment_names?.length
+                        ? ex.equipment_names.join(' / ') : '自重'}
+                      {ex.frequent && <Tag tone="brand">常用</Tag>}
+                      {ex.available === false && (
+                        <Tag tone="amber">
+                          缺{ex.missing_equipment?.join('/') || '器械'}
+                        </Tag>
+                      )}
                     </p>
                   </div>
                 </button>

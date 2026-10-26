@@ -1110,6 +1110,19 @@ def register_routes(app) -> None:
                         if not valid_block_id:
                             block["exercise_id"] = CUSTOM_HIIT_EXERCISE_ID
                             notes.append("HIIT 动作身份无法识别，已按自定义间歇活动记录")
+                replacement_of = ex.get("session_replacement_of")
+                if replacement_of:
+                    from coach.substitution import (
+                        SafetyGateError as _SubSafety,
+                        validate_session_replacement_safety,
+                    )
+                    try:
+                        validate_session_replacement_safety(
+                            db, uid, str(ex.get("exercise_id") or ""),
+                            ex.get("set_logs"))
+                    except _SubSafety as e:
+                        raise HTTPException(status_code=422,
+                                            detail={"error": str(e)}) from None
         checkin_id = db.record_checkin(uid, ctype, data)
         if submission_id and not db.record_checkin_submission(uid, submission_id, checkin_id):
             # 并发同 ID（极小窗口）：删除刚落的重复行，以先落库者为准
@@ -1248,13 +1261,164 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422, detail={"error": str(e)}) from None
         return updated
 
+    # ---- P5-B2：训练地点与器械 ----
+
+    @api.get("/users/{uid}/equipment")
+    def equipment_list(uid: str, request: Request):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"equipment": _eq.all_equipment(db, uid),
+                "categories": _eq.CATEGORY_LABELS}
+
+    @api.post("/users/{uid}/equipment")
+    def equipment_create(uid: str, request: Request, payload: dict = Body(...)):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return {"equipment": _eq.create_custom_equipment(db, uid, payload)}
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.patch("/users/{uid}/equipment/{equipment_id}")
+    def equipment_update(uid: str, equipment_id: str, request: Request,
+                         payload: dict = Body(...)):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return {"equipment": _eq.update_custom_equipment(
+                db, uid, equipment_id, payload)}
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.delete("/users/{uid}/equipment/{equipment_id}")
+    def equipment_delete(uid: str, equipment_id: str, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if not db.delete_user_equipment(uid, equipment_id):
+            raise HTTPException(status_code=404, detail={"error": "自定义器械不存在"})
+        return {"deleted": equipment_id}
+
+    def _locations_payload(db, uid: str) -> dict:
+        from coach import equipment as _eq
+        profile = _user_profile(db, uid)
+        locations = db.list_training_locations(uid)
+        if not locations and not profile.get("locations_initialized"):
+            current_kind = (profile.get("resources") or {}).get("location") or "gym"
+            _eq.seed_default_locations(
+                db, uid, current_kind if current_kind in ("gym", "home") else "gym")
+            profile["locations_initialized"] = True
+            db.save_profile(uid, profile)
+            locations = db.list_training_locations(uid)
+        catalog = _eq.equipment_map(db, uid)
+        current = next((x for x in locations if x["is_current"]), None)
+        return {
+            "locations": [_eq.location_view(db, uid, x, catalog) for x in locations],
+            "current_id": current["id"] if current else None,
+            "equipment": list(catalog.values()),
+            "categories": _eq.CATEGORY_LABELS,
+        }
+
+    @api.get("/users/{uid}/locations")
+    def locations_list(uid: str, request: Request):
+        return _locations_payload(request.app.state.db, uid)
+
+    @api.post("/users/{uid}/locations")
+    def locations_create(uid: str, request: Request, payload: dict = Body(...)):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        name = str(payload.get("name") or "").strip()[:40]
+        kind = str(payload.get("kind") or "custom")
+        if not name:
+            raise HTTPException(status_code=422, detail={"error": "地点名称必填"})
+        if kind not in _eq.LOCATION_KINDS:
+            raise HTTPException(status_code=422, detail={"error": "地点类型无效"})
+        equipment = _eq.normalize_location_equipment(
+            db, uid, payload.get("required_equipment"), payload.get("optional_equipment"))
+        try:
+            loc = db.create_training_location(uid, {
+                "name": name, "kind": kind, **equipment,
+            }, make_current=bool(payload.get("current")))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return {"location": _eq.location_view(db, uid, loc)}
+
+    @api.patch("/users/{uid}/locations/{location_id}")
+    def locations_update(uid: str, location_id: int, request: Request,
+                         payload: dict = Body(...)):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        current = db.get_training_location(uid, location_id)
+        if not current:
+            raise HTTPException(status_code=404, detail={"error": "训练地点不存在"})
+        patch = {}
+        if "name" in payload:
+            name = str(payload.get("name") or "").strip()[:40]
+            if not name:
+                raise HTTPException(status_code=422, detail={"error": "地点名称必填"})
+            patch["name"] = name
+        if "kind" in payload:
+            kind = str(payload.get("kind") or "")
+            if kind not in _eq.LOCATION_KINDS:
+                raise HTTPException(status_code=422, detail={"error": "地点类型无效"})
+            patch["kind"] = kind
+        if "required_equipment" in payload or "optional_equipment" in payload:
+            equipment = _eq.normalize_location_equipment(
+                db, uid,
+                payload.get("required_equipment", current["required_equipment"]),
+                payload.get("optional_equipment", current["optional_equipment"]))
+            patch.update(equipment)
+        try:
+            loc = db.update_training_location(uid, location_id, patch)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+        return {"location": _eq.location_view(db, uid, loc)}
+
+    @api.post("/users/{uid}/locations/{location_id}/select")
+    def locations_select(uid: str, location_id: int, request: Request):
+        from coach import equipment as _eq
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            loc = db.select_training_location(uid, location_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail={"error": str(e)}) from None
+        return {"location": _eq.location_view(db, uid, loc)}
+
+    @api.delete("/users/{uid}/locations/{location_id}")
+    def locations_delete(uid: str, location_id: int, request: Request):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if not db.delete_training_location(uid, location_id):
+            raise HTTPException(status_code=404, detail={"error": "训练地点不存在"})
+        return {"deleted": location_id}
+
     # ---- 动作库 ----
 
     @api.get("/exercises")
     def exercises(request: Request, q: str = "", muscle: str = "",
-                  equipment: str = "", status: str = "", uid: str = ""):
+                  equipment: str = "", pattern: str = "", location: str = "",
+                  status: str = "", uid: str = "", location_id: int | None = None,
+                  available: bool = False, frequent: bool = False):
+        from coach import equipment as _eq
         from coach import exercise_service as _svc
-        items = _svc.list_exercises(request.app.state.db, uid or None)
+        db = request.app.state.db
+        items = _svc.list_exercises(db, uid or None)
+        loc = None
+        if location_id is not None:
+            if not uid:
+                raise HTTPException(status_code=422, detail={"error": "地点筛选需要 uid"})
+            loc = db.get_training_location(uid, location_id)
+            if not loc:
+                raise HTTPException(status_code=404, detail={"error": "训练地点不存在"})
+        elif available and uid:
+            loc = next((x for x in db.list_training_locations(uid) if x["is_current"]), None)
+        if available and not loc:
+            raise HTTPException(status_code=422, detail={"error": "可执行筛选需要训练地点"})
         if status:
             items = [e for e in items if e.get("status") == status]
         if muscle:
@@ -1263,6 +1427,10 @@ def register_routes(app) -> None:
         if equipment:
             items = [e for e in items
                      if equipment in (e.get("equipment") or [])]
+        if pattern:
+            items = [e for e in items if e.get("pattern") == pattern]
+        if location:
+            items = [e for e in items if location in (e.get("location") or [])]
         if q:
             matched = set()
             ql = q.lower()
@@ -1274,17 +1442,43 @@ def register_routes(app) -> None:
             if ex_id:
                 matched.add(ex_id)
             items = [e for e in items if e["id"] in matched]
-        return {"count": len(items),
-                "exercises": [{"id": e["id"], "name": e["name"],
-                               "aliases": e.get("aliases") or [],
-                               "pattern": e.get("pattern"),
-                               "primary": e.get("primary") or [],
-                               "equipment": e.get("equipment") or [],
-                               "location": e.get("location") or [],
-                               "status": e.get("status"),
-                               "measurement": e.get("measurement") or "weight_reps",
-                               "activity": e.get("activity") or "strength",
-                               "scope": e.get("scope", "builtin")} for e in items]}
+
+        catalog = _eq.equipment_map(db, uid) if uid else \
+            {x["id"]: x for x in _eq.system_equipment()}
+        available_ids = _eq.location_available_ids(db, uid, loc) if uid and loc else set()
+        if available:
+            items = [e for e in items if _eq.exercise_availability(
+                db, uid, e, loc, catalog, available_ids)["available"]]
+        frequent_ids = {x["exercise_id"] for x in db.all_exercise_states(uid)} if uid else set()
+        if frequent:
+            items = [e for e in items if e["id"] in frequent_ids]
+        out = []
+        for e in items:
+            availability = _eq.exercise_availability(
+                db, uid, e, loc, catalog, available_ids) if loc else {
+                    "available": None, "missing_equipment_ids": [],
+                    "missing_equipment": [], "missing_optional_equipment": [],
+                    "location_ok": None}
+            out.append({
+                "id": e["id"], "name": e["name"],
+                "aliases": e.get("aliases") or [],
+                "pattern": e.get("pattern"),
+                "primary": e.get("primary") or [],
+                "equipment": e.get("equipment") or [],
+                "equipment_names": [catalog.get(x, {"name": x})["name"]
+                                    for x in (e.get("equipment") or [])],
+                "location": e.get("location") or [],
+                "status": e.get("status"),
+                "measurement": e.get("measurement") or "weight_reps",
+                "activity": e.get("activity") or "strength",
+                "scope": e.get("scope", "builtin"),
+                "available": availability["available"],
+                "missing_equipment": availability["missing_equipment"],
+                "missing_optional_equipment": availability["missing_optional_equipment"],
+                "location_ok": availability["location_ok"],
+                "frequent": e["id"] in frequent_ids,
+            })
+        return {"count": len(out), "exercises": out}
 
     @api.get("/exercises/{ex_id}")
     def exercise_detail(request: Request, ex_id: str, uid: str = ""):
@@ -1320,6 +1514,38 @@ def register_routes(app) -> None:
             detail["notes"] = list(detail["notes"]) + [
                 "该动作的结构化属性（关节压力/替代关系）尚未经审核"]
         return detail
+
+    # ---- P5-B2：动作替代候选与服务端安全校验 ----
+
+    @api.get("/users/{uid}/exercise-substitutes")
+    def exercise_substitutes(uid: str, request: Request,
+                             exercise_id: str = Query(...),
+                             location_id: int | None = None):
+        from coach import substitution
+        _user_profile(request.app.state.db, uid)
+        try:
+            return substitution.find_candidates(
+                request.app.state.db, uid, exercise_id, location_id)
+        except substitution.SafetyGateError as e:
+            raise HTTPException(status_code=403, detail={"error": str(e)}) from None
+        except substitution.SubstitutionError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/exercise-substitutions/validate")
+    def exercise_substitution_validate(uid: str, request: Request,
+                                       payload: dict = Body(...)):
+        from coach import substitution
+        _user_profile(request.app.state.db, uid)
+        try:
+            return substitution.validate_substitution(
+                request.app.state.db, uid,
+                str(payload.get("source_exercise_id") or ""),
+                str(payload.get("target_exercise_id") or ""),
+                payload.get("location_id"))
+        except substitution.SafetyGateError as e:
+            raise HTTPException(status_code=403, detail={"error": str(e)}) from None
+        except substitution.SubstitutionError as e:
+            raise HTTPException(status_code=422, detail={"error": str(e)}) from None
 
     # ---- M6.4-B B2/B3：公共三维教学资产（只下发 manifest 已授权文件）----
 
