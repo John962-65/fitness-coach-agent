@@ -120,6 +120,34 @@ def analyze_collaboration(db, user_id: str, input_refs: dict) -> dict:
     bundle = build_evidence_bundle(db, user_id, scenario.domains,
                                    window_days=window_days,
                                    exercise_id=exercise_id)
+    if exercise_id and "training" in scenario.domains:
+        # 趋势判定复用既有 progress_analysis 口径（确定性）
+        from ..analytics.exercise_metrics import exercise_sessions
+        from ..analytics.progress_analysis import analyze_progress
+        sessions = exercise_sessions(db, user_id, exercise_id)
+        series = [{"date": s["date"], "best_e1rm": s.get("best_e1rm"),
+                   "best_set": s.get("best_set"),
+                   "longest_set_s": s.get("longest_set_s"),
+                   "farthest_set_m": s.get("farthest_set_m")}
+                  for s in reversed(sessions)]
+        if series:
+            trend = analyze_progress(
+                series, measurement_type=sessions[0].get("actual_measurement")
+                or "weight_reps",
+                activity_class=sessions[0].get("activity_class") or "strength")
+            bundle["facts"].append({
+                "fact_id": f"exercise-trend-{exercise_id}",
+                "domain": "training", "metric": "exercise-trend",
+                "value": {"verdict": trend.get("verdict"),
+                          "metric": trend.get("metric")},
+                "unit": "", "time_window": bundle["window"],
+                "source_ids": [f"checkin:{s['checkin_id']}:revision:"
+                               f"{s.get('revision') or 0}"
+                               for s in sessions[:6]],
+                "source_revisions": {},
+                "calculation": "progress_analysis 前后半窗中位数（既有口径）",
+                "data_quality": {}, "limitations": list(
+                    trend.get("limitations") or [])})
     opinions = [run_opinion(s, scenario.question, bundle)
                 for s in scenario.participants]
     resolved = resolve(opinions, bundle)

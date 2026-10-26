@@ -2465,7 +2465,9 @@ class Database:
             sql + " ORDER BY updated_at DESC", params).fetchall()]
 
     def update_symptom_episode(self, user_id: str, eid: int, patch: dict) -> bool:
-        sets, params = ["updated_at=?"], [_now()]
+        # 微秒精度：状态变更与创建发生在同一秒时版本指纹也必须变化
+        sets, params = ["updated_at=?"], [
+            datetime.now().isoformat(timespec="microseconds")]
         for col in ("status", "professional_evaluated", "side", "onset_context"):
             if col in patch:
                 sets.append(f"{col}=?")

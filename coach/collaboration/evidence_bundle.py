@@ -21,11 +21,16 @@ SUPPORTED_DOMAINS = DOMAINS
 
 def _rev(checkins: dict, plan_record, meals: dict, recovery_count: int,
          recovery_records: dict, restrictions: str, equipment: str,
-         motion: str, body: dict) -> dict:
+         motion: str, body: dict, symptoms: str = "",
+         targets_updated_at: str = "") -> dict:
     rev: dict = {"checkins": checkins, "recovery_records_count": recovery_count,
                  "restrictions": restrictions, "equipment": equipment}
     if recovery_records:
         rev["recovery_records"] = recovery_records
+    if symptoms:
+        rev["symptoms"] = symptoms
+    if targets_updated_at:
+        rev["targets_updated_at"] = targets_updated_at
     if plan_record:
         rev["plan_version"] = plan_record["version"]
     if meals:
@@ -100,6 +105,19 @@ def build_evidence_bundle(db, user_id: str, domains: list[str],
             kcal_sum += float(summary.get("calories") or 0)
             protein_sum += float(summary.get("protein") or 0)
         completeness = round(days_recorded / window_days, 2)
+        targets = db.get_nutrition_targets(user_id)
+        targets_updated = targets.get("updated_at")
+        if targets.get("protein_g") or targets.get("energy_kcal"):
+            items.append(evidence_item(
+                fact_id="nutrition-targets", domain="nutrition",
+                metric="nutrition-targets",
+                value={"protein_g": targets.get("protein_g"),
+                       "energy_kcal": targets.get("energy_kcal")},
+                unit="", time_window=window, source_ids=[],
+                source_revisions={},
+                calculation="用户自行设置的营养目标（观察对照基准，非处方）",
+                data_quality={},
+                limitations=["目标是用户自设参考，不是医疗营养处方"]))
         items.append(evidence_item(
             fact_id=f"nutrition-window-{start}-{end}", domain="nutrition",
             metric="nutrition-window-summary",
@@ -158,8 +176,27 @@ def build_evidence_bundle(db, user_id: str, domains: list[str],
                 limitations=["用户主观自报；与训练表现不是确定因果关系"]))
 
     if "rehabilitation" in domains:
+        from ..rehab import symptom_service, triage_rules
         safety = safety_integration.safety_view(db, user_id)
         restrictions = restriction_service.effective_restrictions(db, user_id)
+        episodes = db.list_symptom_episodes(user_id)[:5]
+        for ep in episodes:
+            triage = triage_rules.triage(
+                ep.get("description"), onset_at=ep.get("onset_at"),
+                professional_evaluated=bool(ep.get("professional_evaluated")))
+            items.append(evidence_item(
+                fact_id=f"symptom-episode-{ep['id']}", domain="rehabilitation",
+                metric="symptom-episode",
+                value={"status": ep.get("status"),
+                       "description": (ep.get("description") or "")[:80],
+                       "triage_action": triage.get("action")},
+                unit="", time_window=window,
+                source_ids=[f"symptom:{ep['id']}"],
+                source_revisions={"symptoms": symptom_service.symptoms_version(
+                    db, user_id)},
+                calculation="既有症状事件与风险分流结果",
+                data_quality={},
+                limitations=["风险分流是保守规则，不构成医疗诊断"]))
         items.append(evidence_item(
             fact_id="rehab-permission-status", domain="rehabilitation",
             metric="training-permission-status",
@@ -206,7 +243,11 @@ def build_evidence_bundle(db, user_id: str, domains: list[str],
         db.restrictions_version(user_id),
         equipment_version(db, user_id),
         db.motion_profile_version(user_id) if "movement" in domains else "",
-        body_rev)
+        body_rev,
+        symptom_service.symptoms_version(db, user_id)
+        if "rehabilitation" in domains else "",
+        (db.get_nutrition_targets(user_id) or {}).get("updated_at") or ""
+        if "nutrition" in domains else "")
     return {"kind": "cross_domain_evidence_bundle_v1",
             "domains": list(domains), "window": window,
             "exercise_id": exercise_id,

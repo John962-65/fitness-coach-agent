@@ -20,6 +20,7 @@ def _facts(bundle: dict, domain: str) -> list[dict]:
 def run_training_opinion(question: str, bundle: dict) -> dict:
     facts = _facts(bundle, "training")
     observations, evidence, limitations = [], [], []
+    interpretations: list[str] = []
     directions: list[dict] = []
     sessions = next((f for f in facts if f["metric"] == "sessions"), None)
     if sessions and isinstance(sessions.get("value"), (int, float)) \
@@ -35,16 +36,15 @@ def run_training_opinion(question: str, bundle: dict) -> dict:
         evidence.append(adherence["fact_id"])
     e1rm = next((f for f in facts
                  if f["metric"] == "best-estimated-1rm"), None)
-    trend = next((f for f in facts if "trend" in f["metric"]
-                  or "change" in f["metric"]), None)
+    trend = next((f for f in facts if f["metric"] == "exercise-trend"), None)
     if e1rm:
         observations.append(
             f"最佳 e1RM（估算口径）{e1rm['value']}{e1rm.get('unit', '')}")
         evidence.append(e1rm["fact_id"])
         limitations.append("e1RM 为 Epley 公式估算值（1-12 次区间），非实测极限")
-    if trend and isinstance(trend.get("value"), (int, float)) \
-            and trend["value"] < 0:
-        interpretations.append("力量表现指标在窗口内下行（估算口径），"
+    trend_verdict = ((trend or {}).get("value") or {}).get("verdict")
+    if trend_verdict == "declining":
+        interpretations.append("训练表现指标在窗口内下行（趋势口径），"
                                "但单一下行不能归因于单一原因")
         directions.append({"direction": "investigate_decline",
                            "basis_fact_ids": [trend["fact_id"]],
@@ -61,8 +61,9 @@ def run_training_opinion(question: str, bundle: dict) -> dict:
     return specialist_opinion(
         specialist="training_science", question=question,
         directions=directions, observations=observations,
-        interpretations=["进阶判断以 P5-C 确定性候选引擎为准；"
-                         "本意见只提供训练表现侧的事实与方向"],
+        interpretations=interpretations + [
+            "进阶判断以 P5-C 确定性候选引擎为准；"
+            "本意见只提供训练表现侧的事实与方向"],
         recommendations=["训练侧：按下一次训练建议的确定性候选推进或维持"],
         evidence_refs=evidence, limitations=limitations,
     )
@@ -138,6 +139,16 @@ def run_nutrition_opinion(question: str, bundle: dict) -> dict:
         f"{value.get('avg_calories')} kcal / 蛋白质约 "
         f"{value.get('avg_protein_g')} g/天")
     evidence.append(summary["fact_id"])
+    targets = next((f for f in facts
+                    if f["metric"] == "nutrition-targets"), None)
+    if targets:
+        tval = targets.get("value") or {}
+        if tval.get("protein_g"):
+            observations.append(
+                f"用户营养目标蛋白质 {tval['protein_g']} g/天；"
+                f"已记录均值 {value.get('avg_protein_g')} g/天"
+                "（观察对照，未记录餐次使该对照偏保守）")
+            evidence.append(targets["fact_id"])
     if days < window_days * 0.6:
         limitations.append(f"记录完整度不足（{days}/{window_days} 天）："
                            "不能把已记录摄入当作真实摄入分析")
@@ -165,21 +176,38 @@ def run_rehab_opinion(question: str, bundle: dict) -> dict:
     permission = next((f for f in facts
                        if f["metric"] == "training-permission-status"), None)
     restrictions = [f for f in facts if f["metric"] == "active-restriction"]
+    episodes = [f for f in facts if f["metric"] == "symptom-episode"]
     if permission:
         observations.append(f"训练许可状态：{permission['value']}")
         evidence.append(permission["fact_id"])
     for r in restrictions:
         observations.append(f"生效限制：{r['value']}")
         evidence.append(r["fact_id"])
+    urgent = []
+    for ep in episodes:
+        value = ep.get("value") or {}
+        action = value.get("triage_action")
+        observations.append(
+            f"症状事件（{value.get('status')}）：{value.get('description')}"
+            f"——分流：{action}")
+        evidence.append(ep["fact_id"])
+        if action == "urgent_evaluation":
+            urgent.append(ep)
     blocked = bool(restrictions) or (permission and permission["value"] != "ok")
-    if blocked:
+    if urgent:
+        directions.append({"direction": "safety_gate",
+                           "basis_fact_ids": [f["fact_id"] for f in urgent],
+                           "note": "存在需要尽快专业评估的分流结果；"
+                                   "该提示优先于任何训练/恢复建议，"
+                                   "且不由多数意见覆盖"})
+    elif blocked:
         directions.append({"direction": "safety_gate",
                            "basis_fact_ids": evidence,
                            "note": "P3 安全门优先级高于任何训练/恢复建议"})
     else:
         directions.append({"direction": "no_restriction",
                            "basis_fact_ids": evidence or [],
-                           "note": "当前无生效限制记录"})
+                           "note": "当前无生效限制或未决症状事件"})
     return specialist_opinion(
         specialist="rehabilitation", question=question,
         directions=directions, observations=observations,
