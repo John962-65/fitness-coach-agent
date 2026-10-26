@@ -126,12 +126,16 @@ def test_scenario_b_insufficient_and_incomparable_reps(client):
               bench_logs(3, weight=70, sets=4), offset=1)
     result2 = get_next_training_options(db, "u", "barbell_bench_press", pctx)
     assert "consider-increase-load" not in option_ids(result2)
-    assert result2["context"]["data_quality"]["latest_session_comparable"] is False
-    # 70×3 不得因为重量更高被当作比 60×10 更强的目标训练
-    assert any("次数不在目标范围" in reason
-               for reasons in result2["context"]["data_quality"][
-                   "comparable_exclusions"].values()
-               for reason in reasons)
+    # P5-C1.1：70×3 结构口径相同 → 保持可比并分类为"低于目标次数"，
+    # 不再因目标范围被整体排除； heavier weight 也不会触发加重（缺完成标准）
+    comp = result2["context"]["comparability"]
+    assert len(comp["structurally_comparable"]) == 2
+    latest_id = str(result2["context"]["recent_sessions"][0]["checkin_id"])
+    att = comp["target_attainment"][latest_id]
+    assert att["level"] == "below_target"
+    assert att["target_min"] == target["min"]
+    assert comp["comparison_limitations"] == {}
+    assert result2["context"]["data_quality"]["latest_session_comparable"] is True
 
 
 def test_scenario_c_complex_and_superset_context(client):

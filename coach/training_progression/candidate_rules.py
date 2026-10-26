@@ -9,7 +9,7 @@ from __future__ import annotations
 from ..analytics.activity_class import (
     CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH,
 )
-from .comparability import strength_completion
+from .comparability import strength_completion, target_attainment
 
 REP_TYPES = {"weight_reps", "bodyweight_reps", "assisted_reps"}
 
@@ -89,7 +89,8 @@ def _base_limitations(context: dict) -> list[str]:
     if dq.get("plan_context_stale"):
         out.append("计划上下文不是当前版本：长期目标不可直接引用，需重新读取计划")
     if dq.get("latest_session_comparable") is False:
-        out.append("最近一次实际训练不符合当前可比口径；不据此生成进阶/降量数值")
+        out.append("最近一次实际训练与当前口径结构不可比"
+                   "（方法/组织/编排不同）；不据此生成进阶/降量数值")
     if any(str(source).endswith("_inferred")
            for source in (dq.get("classification_sources") or {})):
         out.append("最近记录的活动类别来自旧记录推断（非保存时快照）；"
@@ -102,8 +103,11 @@ def _rep_context(context: dict) -> dict:
     comparable = context.get("comparable_sessions") or []
     target_sets = (context.get("current_prescription") or {}).get("sets")
     stats = [strength_completion(s, target, target_sets) for s in comparable[:3]]
+    attainments = {str(s["checkin_id"]): target_attainment(s, target)
+                   for s in comparable[:3]}
     return {"target": target, "target_sets": target_sets,
-            "stats": stats, "recent": comparable[:3]}
+            "stats": stats, "attainments": attainments,
+            "recent": comparable[:3]}
 
 
 def _maintain(context: dict) -> dict:
@@ -126,6 +130,8 @@ def _complete_reps(context: dict, rule: dict) -> dict | None:
     if not target or target.get("kind") != "reps" or not rule["stats"]:
         return None
     latest = rule["stats"][0]
+    latest_attainment = (rule.get("attainments") or {}).get(
+        str(rule["recent"][0].get("checkin_id"))) or {}
     limitations = _base_limitations(context)
     plan_weight = (context.get("current_prescription") or {}).get("weight_kg")
     actual_weight = latest["loads"][0] if latest.get("uniform_load") \
@@ -159,6 +165,8 @@ def _complete_reps(context: dict, rule: dict) -> dict | None:
         limitations,
         {"target_min": target["min"], "target_max": target["max"],
          "latest_all_at_high": latest["all_at_high"],
+         "latest_target_attainment": latest_attainment.get("level"),
+         "latest_attainment_label": latest_attainment.get("label"),
          "under_plan_weight": under_plan_weight})
 
 
@@ -187,6 +195,9 @@ def _increase_load(context: dict, rule: dict) -> dict | None:
     equipment = context.get("equipment_context") or {}
     increment = equipment.get("increment_kg")
     source = equipment.get("increment_source")
+    # P5-C1.1：只有已验证/用户明确配置的档位才产生明确可执行的下一档数值；
+    # 历史重量差（observed_history）只支持方向。
+    verified_increment = equipment.get("increment_verified") is True
     targets = _targets(context, include_weight=False)
     if not targets:
         return None
@@ -206,13 +217,17 @@ def _increase_load(context: dict, rule: dict) -> dict | None:
                                "不能把计划重量当作已完成基数，先完成当前处方")
             return None
         if isinstance(increment, (int, float)) and increment > 0 \
-                and not dq.get("superset"):
+                and verified_increment and not dq.get("superset"):
             targets["weight_kg"] = round(float(base) + increment, 2)
             title = f"在完成目标次数后考虑下一档负重（约 {targets['weight_kg']:g} kg）"
         else:
             title = "在完成目标次数后考虑使用实际可用的下一档负重"
             if dq.get("superset"):
                 limitations.append("超级组内只给方向：不改变组织/休息，也不虚构单动作加重值")
+            elif source == "observed_history":
+                limitations.append(
+                    f"历史记录中的重量差（约 {increment:g} kg）不是已确认的器械档位："
+                    "只显示调整方向，不生成明确可执行的加重数值")
             else:
                 limitations.append("未知当前器械的实际档位：只给方向，不虚构精确重量")
         metrics = ["best-estimated-1rm", "working-sets", "volume"]
@@ -230,13 +245,17 @@ def _increase_load(context: dict, rule: dict) -> dict | None:
             return None
         base = assists[0]
         if isinstance(increment, (int, float)) and increment > 0 \
-                and not dq.get("superset"):
+                and verified_increment and not dq.get("superset"):
             targets["assistance_kg"] = max(0.0, round(float(base) - increment, 2))
             title = f"在完成目标次数后考虑降低辅助（约 {targets['assistance_kg']:g} kg）"
         else:
             title = "在完成目标次数后考虑使用下一档更低辅助"
             if dq.get("superset"):
                 limitations.append("超级组内只给方向：不改变组织/休息，也不虚构辅助档位")
+            elif source == "observed_history":
+                limitations.append(
+                    "历史记录中的辅助重量变化不是已确认的器械档位："
+                    "只显示调整方向，不生成明确可执行的数值")
             else:
                 limitations.append("未知辅助器械档位：只给方向，不虚构精确数值")
         metrics = ["max-reps", "min-assistance-kg", "working-sets"]
@@ -248,7 +267,8 @@ def _increase_load(context: dict, rule: dict) -> dict | None:
          "costs": "动作难度和恢复压力上升",
          "conditions": conditions + f"（档位来源：{source}）"},
         limitations,
-        {"increment_kg": increment, "increment_source": source})
+        {"increment_kg": increment, "increment_source": source,
+         "increment_verified": verified_increment})
 
 
 def _complete_non_rep(context: dict, rule: dict) -> dict | None:
@@ -448,7 +468,8 @@ def build_candidates(context: dict) -> list[dict]:
     rule = _rep_context(context) if context.get("activity_class") == CLASS_STRENGTH \
         else {"target": (context.get("current_prescription") or {}).get("reps_target"),
               "target_sets": (context.get("current_prescription") or {}).get("sets"),
-              "stats": [], "recent": context.get("comparable_sessions") or []}
+              "stats": [], "attainments": {},
+              "recent": context.get("comparable_sessions") or []}
     options = [_maintain(context)]
     if dq.get("latest_session_comparable", True):
         complete = _complete_reps(context, rule)

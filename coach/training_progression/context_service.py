@@ -18,7 +18,7 @@ from ..analytics.fact_service import get_training_facts
 from ..recovery import recovery_metrics
 from ..rehab import restriction_service, safety_integration
 from .comparability import (
-    plan_prescription, select_comparable,
+    plan_prescription, select_comparable, target_attainment,
 )
 
 RECENT_WINDOW_DAYS = 60
@@ -39,6 +39,7 @@ class NextTrainingContext:
     plan_prescription_applies: bool = False
     recent_sessions: list = field(default_factory=list)
     comparable_sessions: list = field(default_factory=list)
+    comparability: dict = field(default_factory=dict)
     last_actual_performance: dict | None = None
     current_prescription: dict = field(default_factory=dict)
     recovery_context: dict = field(default_factory=dict)
@@ -114,13 +115,32 @@ def _find_plan_entry(plan_record: dict | None, exercise_id: str,
     }, quality
 
 
-def _increment_metadata(doc: dict, recent: list[dict]) -> dict:
+# 产生"明确可执行下一档数值"的档位来源：已验证动作元数据 + 用户明确配置。
+# 历史观察到的重量差只说明方向，不是已确认的器械档位（P5-C1.1）。
+VERIFIED_INCREMENT_SOURCES = {
+    "exercise_progression_metadata",
+    "user_exercise_progression_metadata",
+}
+
+
+def _increment_metadata(db, user_id: str, doc: dict, recent: list[dict]) -> dict:
+    """档位来源分级（P5-C1.1）：
+
+    - exercise_progression_metadata：内置动作库已验证的进阶元数据；
+    - user_exercise_progression_metadata：用户自定义动作上明确配置的档位；
+    - observed_history：历史记录中观察到的重量差——只用于方向展示，
+      不得生成明确可执行的下一档重量；
+    - unknown_no_exact_increment：未知档位。
+    """
     progression = doc.get("progression") if isinstance(
         doc.get("progression"), dict) else {}
     inc = progression.get("increment_kg")
     if isinstance(inc, (int, float)) and not isinstance(inc, bool) and inc > 0:
-        return {"increment_kg": float(inc),
-                "increment_source": "exercise_progression_metadata"}
+        source = "exercise_progression_metadata"
+        if db.get_custom_exercise(user_id, str(doc.get("id") or "")):
+            source = "user_exercise_progression_metadata"
+        return {"increment_kg": float(inc), "increment_source": source,
+                "increment_verified": True}
     increments = []
     for session in recent:
         loads = sorted({float(s["weight_kg"]) for s in session.get("sets") or []
@@ -131,9 +151,11 @@ def _increment_metadata(doc: dict, recent: list[dict]) -> dict:
                           if b > a)
     if increments:
         return {"increment_kg": min(increments),
-                "increment_source": "observed_history"}
+                "increment_source": "observed_history",
+                "increment_verified": False}
     return {"increment_kg": None,
-            "increment_source": "unknown_no_exact_increment"}
+            "increment_source": "unknown_no_exact_increment",
+            "increment_verified": False}
 
 
 def _recovery_context(db, user_id: str) -> dict:
@@ -217,11 +239,14 @@ def build_next_training_context(db, user_id: str, exercise_id: str,
             str(s.get("checkin_id")): ["最近记录混有多个活动类别"]
             for s in recent}
     else:
-        target_for_compare = target \
-            if activity_class == CLASS_STRENGTH and target \
-            and target.get("kind") == "reps" else None
-        comparable, excluded = select_comparable(
-            recent, activity_class, target_for_compare)
+        comparable, excluded = select_comparable(recent, activity_class)
+    comparability = {
+        "structurally_comparable": [str(s["checkin_id"]) for s in comparable],
+        "target_attainment": {
+            str(s["checkin_id"]): target_attainment(s, target)
+            for s in comparable},
+        "comparison_limitations": excluded,
+    }
 
     latest_sources = {}
     if latest:
@@ -262,7 +287,7 @@ def build_next_training_context(db, user_id: str, exercise_id: str,
         "equipment": doc.get("equipment") or [],
         "equipment_names": [catalog.get(x, {"name": x})["name"]
                             for x in (doc.get("equipment") or [])],
-        **_increment_metadata(doc, recent),
+        **_increment_metadata(db, user_id, doc, recent),
     }
 
     facts_bundle = get_training_facts(
@@ -324,6 +349,7 @@ def build_next_training_context(db, user_id: str, exercise_id: str,
         plan_prescription_applies=plan_applies,
         recent_sessions=recent,
         comparable_sessions=comparable,
+        comparability=comparability,
         last_actual_performance=(
             _performance(latest) if latest else None),
         current_prescription=prescription,
