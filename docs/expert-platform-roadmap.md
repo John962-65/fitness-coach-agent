@@ -27,7 +27,7 @@
 | P2 | 身体与恢复管理 | ✅ 已交付（2026-10-25） | [p2-body-recovery.md](p2-body-recovery.md) |
 | P3 | 康复辅助及风险管理 | ✅ 已交付（2026-10-25） | [p3-rehab.md](p3-rehab.md) |
 | P4 | 动作技术工作台 | ✅ 已交付（2026-10-25） | [p4-movement-expert.md](p4-movement-expert.md) |
-| P5 | 进阶训练功能（组法/有氧/器械/统计） | ✅ P5-B 全阶段已交付（2026-10-26）；P5-C 待开始 | [p5b3-statistics-integration.md](p5b3-statistics-integration.md) |
+| P5 | 进阶训练功能（组法/有氧/器械/统计/下一次建议） | 🔄 P5-B 已完成；P5-C1 确定性候选已交付（2026-10-26），P5-C2/C3 待做 | [p5c-training-progression.md](p5c-training-progression.md) |
 | P6 | 跨专家协作 | ⬜ 未开始 | — |
 | P7 | 设备、数据互通与长期使用 | ⬜ 独立规划 | — |
 

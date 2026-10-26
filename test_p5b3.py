@@ -336,6 +336,62 @@ def test_scenario_e_replacement_identity_and_plan_confirmation(client):
     assert c.get("/api/users/u/plan").json()["version"] == plan_before["version"] + 1
 
 
+def test_action_distance_only_counts_steady_cardio(client):
+    c, db = client
+    hiit = {**HIIT_META, "planned_rounds": 1, "completed_rounds": 1,
+            "work_seconds_done": 30, "rest_seconds_done": 30,
+            "skipped": [], "ended_early": False, "end_reason": "完成",
+            "blocks": [{"name": "开合跳", "exercise_id": "jumping_jack",
+                        "work_seconds": 30, "rest_seconds": 30, "rounds": 1}]}
+    db.record_checkin("u", "training", {
+        "exercises": [{"name": "混合有氧", "exercise_id": "custom_hiit",
+                       "set_logs": [
+                           {"type": "distance_time", "distance_m": 1000,
+                            "duration_seconds": 600},
+                           {"type": "duration", "duration_seconds": 60,
+                            "distance_m": 500, "hiit": hiit}]}],
+        "session_meta": {"mode": "free", "local_date": TODAY}})
+    session = exercise_sessions(db, "u", "custom_hiit")[0]
+    assert session["activity_class"] == "mixed"
+    assert session["steady_cardio_distance_m"] == 1000
+    assert session["distance_total_m"] == 1000
+    assert session["farthest_set_m"] == 1000
+    assert session["interval_elapsed_seconds"] == 60
+
+
+def test_correction_reclassifies_changed_activity_snapshot(client):
+    c, db = client
+    cid = training(c, [{"name": "跑步", "exercise_id": RUN, "set_logs": [
+        {"type": "distance_time", "distance_m": 3000, "duration_seconds": 900}]}])
+    before = exercise_sessions(db, "u", RUN)[0]
+    assert before["activity_class"] == CLASS_STEADY_CARDIO
+    cur = c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
+    hiit = {**HIIT_META, "planned_rounds": 1, "completed_rounds": 1,
+            "work_seconds_done": 30, "rest_seconds_done": 30,
+            "skipped": [], "ended_early": False, "end_reason": "完成",
+            "blocks": [{"name": "开合跳", "exercise_id": "jumping_jack",
+                        "work_seconds": 30, "rest_seconds": 30, "rounds": 1}]}
+    resp = c.post(f"/api/users/u/checkins/{cid}/correct", json={
+        "expected_revision": 0,
+        "data": {**cur["data"], "exercises": [{
+            "name": "跑步", "exercise_id": RUN,
+            "set_logs": [{"type": "duration", "duration_seconds": 60,
+                          "hiit": hiit}],
+        }]},
+        "reason": "实际做的是间歇跑", "evidence": "用户确认改为间歇记录"})
+    assert resp.status_code == 200, resp.text
+    log = resp.json()["data"]["exercises"][0]["set_logs"][0]
+    assert log["activity_class"] == CLASS_INTERVAL
+    assert log["activity_class_source"] == "correction_snapshot"
+    after = exercise_sessions(db, "u", RUN)[0]
+    assert after["activity_class"] == CLASS_INTERVAL
+    assert after["steady_cardio_seconds"] is None
+    assert after["interval_work_seconds"] == 30
+    ps = period_summary(db, "u", 30)
+    assert ps["steady_cardio_seconds"] == 0
+    assert ps["interval_work_seconds"] == 30
+
+
 def test_progress_analysis_uses_classified_metric_not_strength_formula():
     from coach.analytics.progress_analysis import analyze_progress
     interval = analyze_progress([

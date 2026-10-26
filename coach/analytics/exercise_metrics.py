@@ -205,12 +205,18 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
         return []
     sessions: list[dict] = []
     for row, data in _iter_user_training(db, user_id):
-        for ex in data.get("exercises", []) or []:
-            if not isinstance(ex, dict) or entry_identity(db, user_id, ex) != exercise_id:
-                continue
-            logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else []
+        matched = [ex for ex in data.get("exercises", []) or []
+                   if isinstance(ex, dict)
+                   and entry_identity(db, user_id, ex) == exercise_id]
+        if not matched:
+            continue
+        logs = []
+        for ex in matched:
+            if isinstance(ex.get("set_logs"), list):
+                logs.extend(l for l in ex["set_logs"] if isinstance(l, dict))
+        for ex in matched[:1]:
             doc = exercise_service.get_exercise(db, user_id, exercise_id)
-            working = _working_sets([l for l in logs if isinstance(l, dict)], doc)
+            working = _working_sets(logs, doc)
             if not working:
                 continue
             strength = [s for s in working if s["activity_class"] == CLASS_STRENGTH]
@@ -222,8 +228,13 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
                         and s["duration_seconds"]]
             steady_dur = [s for s in dur_sets
                           if s["activity_class"] != CLASS_INTERVAL]
-            dist_sets = [s for s in working if s["type"] == "distance_time"
-                         and s["distance_m"]]
+            steady_dist_sets = [s for s in working
+                                if s["activity_class"] == "steady_cardio"
+                                and s["type"] == "distance_time" and s["distance_m"]]
+            noninterval_dist_sets = [s for s in working
+                                     if s["activity_class"] != CLASS_INTERVAL
+                                     and s["type"] == "distance_time"
+                                     and s["distance_m"]]
             work_seconds = sum(int((s.get("hiit") or {}).get("work_seconds_done") or 0)
                                for s in intervals)
             rest_seconds = sum(int((s.get("hiit") or {}).get("rest_seconds_done") or 0)
@@ -235,6 +246,9 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
             if not replacement and ex.get("session_replacement_of"):
                 replacement = {"planned_exercise_id": ex.get("session_replacement_of"),
                                "scope": "session"}
+            superset_group = ex.get("superset_group")
+            for st in working:
+                st["superset_group"] = superset_group
             sessions.append({
                 "checkin_id": row["id"],
                 "revision": row["revision"],
@@ -269,16 +283,19 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
                     if s["activity_class"] != CLASS_STRENGTH
                     and s["activity_class"] != CLASS_INTERVAL)) or None,
                 "steady_cardio_distance_m": round(sum(
-                    s["distance_m"] or 0 for s in dist_sets)) or None,
-                # 单组表现只取非间歇记录；HIIT 使用 interval_* 指标
+                    s["distance_m"] or 0 for s in steady_dist_sets)) or None,
+                # 单组表现只取持续有氧/非间歇记录；HIIT 使用 interval_* 指标
                 "longest_set_s": max((s["duration_seconds"] for s in steady_dur),
                                      default=None),
-                "distance_total_m": round(sum(s["distance_m"] or 0 for s in dist_sets))
-                                    if dist_sets else None,
-                "farthest_set_m": max((s["distance_m"] for s in dist_sets),
-                                      default=None),
+                "distance_total_m": round(sum(
+                    s["distance_m"] or 0 for s in noninterval_dist_sets)) or None,
+                "farthest_set_m": max(
+                    (s["distance_m"] for s in noninterval_dist_sets),
+                    default=None),
                 "duration_min": _duration_min(working, data),
                 "actual_measurement": (working[0].get("type") or "weight_reps"),
+                "superset_group": superset_group,
+                "duplicate_entries": len(matched),
                 "replacement": replacement,
                 "sets": working,
             })

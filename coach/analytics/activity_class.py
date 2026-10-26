@@ -128,12 +128,14 @@ def stamp_training_data(db, user_id: str, data: dict,
             if not isinstance(log, dict):
                 continue
             snapshot, snapshot_source = _snapshot_category(log)
-            if preserve_snapshot and snapshot and not valid_hiit_metadata(log.get("hiit")):
+            inferred = classify_training_record(doc, clone_without_snapshot(log))
+            if preserve_snapshot and snapshot and snapshot == inferred["class"]:
+                # 只有重新推断与旧快照一致时才继承；HIIT 元数据/动作语义/
+                # 记录类型的实质变化会使旧快照失效。
                 category = snapshot
                 used_source = snapshot_source or SOURCE_CORRECTION_SNAPSHOT
             else:
-                classified = classify_training_record(doc, log)
-                category = classified["class"]
+                category = inferred["class"]
                 used_source = source
             log["activity_class"] = category
             log["activity_class_source"] = used_source

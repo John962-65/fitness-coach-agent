@@ -98,6 +98,49 @@ def _added_exercise_ids(operations, resolver=None) -> list[str]:
     return ids
 
 
+def _affected_exercise_ids(operations, plan: dict, resolver=None) -> list[str]:
+    """按操作顺序模拟定位受影响动作。
+
+    P5-C：编辑既有动作处方也必须过 P3 限制门。不能直接用操作前下标，
+    否则“先 reorder 再 edit 新下标”会校验错动作。
+    """
+    working = copy.deepcopy(plan)
+    ids: list[str] = []
+    for op in operations:
+        kind = op.get("op")
+        if kind in ("add_exercise", "replace_exercise") and op.get("exercise"):
+            try:
+                ex_id, _ = _resolve_exercise(op["exercise"], resolver)
+                ids.append(ex_id)
+            except ValueError:
+                pass
+        elif kind == "edit_set_prescription":
+            days = [d for d in working.get("schedule") or []
+                    if isinstance(d, dict)]
+            day = next((d for d in days if d.get("day") == op.get("day")), None)
+            if day:
+                entries = day.get("exercises") or []
+                idx = op.get("index")
+                entry = entries[idx] if isinstance(idx, int) \
+                    and 0 <= idx < len(entries) else None
+                if entry is None and op.get("exercise"):
+                    try:
+                        target_id, _ = _resolve_exercise(op["exercise"], resolver)
+                    except ValueError:
+                        target_id = None
+                    entry = next((e for e in entries
+                                  if e.get("exercise_id") == target_id), None)
+                if entry and entry.get("exercise_id"):
+                    ids.append(entry["exercise_id"])
+        # 用真实 apply 顺序推进副本；结构错误留给后续 apply 统一拒绝。
+        try:
+            working, _applied = apply_plan_operations(
+                working, [op], resolver=resolver)
+        except ValueError:
+            break
+    return list(dict.fromkeys(ids))
+
+
 def _validate_plan(db, user_id, profile, operations, base,
                    resolver=None) -> dict:
     record = db.get_active_plan_record(user_id)
@@ -133,12 +176,12 @@ def _validate_plan(db, user_id, profile, operations, base,
     # 限制（用户报告/专业人员/安全分流）都不因专家未提示而失效
     from .rehab.safety_integration import validate_plan_change
     from . import exercise_service as _ex_svc
-    added_docs = []
-    for ex_id in _added_exercise_ids(operations, resolver):
+    affected_docs = []
+    for ex_id in _affected_exercise_ids(operations, record["content"], resolver):
         doc = _ex_svc.get_exercise(db, user_id, ex_id)
         if doc:
-            added_docs.append(doc)
-    errors.extend(validate_plan_change(db, user_id, added_docs))
+            affected_docs.append(doc)
+    errors.extend(validate_plan_change(db, user_id, affected_docs))
     if errors:
         raise ProposalRejected(errors)
 
@@ -289,6 +332,22 @@ def restore_plan_version(db, user_id: str, version: int, reason: str = "") -> di
     approach = db.get_approach(user_id)
     if approach:
         content["approach_revision"] = approach.get("revision")
+    # P5-C4：恢复旧版本同样不能绕过当前 P3 训练限制。
+    from . import exercise_service as _ex_svc
+    from .rehab.safety_integration import validate_plan_change
+    restored_docs = []
+    for day in content.get("schedule") or []:
+        for entry in (day.get("exercises") if isinstance(day, dict) else []) or []:
+            if not isinstance(entry, dict):
+                continue
+            ex_id = entry.get("exercise_id")
+            doc = _ex_svc.get_exercise(db, user_id, ex_id) \
+                if isinstance(ex_id, str) and ex_id else None
+            if doc:
+                restored_docs.append(doc)
+    errors.extend(validate_plan_change(db, user_id, restored_docs))
+    if errors:
+        raise ProposalRejected(errors)
     with db.conn:
         if not db.conn.in_transaction:
             db.conn.execute("BEGIN IMMEDIATE")
