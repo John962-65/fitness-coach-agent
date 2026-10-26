@@ -289,6 +289,21 @@ def register_routes(app) -> None:
         db.conn.commit()
         return {"deleted": cur.rowcount, "source_platform": platform}
 
+    @api.get("/users/{uid}/long-term-report")
+    def long_term_report(uid: str, request: Request,
+                         period: str = Query("month"),
+                         start: str | None = Query(None),
+                         end: str | None = Query(None)):
+        """P7-D：长期个人报告（week/month/custom；只读汇总）。"""
+        from coach.analytics import long_term_report
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return long_term_report.build_report(db, uid, period, start, end)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
     @api.get("/users/{uid}/profile")
     def get_profile(uid: str, request: Request):
         db = request.app.state.db
