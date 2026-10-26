@@ -134,7 +134,14 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
 
       {c.type === 'training' && c.data.exercises?.length ? (
         <ul className="rows">
-          {c.data.exercises.map((ex, i) => (
+          {c.data.exercises.map((ex, i) => {
+            const replacement = (ex as {
+              session_replacement?: {
+                planned_name?: string; scope?: string
+                actual_measurement?: string
+              }
+            }).session_replacement
+            return (
             <li key={i} className="py-2 first:pt-0 last:pb-0">
               {ex.set_logs?.length ? (
                 <div>
@@ -143,6 +150,13 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
                     {ex.superset_group ? <Tag tone="blue" className="ml-1.5">超级组 {String(ex.superset_group)}</Tag> : null}
                     <span className="nums ml-1.5 text-xs text-muted">{ex.set_logs.length} 组</span>
                   </p>
+                  {replacement && (
+                    <p className="mt-1 rounded-lg bg-sky-50 px-2 py-1 text-2xs leading-relaxed text-sky-800">
+                      原计划：{replacement.planned_name || '原动作'} → 实际执行：{ex.name}
+                      {`（${replacement.scope === 'session' ? '仅本次训练' : '计划变更'}；`
+                        + `口径 ${replacement.actual_measurement || '—'}）`}
+                    </p>
+                  )}
                   <ul className="nums mt-1 space-y-0.5">
                     {ex.set_logs.map((l, j) => (
                       <li key={j} className="flex items-center gap-2 text-[13px] text-muted">
@@ -164,7 +178,8 @@ function CheckinCard({ c, onCorrect }: { c: Checkin; onCorrect: () => void }) {
                 </div>
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       ) : (
         <p className="text-sm leading-relaxed text-muted">
@@ -278,15 +293,29 @@ function CalendarView({ uid, onCorrect }: {
                         selected === dateStr ? 'ring-2 ring-accent-deep/50' : ''} ${
                         isToday ? 'outline outline-1 outline-night/30' : ''}`}>
                 {d}
-                {info && info.sessions > 1 && (
-                  <span className="nums absolute bottom-0.5 text-[9px] font-bold">×{info.sessions}</span>
+                {info && (
+                  <span className="absolute bottom-0.5 flex items-center gap-0.5">
+                    {info.strength_working_sets > 0 && (
+                      <span className="size-1.5 rounded-full bg-accent-deep" title="力量" />
+                    )}
+                    {info.steady_cardio_seconds > 0 && (
+                      <span className="size-1.5 rounded-full bg-sky-500" title="持续性有氧" />
+                    )}
+                    {info.interval_elapsed_seconds > 0 && (
+                      <span className="size-1.5 rounded-full bg-violet-500" title="HIIT" />
+                    )}
+                    {info.sessions > 1 && (
+                      <span className="nums text-[9px] font-bold">×{info.sessions}</span>
+                    )}
+                  </span>
                 )}
               </button>
             )
           })}
         </div>
         <p className="mt-2.5 text-2xs leading-relaxed text-faint">
-          绿色 = 有训练的日期（×n 为同日多次）；点击查看当天完整记录。
+          绿色 = 有训练；圆点分别表示力量 / 持续性有氧 / HIIT（×n 为同日多次）。
+          点击查看当天完整记录。
         </p>
       </div>
 
@@ -314,6 +343,54 @@ function CalendarView({ uid, onCorrect }: {
                 : '—'}
                     label="平均时长" />
             </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <Stat value={`${Math.round(summary.steady_cardio_seconds / 60)} 分`}
+                    label="持续性有氧" />
+              <Stat value={`${(summary.steady_cardio_distance_m / 1000).toFixed(1)} km`}
+                    label="有氧距离" />
+              <Stat value={`${summary.interval_work_seconds} 秒`}
+                    label="HIIT 工作" />
+              <Stat value={`${summary.interval_rest_seconds} / ${summary.interval_elapsed_seconds} 秒`}
+                    label="HIIT 休息 / 经过" />
+            </div>
+            {summary.cardio_by_activity.length > 0 && (
+              <div className="mt-3.5">
+                <p className="mb-2 text-[13px] font-medium text-muted">
+                  有氧分布与配速（仅有距离的记录计算配速）
+                </p>
+                <div className="space-y-1.5">
+                  {summary.cardio_by_activity.map((row) => (
+                    <div key={row.exercise_id}
+                         className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-xs">
+                      <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                      <span className="nums text-muted">
+                        {row.sessions} 次 · {Math.round(row.duration_seconds / 60)} 分
+                        {row.distance_m > 0 && ` · ${(row.distance_m / 1000).toFixed(2)} km`}
+                      </span>
+                      <span className="nums w-20 shrink-0 text-right text-faint">
+                        {row.pace_sec_per_km != null
+                          ? `${Math.floor(row.pace_sec_per_km / 60)}′${Math.round(row.pace_sec_per_km % 60)}″/km`
+                          : '无配速'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {summary.interval_sessions > 0 && (
+              <p className="mt-2 text-2xs leading-relaxed text-faint">
+                间歇：计划 {summary.interval_planned_rounds} 轮 · 完成
+                {' '}{summary.interval_completed_rounds} 轮 · 跳过
+                {' '}{summary.interval_skipped_rounds} 轮 · 提前结束
+                {' '}{summary.interval_ended_early} 次；不重复计入持续性有氧，也不计力量工作组。
+              </p>
+            )}
+            {summary.classification && summary.classification.inferred_records > 0 && (
+              <p className="mt-1.5 text-2xs leading-relaxed text-amber-700">
+                本周期有 {summary.classification.inferred_records} 条旧记录按动作库/记录类型推断类别
+                （{summary.classification.version}）；新记录使用保存时快照。
+              </p>
+            )}
             <div className="mt-3.5">
               <p className="mb-2 text-[13px] font-medium text-muted">
                 肌群分布（按主肌群归口，一组只计一次）

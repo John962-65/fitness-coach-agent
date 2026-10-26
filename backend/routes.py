@@ -1123,6 +1123,9 @@ def register_routes(app) -> None:
                     except _SubSafety as e:
                         raise HTTPException(status_code=422,
                                             detail={"error": str(e)}) from None
+        if ctype == "training":
+            from coach.analytics.activity_class import stamp_training_data
+            stamp_training_data(db, uid, data)
         checkin_id = db.record_checkin(uid, ctype, data)
         if submission_id and not db.record_checkin_submission(uid, submission_id, checkin_id):
             # 并发同 ID（极小窗口）：删除刚落的重复行，以先落库者为准
@@ -1249,13 +1252,26 @@ def register_routes(app) -> None:
         _user_profile(request.app.state.db, uid)
         return analytics.period_summary(request.app.state.db, uid, days)
 
+    @api.get("/users/{uid}/training-facts")
+    def training_facts(uid: str, request: Request,
+                       window_days: int = Query(30, ge=1, le=400)):
+        from coach.analytics.fact_service import get_training_facts
+        _user_profile(request.app.state.db, uid)
+        return get_training_facts(request.app.state.db, uid, window_days)
+
     @api.post("/users/{uid}/checkins/{checkin_id}/correct")
     def correct_checkin(uid: str, checkin_id: int, request: Request,
                         payload: dict = Body(...)):
         try:
+            data = payload.get("data", {})
+            if isinstance(data, dict):
+                from coach.analytics.activity_class import stamp_training_data
+                stamp_training_data(request.app.state.db, uid, data,
+                                    source="correction_snapshot",
+                                    preserve_snapshot=True)
             updated = request.app.state.db.revise_checkin(
                 uid, checkin_id, int(payload.get("expected_revision", 0)),
-                payload.get("data", {}), str(payload.get("reason") or ""),
+                data, str(payload.get("reason") or ""),
                 str(payload.get("evidence") or ""))
         except (ValueError, TypeError) as e:
             raise HTTPException(status_code=422, detail={"error": str(e)}) from None

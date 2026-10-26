@@ -19,6 +19,10 @@ from __future__ import annotations
 import statistics
 from datetime import date
 
+from .activity_class import (
+    CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH, ACTIVITY_CLASS_VERSION,
+)
+
 MIN_SESSIONS = 3
 MIN_SPAN_DAYS = 7
 MAX_HALF_GAP_DAYS = 21
@@ -32,11 +36,21 @@ def _half(dates: list[str]):
 
 
 def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
-                     metric: str | None = None) -> dict:
+                     metric: str | None = None,
+                     activity_class: str | None = None) -> dict:
     """series：exercise_progress 的逐会话序列（旧→新）。
 
-    返回 {"verdict", "metric", "evidence", "limitations", "note"}。
+    activity_class 来自统一分类服务；未传入时从 series 的快照/推断字段读取。
+    HIIT 不使用力量 e1RM/容量或持续性有氧时长指标。
     """
+    derived_classes = {s.get("activity_class") for s in series
+                       if s.get("activity_class")}
+    resolved_class = activity_class
+    if resolved_class is None:
+        resolved_class = derived_classes.pop() if len(derived_classes) == 1 else None
+    if activity_class is None and resolved_class not in (
+            CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH):
+        resolved_class = None
     usable = [s for s in series if s.get("date")]
     if len(usable) < MIN_SESSIONS:
         return {
@@ -70,17 +84,45 @@ def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
             return s.get("longest_set_s")
         if c == "farthest-distance":
             return s.get("farthest_set_m")
+        if c == "interval-work-seconds":
+            return s.get("interval_work_seconds")
+        if c == "steady-cardio-seconds":
+            return s.get("steady_cardio_seconds")
+        if c == "steady-cardio-distance":
+            return s.get("steady_cardio_distance_m")
         return s.get("best_e1rm")
 
-    chosen = metric or {
+    chosen = metric or ({
+        CLASS_INTERVAL: "interval-work-seconds",
+        CLASS_STEADY_CARDIO: ("steady-cardio-distance"
+                              if measurement_type == "distance_time"
+                              else "steady-cardio-seconds"),
+        CLASS_STRENGTH: {
+            "weight_reps": "best-e1rm",
+            "bodyweight_reps": "max-reps",
+            "assisted_reps": "max-reps",
+            "duration": "longest-set",
+            "distance_time": "farthest-distance",
+        }.get(measurement_type, "best-e1rm"),
+    }.get(resolved_class) if resolved_class else {
         "weight_reps": "best-e1rm",
         "bodyweight_reps": "max-reps",
         "assisted_reps": "max-reps",
         "duration": "longest-set",
         "distance_time": "farthest-distance",
-    }.get(measurement_type, "best-e1rm")
+    }.get(measurement_type, "best-e1rm"))
 
     limitations: list[str] = []
+    if resolved_class == CLASS_INTERVAL:
+        limitations.append(
+            "HIIT 按实际工作秒数观察；不同编排/轮次的工作与休息结构不可直接比较，"
+            "该指标不代表有氧能力或力量水平")
+    elif resolved_class == CLASS_STEADY_CARDIO:
+        limitations.append(
+            "持续性有氧按本类型指标观察；无距离记录不生成配速，"
+            "不同器械/运动类型不可直接类比")
+    elif measurement_type in ("duration", "distance_time"):
+        limitations.append("时长/距离记录不参与力量 e1RM 或容量解释")
     if chosen == "best-e1rm":
         n_valid = sum(1 for s in usable if s.get("best_e1rm") is not None)
         if n_valid < MIN_SESSIONS:
@@ -150,6 +192,8 @@ def analyze_progress(series: list[dict], measurement_type: str = "weight_reps",
     return {
         "verdict": verdict,
         "metric": chosen,
+        "activity_class": resolved_class,
+        "classification_version": ACTIVITY_CLASS_VERSION,
         "evidence": {
             "first_half_median": round(f_med, 2),
             "second_half_median": round(s_med, 2),

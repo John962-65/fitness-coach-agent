@@ -386,17 +386,41 @@ export interface ExerciseSessionSet {
   at?: string | null
   e1rm: number | null
   volume: number
+  activity_class?: 'strength' | 'steady_cardio' | 'interval'
 }
 
 export interface ExerciseSession {
   checkin_id: number
   date: string
+  activity_class?: 'strength' | 'steady_cardio' | 'interval' | 'mixed'
+  activity_classes?: string[]
+  strength_working_sets?: number
   working_sets: number
   reps_total: number
   volume: number
   best_set: { weight_kg: number; reps: number | null } | null
   best_e1rm: number | null
   duration_min: number | null
+  duration_total_s?: number | null
+  steady_cardio_seconds?: number | null
+  steady_cardio_distance_m?: number | null
+  interval_work_seconds?: number
+  interval_rest_seconds?: number
+  interval_elapsed_seconds?: number
+  interval_planned_rounds?: number
+  interval_completed_rounds?: number
+  interval_skipped_rounds?: number
+  longest_set_s?: number | null
+  distance_total_m?: number | null
+  farthest_set_m?: number | null
+  actual_measurement?: string
+  replacement?: {
+    planned_exercise_id?: string
+    planned_name?: string
+    planned_index?: number | null
+    scope?: string
+    actual_measurement?: string
+  } | null
   sets: ExerciseSessionSet[]
 }
 
@@ -409,22 +433,84 @@ export interface ExerciseRecords {
   farthest: { distance_m: number; date: string } | null
 }
 
+export interface ActivityClassificationQuality {
+  version: string
+  sources: Record<string, number>
+  classes: Record<string, number>
+  inferred_records: number
+}
+
+export interface CardioActivitySummary {
+  exercise_id: string
+  name: string
+  sessions: number
+  duration_seconds: number
+  distance_m: number
+  speed_mps: number | null
+  pace_sec_per_km: number | null
+}
+
+export interface TrainingCalendarDay {
+  date: string
+  sessions: number
+  working_sets: number
+  volume: number
+  training_sessions: number
+  strength_working_sets: number
+  strength_volume_kg: number
+  steady_cardio_seconds: number
+  steady_cardio_distance_m: number
+  interval_work_seconds: number
+  interval_rest_seconds: number
+  interval_elapsed_seconds: number
+  interval_planned_rounds: number
+  interval_completed_rounds: number
+  interval_skipped_rounds: number
+  interval_ended_early: number
+  strength_sessions: number
+  steady_cardio_sessions: number
+  interval_sessions: number
+  by_muscle: Record<string, number>
+  cardio_by_activity: CardioActivitySummary[]
+  classification_sources: Record<string, number>
+}
+
 export interface TrainingCalendar {
   year: number
   month: number
-  days: { date: string; sessions: number; working_sets: number; volume: number }[]
+  days: TrainingCalendarDay[]
+  activity_class_version?: string
+  classification?: ActivityClassificationQuality
 }
 
 export interface PeriodSummary {
   days: number
-  sessions: number
+  training_sessions: number
   training_days: number
   per_week: number
+  strength_working_sets: number
+  strength_volume_kg: number
+  steady_cardio_seconds: number
+  steady_cardio_distance_m: number
+  interval_work_seconds: number
+  interval_rest_seconds: number
+  interval_elapsed_seconds: number
+  interval_planned_rounds: number
+  interval_completed_rounds: number
+  interval_skipped_rounds: number
+  interval_ended_early: number
+  strength_sessions: number
+  steady_cardio_sessions: number
+  interval_sessions: number
+  by_muscle: Record<string, number>
+  cardio_by_activity: CardioActivitySummary[]
+  avg_duration_min: number | null
+  activity_class_version?: string
+  classification?: ActivityClassificationQuality
+  // 兼容别名
+  sessions: number
   working_sets: number
   volume: number
-  by_muscle: Record<string, number>
-  avg_duration_min: number | null
-  // P5-B：有氧/间歇分口径
   cardio_seconds?: number
   cardio_distance_m?: number
   interval_seconds?: number

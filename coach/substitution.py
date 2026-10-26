@@ -35,6 +35,18 @@ def _measurement_compatible(a: str, b: str) -> bool:
     return a in REP_MEASUREMENTS and b in REP_MEASUREMENTS
 
 
+def _semantically_related(source: dict, target: dict) -> bool:
+    """最低训练目标相关性：同动作模式或主要目标肌群重叠。
+
+    器械/测量兼容不能单独让一个无关动作成为替代候选。
+    """
+    if source.get("pattern") and source.get("pattern") == target.get("pattern"):
+        return True
+    if set(source.get("primary") or []) & set(target.get("primary") or []):
+        return True
+    return target.get("id") in (source.get("substitutes") or [])
+
+
 def _measurement_label(t: str) -> str:
     return {
         "weight_reps": "重量×次数",
@@ -118,6 +130,8 @@ def _validate_target(db, user_id: str, profile: dict, source: dict, target: dict
                      user_level: str) -> dict:
     if target.get("status") != "approved":
         raise SubstitutionError("候选动作尚未审核，不能作为替代处方")
+    if not _semantically_related(source, target):
+        raise SubstitutionError("候选动作与原动作缺少共同动作模式或主要目标肌群")
     if LEVEL_ORDER.get(target.get("level_min") or "beginner", 0) > LEVEL_ORDER[user_level]:
         raise SubstitutionError("候选动作的最低训练水平高于你的当前水平")
     availability = equipment_service.exercise_availability(
@@ -158,13 +172,16 @@ def find_candidates(db, user_id: str, source_id: str,
     frequent_ids = {x["exercise_id"] for x in db.all_exercise_states(user_id)}
 
     excluded = {"safety": 0, "equipment_or_location": 0,
-                "measurement_or_level": 0, "unapproved": 0}
+                "measurement_or_level": 0, "unapproved": 0, "unrelated": 0}
     scored = []
     for target in exercise_service.list_exercises(db, user_id):
         if target.get("id") == source_id:
             continue
         if target.get("status") != "approved":
             excluded["unapproved"] += 1
+            continue
+        if not _semantically_related(source, target):
+            excluded["unrelated"] += 1
             continue
         if (not _measurement_compatible(source.get("measurement") or "weight_reps",
                                         target.get("measurement") or "weight_reps")

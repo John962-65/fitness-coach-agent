@@ -154,7 +154,9 @@ export default function ExerciseSubstituteSheet({
           {result.disclaimer}
           {' '}已排除：器械/地点 {result.excluded.equipment_or_location}，
           记录口径/水平 {result.excluded.measurement_or_level}，
-          安全限制 {result.excluded.safety}，未审核 {result.excluded.unapproved}。
+          安全限制 {result.excluded.safety}，
+          目标不相关 {result.excluded.unrelated ?? 0}，
+          未审核 {result.excluded.unapproved}。
         </p>
       )}
     </Sheet>

@@ -2,8 +2,9 @@
 
 > 交付日期：2026-10-25 ｜ 基线：P4（`dab0117`）｜ 状态：**P5-A 已交付，验收通过**
 > 总纲见 [expert-platform-roadmap.md](expert-platform-roadmap.md)
-> 本文件覆盖 P5-A（P5-0/1/2/3）；P5-B（有氧/HIIT/器械）与 P5-C（进阶建议/
-> 统计整合收尾）按任务书里程碑纪律在 P5-A 验收后另行实施。
+> 本文件覆盖 P5-A（P5-0/1/2/3）；P5-B（有氧/HIIT/器械/统计整合）已完成，
+> 见 [P5-B1.1](p5b11-verification.md)、[P5-B2](p5b2-equipment-substitution.md)、
+> [P5-B3](p5b3-statistics-integration.md)；P5-C 尚未开始。
 
 ## 0. 核心设计决策：测量类型 × 训练方法 × 超级组三层分离
 

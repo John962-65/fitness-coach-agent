@@ -18,13 +18,18 @@
 计划完成率规则（M6.5-0）：
 - 只有 session_meta.mode=='planned' 且 plan_id==当前生效计划的会话计入
   计划完成；自由训练与模板训练**不**自动算作完成计划训练日；
-- 同一计划日标签 + 同一本地日期只计一次（同天多次训练≠多个任务）。
+- 同一计划日标签 + 同一本地日期只计一次（同天多次训练≠多个任务）；
+- 临时替换发生的会话仍算计划日执行，但单独标记 replacement_sessions，
+  不把被替换动作视为原计划动作的等价完成。
 """
 from __future__ import annotations
 
 import json
 from datetime import date, timedelta
 
+from .activity_class import (
+    CLASS_INTERVAL, CLASS_STEADY_CARDIO, classified_rows, classification_quality,
+)
 from .exercise_metrics import (entry_identity, entry_set_type,
                                exercise_sessions, session_local_date)
 from .training_calendar import period_summary
@@ -120,9 +125,13 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
     """单一记录类型会话组的分型主指标事实（口径与「我的表现」完全一致）。"""
     srcs = [_src(s["checkin_id"], s.get("revision") or 0) for s in group]
     facts: list[dict] = []
+    strength_sets = [st for s in group for st in s["sets"]
+                     if st.get("activity_class") == "strength"]
+    noninterval_sets = [st for s in group for st in s["sets"]
+                        if st.get("activity_class") != "interval"]
     if mtype == "weight_reps":
         heavy = max(
-            (st for s in group for st in s["sets"]
+            (st for st in strength_sets
              if st["weight_kg"] is not None),
             key=lambda st: st["weight_kg"], default=None)
         if heavy:
@@ -149,7 +158,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 note="窗口内没有 1-12 次区间的有效正式组", **quality))
     elif mtype == "bodyweight_reps":
         best_reps = max(
-            (st for s in group for st in s["sets"] if st["reps"]),
+            (st for st in strength_sets if st["reps"]),
             key=lambda st: st["reps"], default=None)
         if best_reps:
             facts.append(_fact(
@@ -157,7 +166,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 mtype, window, srcs, "max_working_set_reps", "observed",
                 exercise_id=exercise_id,
                 added_weight_kg=best_reps.get("added_weight_kg"), **quality))
-        added = [st["added_weight_kg"] for s in group for st in s["sets"]
+        added = [st["added_weight_kg"] for st in strength_sets
                  if st.get("added_weight_kg")]
         if added:
             facts.append(_fact(
@@ -166,7 +175,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 "observed", exercise_id=exercise_id, **quality))
     elif mtype == "assisted_reps":
         best_reps = max(
-            (st for s in group for st in s["sets"] if st["reps"]),
+            (st for st in strength_sets if st["reps"]),
             key=lambda st: st["reps"], default=None)
         if best_reps:
             facts.append(_fact(
@@ -174,7 +183,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 mtype, window, srcs, "max_working_set_reps", "observed",
                 exercise_id=exercise_id,
                 assistance_kg=best_reps.get("assistance_kg"), **quality))
-        assist = [st["assistance_kg"] for s in group for st in s["sets"]
+        assist = [st["assistance_kg"] for st in strength_sets
                   if st.get("assistance_kg") is not None]
         if assist:
             facts.append(_fact(
@@ -185,8 +194,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 note="辅助重量越小=自承担越多（方向与负重类相反）", **quality))
     elif mtype == "duration":
         longest = max(
-            (st for s in group for st in s["sets"]
-             if st.get("duration_seconds")),
+            (st for st in noninterval_sets if st.get("duration_seconds")),
             key=lambda st: st["duration_seconds"], default=None)
         if longest:
             facts.append(_fact(
@@ -196,7 +204,7 @@ def _type_facts(group: list[dict], mtype: str, base: str, window: dict,
                 exercise_id=exercise_id, **quality))
     elif mtype == "distance_time":
         far = max(
-            (st for s in group for st in s["sets"] if st.get("distance_m")),
+            (st for st in noninterval_sets if st.get("distance_m")),
             key=lambda st: st["distance_m"], default=None)
         if far:
             facts.append(_fact(
@@ -300,6 +308,58 @@ def _exercise_facts(db, user_id: str, exercise_id: str, doc: dict,
             "user_reported_mean_working_sets", "observed",
             exercise_id=exercise_id,
             note="RPE 为用户主观自报，非客观测量", **quality))
+
+    # P5-B3：动作级有氧与间歇事实（与全局周期/月历同一分类口径）
+    steady_seconds = sum(s.get("steady_cardio_seconds") or 0 for s in sessions)
+    steady_distance = sum(s.get("steady_cardio_distance_m") or 0 for s in sessions)
+    if steady_seconds > 0:
+        facts.append(_fact(
+            f"steady-cardio-seconds-{base}", "steady-cardio-seconds",
+            round(steady_seconds), "秒", "cardio", window, srcs,
+            "sum_steady_cardio_duration_excluding_interval", "observed",
+            exercise_id=exercise_id, **quality))
+    if steady_distance > 0:
+        facts.append(_fact(
+            f"steady-cardio-distance-{base}", "steady-cardio-distance",
+            round(steady_distance), "米", "cardio", window, srcs,
+            "sum_steady_cardio_distance_excluding_interval", "observed",
+            exercise_id=exercise_id, **quality))
+        if steady_seconds > 0:
+            pace = steady_seconds / (steady_distance / 1000)
+            facts.append(_fact(
+                f"steady-cardio-pace-{base}", "steady-cardio-pace",
+                round(pace, 1), "秒/公里", "cardio", window, srcs,
+                "duration_seconds_over_distance_km", "observed",
+                exercise_id=exercise_id,
+                note="仅由有距离的记录计算；不同运动类型不可直接类比",
+                **quality))
+    interval_work = sum(s.get("interval_work_seconds") or 0 for s in sessions)
+    if interval_work > 0 or any(
+            s.get("activity_class") == "interval" for s in sessions):
+        facts.append(_fact(
+            f"interval-work-seconds-{base}", "interval-work-seconds",
+            interval_work, "秒", "hiit", window, srcs,
+            "sum_hiit_work_seconds_done", "observed",
+            exercise_id=exercise_id, **quality))
+        facts.append(_fact(
+            f"interval-rest-seconds-{base}", "interval-rest-seconds",
+            sum(s.get("interval_rest_seconds") or 0 for s in sessions),
+            "秒", "hiit", window, srcs, "sum_hiit_rest_seconds_done",
+            "observed", exercise_id=exercise_id, **quality))
+        facts.append(_fact(
+            f"interval-elapsed-seconds-{base}", "interval-elapsed-seconds",
+            sum(s.get("interval_elapsed_seconds") or 0 for s in sessions),
+            "秒", "hiit", window, srcs,
+            "sum_hiit_recorded_elapsed_seconds", "observed",
+            exercise_id=exercise_id, **quality))
+        facts.append(_fact(
+            f"interval-rounds-{base}", "interval-rounds",
+            sum(s.get("interval_completed_rounds") or 0 for s in sessions),
+            "轮", "hiit", window, srcs, "sum_hiit_completed_rounds",
+            "observed", exercise_id=exercise_id,
+            planned=sum(s.get("interval_planned_rounds") or 0 for s in sessions),
+            skipped=sum(s.get("interval_skipped_rounds") or 0 for s in sessions),
+            **quality))
     return facts
 
 
@@ -319,12 +379,20 @@ def _plan_adherence_facts(db, user_id: str, window: dict,
     completed: set[tuple[str, str]] = set()
     srcs: list[str] = []
     free_sessions = 0
+    replacement_sessions: list[str] = []
     for row, data in _iter_training_rows(db, user_id):
         local = session_local_date(row["created_at"], data)
         if not (start <= local <= end):
             continue
         meta = data.get("session_meta") if isinstance(
             data.get("session_meta"), dict) else {}
+        replaced = sum(
+            1 for ex in data.get("exercises") or []
+            if isinstance(ex, dict) and (
+                ex.get("session_replacement_of")
+                or isinstance(ex.get("session_replacement"), dict)))
+        if replaced:
+            replacement_sessions.append(_src(row["id"], row["revision"]))
         if meta.get("mode") == "planned" and meta.get("plan_id") == record["id"]:
             day = str(meta.get("day") or "")
             if day in day_labels and (day, local) not in completed:
@@ -343,15 +411,27 @@ def _plan_adherence_facts(db, user_id: str, window: dict,
         _fact(f"plan-completed-{base}", "plan-completed-days",
               len(completed), "个训练日", "session", window, srcs,
               "distinct_planned_day_local_date_pairs", status,
-              note=("自由/模板训练不计入计划完成；同日多次训练同一计划日只计一次"
+              replacement_sessions=len(replacement_sessions),
+              note=("自由/模板训练不计入计划完成；同日多次训练同一计划日只计一次；"
+                    "临时替换按会话完成记录，但不视为原计划动作等价完成"
+                    + (f"；含临时替换会话 {len(replacement_sessions)} 次"
+                       if replacement_sessions else "")
                     + (f"；窗口内另有自由训练 {free_sessions} 次（不计入）"
                        if free_sessions else ""))),
     ]
+    if replacement_sessions:
+        facts.append(_fact(
+            f"plan-replacement-sessions-{base}", "plan-replacement-sessions",
+            len(replacement_sessions), "次", "session", window,
+            replacement_sessions, "sessions_with_session_replacement",
+            "observed",
+            note="只表示发生临时替换；原计划动作完成情况不自动等同于实际动作"))
     if scheduled > 0:
         facts.append(_fact(
             f"plan-adherence-{base}", "plan-adherence",
             round(len(completed) / scheduled, 2), "比率", "session", window,
-            srcs, "plan_completed_over_scheduled", status))
+            srcs, "plan_completed_over_scheduled", status,
+            replacement_sessions=len(replacement_sessions)))
     return facts
 
 
@@ -409,6 +489,24 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
             f"{metric}-{sc}-{ec}", metric, value, unit, "session", window,
             srcs, calc,
             "observed" if value is not None else "insufficient"))
+    classification = ps.get("classification") or {}
+    for metric, unit, calc in (
+            ("training_sessions", "次", "period_summary_training_sessions"),
+            ("strength_working_sets", "组", "period_summary_strength_working_sets"),
+            ("strength_volume_kg", "kg", "period_summary_strength_volume_kg"),
+            ("steady_cardio_seconds", "秒", "period_summary_steady_cardio_seconds"),
+            ("steady_cardio_distance_m", "米",
+             "period_summary_steady_cardio_distance_m"),
+            ("interval_work_seconds", "秒", "period_summary_interval_work_seconds"),
+            ("interval_rest_seconds", "秒", "period_summary_interval_rest_seconds"),
+            ("interval_elapsed_seconds", "秒",
+             "period_summary_interval_elapsed_seconds")):
+        value = ps.get(metric)
+        facts.append(_fact(
+            f"{metric.replace('_', '-')}-{sc}-{ec}", metric,
+            value, unit, "session", window, srcs, calc,
+            "observed" if value is not None else "insufficient",
+            classification=classification))
 
     facts.extend(_plan_adherence_facts(db, user_id, window, start, end))
     facts.extend(_cardio_interval_facts(db, user_id, window, start, end))
@@ -425,111 +523,135 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
 
 def _cardio_interval_facts(db, user_id: str, window: dict,
                            start: str, end: str) -> list[dict]:
-    """P5-B：有氧与间歇训练事实（与力量同纪律：来源链/口径/质量说明）。
-
-    有氧判定 = 记录所属动作 activity=='cardio'（动作库标注，非文本猜测）；
-    间歇判定 = set_log 携带 hiit 元数据。
-    不生成力量容量，不生成 e1RM；不编造卡路里。
-    """
-    from .. import exercise_service
+    """有氧与间歇事实：统一分类后累计，HIIT 不重复计入持续性有氧。"""
     cardio_sessions: set[int] = set()
     cardio_seconds = 0.0
     cardio_distance = 0.0
-    cardio_srcs: dict[int, list[str]] = {}
+    cardio_srcs: list[str] = []
     interval_sessions: set[int] = set()
     planned_rounds = 0
     completed_rounds = 0
     work_seconds = 0
     rest_seconds = 0
+    elapsed_seconds = 0
     interval_srcs: list[str] = []
     skipped_count = 0
     ended_early = 0
+    classifications: list[dict] = []
     for row, data in _iter_training_rows(db, user_id):
         local = session_local_date(row["created_at"], data)
         if not (start <= local <= end):
             continue
         src = _src(row["id"], row["revision"])
-        has_cardio = False
-        has_interval = False
-        for ex in data.get("exercises") or []:
-            if not isinstance(ex, dict):
-                continue
-            ex_id = entry_identity(db, user_id, ex)
-            doc = exercise_service.get_exercise(db, user_id, ex_id) or {} \
-                if ex_id else {}
-            is_cardio = bool(doc.get("activity") == "cardio")
-            for st in ex.get("set_logs") or []:
-                if not isinstance(st, dict):
-                    continue
-                h = st.get("hiit")
-                if isinstance(h, dict):
-                    has_interval = True
-                    completed_rounds += int(h.get("completed_rounds") or 0)
-                    planned_rounds += int(h.get("planned_rounds") or 0)
-                    work_seconds += int(h.get("work_seconds_done") or 0)
-                    rest_seconds += int(h.get("rest_seconds_done") or 0)
-                    skipped_count += len(h.get("skipped") or [])
-                    if h.get("ended_early"):
-                        ended_early += 1
-                if is_cardio:
-                    secs = st.get("duration_seconds")
-                    if secs:
-                        cardio_seconds += float(secs)
-                        has_cardio = True
-                    dist = st.get("distance_m")
-                    if dist:
-                        cardio_distance += float(dist)
-                        has_cardio = True
-        if has_cardio:
+        session_steady = False
+        session_interval = False
+        for _ex, _doc, st, cls in classified_rows(db, user_id, data):
+            classifications.append(cls)
+            category = cls["class"]
+            if category == CLASS_INTERVAL:
+                session_interval = True
+                h = st.get("hiit") or {}
+                completed_rounds += int(h.get("completed_rounds") or 0)
+                planned_rounds += int(h.get("planned_rounds") or 0)
+                work_seconds += int(h.get("work_seconds_done") or 0)
+                rest_seconds += int(h.get("rest_seconds_done") or 0)
+                elapsed_seconds += int(st.get("duration_seconds") or 0)
+                skipped_count += len(h.get("skipped") or [])
+                if h.get("ended_early"):
+                    ended_early += 1
+            elif category == CLASS_STEADY_CARDIO:
+                session_steady = True
+                cardio_seconds += float(st.get("duration_seconds") or 0)
+                cardio_distance += float(st.get("distance_m") or 0)
+        if session_steady:
             cardio_sessions.add(row["id"])
-            cardio_srcs[row["id"]] = [src]
-        if has_interval:
+            cardio_srcs.append(src)
+        if session_interval:
             interval_sessions.add(row["id"])
             interval_srcs.append(src)
 
     w = window
     sc = w["start"].replace("-", "")
     ec = w["end"].replace("-", "")
+    quality = classification_quality(classifications)
     out: list[dict] = []
-    all_c_srcs = sorted({x for v in cardio_srcs.values() for x in v})
+    all_c_srcs = sorted(set(cardio_srcs))
+    out.append(_fact(
+        f"steady-cardio-sessions-{sc}-{ec}", "steady-cardio-sessions",
+        len(cardio_sessions), "次", "cardio", w, all_c_srcs,
+        "sessions_with_steady_cardio_excluding_interval",
+        "observed" if cardio_sessions else "insufficient",
+        classification=quality,
+        note="持续性有氧=分类后的 steady_cardio；有效 HIIT 不重复计入"))
+    out.append(_fact(
+        f"steady-cardio-seconds-{sc}-{ec}", "steady-cardio-seconds",
+        round(cardio_seconds), "秒", "cardio", w, all_c_srcs,
+        "sum_steady_cardio_duration_excluding_interval",
+        "observed" if cardio_seconds else "insufficient",
+        classification=quality,
+        note="不包含 HIIT 工作/休息秒数" if cardio_seconds else None))
+    out.append(_fact(
+        f"steady-cardio-distance-{sc}-{ec}", "steady-cardio-distance",
+        round(cardio_distance), "米", "cardio", w, all_c_srcs,
+        "sum_steady_cardio_distance_excluding_interval",
+        "observed" if cardio_distance else "insufficient",
+        classification=quality,
+        note="无距离记录不生成配速；不同运动类型距离不可直接类比"
+             if cardio_distance else None))
+    # 兼容旧字段（语义固定为 steady_cardio，不含 interval）
     out.append(_fact(
         f"cardio-sessions-{sc}-{ec}", "cardio-sessions", len(cardio_sessions),
-        "次", "cardio", w, all_c_srcs, "sessions_with_cardio_activity_records",
+        "次", "cardio", w, all_c_srcs, "alias_of_steady_cardio_sessions",
         "observed" if cardio_sessions else "insufficient",
-        note="有氧判定=动作库 activity=='cardio'（含混合会话中的有氧条目）"))
+        classification=quality, deprecated=True))
     out.append(_fact(
         f"cardio-total-duration-{sc}-{ec}", "cardio-total-duration",
         round(cardio_seconds / 60, 1), "分钟", "cardio", w, all_c_srcs,
-        "sum_duration_seconds_cardio_records",
+        "alias_of_steady_cardio_seconds",
         "observed" if cardio_seconds else "insufficient",
-        note="仅累计有氧动作的 duration 记录；不含休息等待" if cardio_seconds else None))
+        classification=quality, deprecated=True))
     out.append(_fact(
         f"cardio-total-distance-{sc}-{ec}", "cardio-total-distance",
         round(cardio_distance / 1000, 2), "公里", "cardio", w, all_c_srcs,
-        "sum_distance_m_cardio_records",
+        "alias_of_steady_cardio_distance",
         "observed" if cardio_distance else "insufficient",
-        note="仅统计填写了距离的记录；无距离的有氧（椭圆机等）不计入" if cardio_distance else None))
+        classification=quality, deprecated=True))
     out.append(_fact(
         f"interval-sessions-{sc}-{ec}", "interval-sessions",
         len(interval_sessions), "次", "hiit", w, interval_srcs,
-        "sessions_with_hiit_metadata",
-        "observed" if interval_sessions else "insufficient"))
+        "sessions_with_valid_hiit_metadata",
+        "observed" if interval_sessions else "insufficient",
+        classification=quality))
     if interval_sessions:
         out.append(_fact(
             f"interval-planned-rounds-{sc}-{ec}", "interval-planned-rounds",
             planned_rounds, "轮", "hiit", w, interval_srcs,
-            "sum_hiit_planned_rounds", "observed"))
+            "sum_hiit_planned_rounds", "observed", classification=quality))
         out.append(_fact(
             f"interval-completed-rounds-{sc}-{ec}", "interval-completed-rounds",
             completed_rounds, "轮", "hiit", w, interval_srcs,
             "sum_hiit_completed_rounds", "observed",
             skipped=skipped_count, ended_early=ended_early,
+            classification=quality,
             note="实际完成轮次；跳过/提前结束按真实执行计"))
+        out.append(_fact(
+            f"interval-skipped-rounds-{sc}-{ec}", "interval-skipped-rounds",
+            skipped_count, "轮", "hiit", w, interval_srcs,
+            "sum_hiit_skipped_rounds", "observed", classification=quality))
         out.append(_fact(
             f"interval-work-seconds-{sc}-{ec}", "interval-work-seconds",
             work_seconds, "秒", "hiit", w, interval_srcs,
-            "sum_hiit_work_seconds_done", "observed", rest_seconds=rest_seconds,
-            note="工作/休息时长分别累计；不折算力量容量"))
+            "sum_hiit_work_seconds_done", "observed", classification=quality,
+            note="工作/休息/总经过时长分别累计；不折算力量容量"))
+        out.append(_fact(
+            f"interval-rest-seconds-{sc}-{ec}", "interval-rest-seconds",
+            rest_seconds, "秒", "hiit", w, interval_srcs,
+            "sum_hiit_rest_seconds_done", "observed", classification=quality))
+        out.append(_fact(
+            f"interval-elapsed-seconds-{sc}-{ec}", "interval-elapsed-seconds",
+            elapsed_seconds, "秒", "hiit", w, interval_srcs,
+            "sum_hiit_recorded_elapsed_seconds", "observed",
+            classification=quality))
     return out
 
 
@@ -546,10 +668,22 @@ def exercise_progress(db, user_id: str, exercise_id: str,
     end = date.today().isoformat()
     start = (date.today() - timedelta(days=days - 1)).isoformat()
     sessions, _srcs = _sessions_in_window(db, user_id, exercise_id, start, end)
-    series = [{"date": s["date"], "working_sets": s["working_sets"],
+    series = [{"date": s["date"],
+               "activity_class": s.get("activity_class"),
+               "activity_classes": s.get("activity_classes") or [],
+               "strength_working_sets": s.get("strength_working_sets", 0),
+               "working_sets": s["working_sets"],
                "volume": s["volume"], "best_e1rm": s["best_e1rm"],
                "best_set": s["best_set"],
                "duration_total_s": s["duration_total_s"],
+               "steady_cardio_seconds": s.get("steady_cardio_seconds"),
+               "steady_cardio_distance_m": s.get("steady_cardio_distance_m"),
+               "interval_work_seconds": s.get("interval_work_seconds"),
+               "interval_rest_seconds": s.get("interval_rest_seconds"),
+               "interval_elapsed_seconds": s.get("interval_elapsed_seconds"),
+               "interval_planned_rounds": s.get("interval_planned_rounds"),
+               "interval_completed_rounds": s.get("interval_completed_rounds"),
+               "interval_skipped_rounds": s.get("interval_skipped_rounds"),
                "longest_set_s": s.get("longest_set_s"),
                "distance_total_m": s["distance_total_m"],
                "farthest_set_m": s.get("farthest_set_m")}

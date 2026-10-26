@@ -580,6 +580,30 @@ function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string })
   if (error) return <ErrorBox message={error} />
   if (!data) return <Spinner />
   const { sessions, records } = data
+  const fmtDuration = (seconds: number | null | undefined) => {
+    const s = Math.max(0, Math.round(seconds || 0))
+    return s >= 60 ? `${Math.floor(s / 60)} 分 ${s % 60} 秒` : `${s} 秒`
+  }
+  const sessionLine = (s: ExerciseSession) => {
+    const classes = s.activity_classes || (s.activity_class ? [s.activity_class] : [])
+    const parts: string[] = []
+    if (classes.includes('strength')) {
+      parts.push(`${s.strength_working_sets ?? s.working_sets} 组正式组`)
+      if (s.best_set) parts.push(`最佳 ${s.best_set.weight_kg}kg×${s.best_set.reps ?? '?'}`)
+      if (s.volume > 0) parts.push(`容量 ${s.volume}kg`)
+    }
+    if (classes.includes('steady_cardio')) {
+      if (s.steady_cardio_seconds) parts.push(`有氧 ${fmtDuration(s.steady_cardio_seconds)}`)
+      if (s.steady_cardio_distance_m) parts.push(`${(s.steady_cardio_distance_m / 1000).toFixed(2)}km`)
+    }
+    if (classes.includes('interval')) {
+      parts.push(`HIIT ${s.interval_completed_rounds || 0}/${s.interval_planned_rounds || 0} 轮`)
+      parts.push(`工作 ${fmtDuration(s.interval_work_seconds)}`)
+      parts.push(`休息 ${fmtDuration(s.interval_rest_seconds)}`)
+    }
+    if (s.duration_min != null) parts.push(`约 ${s.duration_min} 分钟`)
+    return parts.join(' · ') || '—'
+  }
 
   if (!sessions.length) {
     return (
@@ -649,11 +673,14 @@ function MyPerformance({ uid, exerciseId }: { uid: string; exerciseId: string })
                   <div className="min-w-0 flex-1">
                     <p className="nums text-sm font-semibold">{s.date}</p>
                     <p className="nums mt-0.5 text-xs text-muted">
-                      {s.working_sets} 组
-                      {s.best_set && ` · 最佳 ${s.best_set.weight_kg}kg×${s.best_set.reps ?? '?'}`}
-                      {s.volume > 0 && ` · 容量 ${s.volume}kg`}
-                      {s.duration_min != null && ` · 约 ${s.duration_min} 分钟`}
+                      {sessionLine(s)}
                     </p>
+                    {s.replacement && (
+                      <p className="mt-1 text-2xs text-sky-700">
+                        本次替换自 {s.replacement.planned_name || s.replacement.planned_exercise_id}
+                        {' '}· {s.replacement.scope === 'session' ? '仅本次训练' : '计划变更'}
+                      </p>
+                    )}
                   </div>
                   <span className="shrink-0 text-xs text-faint transition-transform group-open:rotate-180">
                     ▾

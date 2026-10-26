@@ -320,6 +320,16 @@ export default function Workout() {
         name, exercise_id: exerciseId,
         superset_group: e.supersetGroup || undefined,
         session_replacement_of: e.replaced_from_id || undefined,
+        ...(e.replaced_from_id ? {
+          session_replacement: {
+            planned_exercise_id: e.replaced_from_id,
+            planned_name: e.name,
+            planned_index: e.planIndex ?? null,
+            actual_exercise_id: exerciseId,
+            actual_measurement: e.measurement || 'weight_reps',
+            scope: 'session',
+          },
+        } : {}),
         set_logs: e.logged.map((l) => ({
           type: l.type || 'weight_reps',
           method: (l as { method?: string }).method,

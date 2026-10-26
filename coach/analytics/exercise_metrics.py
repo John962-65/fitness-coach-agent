@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 
 from .. import exercise_service
 from ..review import e1rm
+from .activity_class import (
+    ACTIVITY_CLASS_VERSION, CLASS_INTERVAL, CLASS_STRENGTH,
+    classify_training_record, classification_quality,
+)
 
 E1RM_MAX_REPS = 12  # Epley 在低-中次数区间才相对可靠
 
@@ -118,18 +122,15 @@ def entry_identity(db, user_id: str | None, ex: dict) -> str | None:
     return None
 
 
-def _working_sets(set_logs: list) -> list[dict]:
-    """M6.4-A：分型逐组记录。不同记录类型使用不同指标，绝不混用公式：
-    - weight_reps（默认/旧记录）：容量 = 负重×次数；e1RM 按 1-12 次区间
-    - bodyweight_reps：容量只计额外负重×次数；次数本身是最重要的进步指标
-    - assisted_reps / duration / distance_time：不计入 kg 容量、不参与 e1RM
-    """
+def _working_sets(set_logs: list, doc: dict | None = None) -> list[dict]:
+    """逐组记录：在测量类型字段之外附加统一活动类别。"""
     out = []
     for log in set_logs:
         if not isinstance(log, dict) or log.get("warmup"):
             continue
         method = log.get("method")
         segs = log.get("segments")             if method in ("drop_set", "rest_pause", "unilateral") else None
+        cls = classify_training_record(doc, log)
         entry = {
             "type": log.get("type") or "weight_reps",
             "method": method or "straight_set",
@@ -144,6 +145,10 @@ def _working_sets(set_logs: list) -> list[dict]:
             "added_weight_kg": log.get("added_weight_kg"),
             "assistance_kg": log.get("assistance_kg"),
             "rpe": log.get("rpe"),
+            "hiit": log.get("hiit"),
+            "activity_class": cls["class"],
+            "activity_class_source": cls["source"],
+            "activity_class_version": ACTIVITY_CLASS_VERSION,
         }
         if segs:
             # 复杂组：主级字段=代表段（容量最大段）；总次数=各段和
@@ -204,35 +209,77 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
             if not isinstance(ex, dict) or entry_identity(db, user_id, ex) != exercise_id:
                 continue
             logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else []
-            working = _working_sets([l for l in logs if isinstance(l, dict)])
+            doc = exercise_service.get_exercise(db, user_id, exercise_id)
+            working = _working_sets([l for l in logs if isinstance(l, dict)], doc)
             if not working:
                 continue
-            heavy = max((s for s in working if s["weight_kg"] is not None),
+            strength = [s for s in working if s["activity_class"] == CLASS_STRENGTH]
+            intervals = [s for s in working if s["activity_class"] == CLASS_INTERVAL]
+            classes = sorted({s["activity_class"] for s in working})
+            heavy = max((s for s in strength if s["weight_kg"] is not None),
                         key=lambda s: s["weight_kg"], default=None)
-            dur_sets = [s for s in working if s["type"] == "duration" and s["duration_seconds"]]
-            dist_sets = [s for s in working if s["type"] == "distance_time" and s["distance_m"]]
+            dur_sets = [s for s in working if s["type"] == "duration"
+                        and s["duration_seconds"]]
+            steady_dur = [s for s in dur_sets
+                          if s["activity_class"] != CLASS_INTERVAL]
+            dist_sets = [s for s in working if s["type"] == "distance_time"
+                         and s["distance_m"]]
+            work_seconds = sum(int((s.get("hiit") or {}).get("work_seconds_done") or 0)
+                               for s in intervals)
+            rest_seconds = sum(int((s.get("hiit") or {}).get("rest_seconds_done") or 0)
+                               for s in intervals)
+            interval_elapsed = sum(int(s.get("duration_seconds") or 0)
+                                   for s in intervals)
+            replacement = ex.get("session_replacement") \
+                if isinstance(ex.get("session_replacement"), dict) else None
+            if not replacement and ex.get("session_replacement_of"):
+                replacement = {"planned_exercise_id": ex.get("session_replacement_of"),
+                               "scope": "session"}
             sessions.append({
                 "checkin_id": row["id"],
                 "revision": row["revision"],
                 "date": session_local_date(row["created_at"], data),
-                "working_sets": len(working),
-                "reps_total": sum(s["reps"] or 0 for s in working),
-                # 容量（kg）只来自负重类记录；时长/距离类不计入，另有独立汇总
-                "volume": round(sum(s["volume"] for s in working)),
+                "activity_class": classes[0] if len(classes) == 1 else "mixed",
+                "activity_classes": classes,
+                "classification": classification_quality(working),
+                "strength_working_sets": len(strength),
+                "reps_total": sum(s["reps"] or 0 for s in strength),
+                # 兼容字段：working_sets/volume 现在明确只表示力量口径
+                "working_sets": len(strength),
+                "volume": round(sum(s["volume"] for s in strength)),
                 "best_set": ({"weight_kg": heavy["weight_kg"], "reps": heavy["reps"]}
                              if heavy else None),
-                "best_e1rm": max((s["e1rm"] for s in working if s["e1rm"]), default=None),
+                "best_e1rm": max((s["e1rm"] for s in strength if s["e1rm"]),
+                                 default=None),
+                "interval_work_seconds": work_seconds,
+                "interval_rest_seconds": rest_seconds,
+                "interval_elapsed_seconds": interval_elapsed,
+                "interval_planned_rounds": sum(
+                    int((s.get("hiit") or {}).get("planned_rounds") or 0)
+                    for s in intervals),
+                "interval_completed_rounds": sum(
+                    int((s.get("hiit") or {}).get("completed_rounds") or 0)
+                    for s in intervals),
+                "interval_skipped_rounds": sum(
+                    len((s.get("hiit") or {}).get("skipped") or []) for s in intervals),
                 "duration_total_s": round(sum(s["duration_seconds"] or 0 for s in dur_sets))
                                     if dur_sets else None,
-                # 单组口径（M6.5 复查 P0-1）：累计值会随组数变化，
-                # 单组最长/最远才是"表现"指标——趋势分析用这两个字段
-                "longest_set_s": max((s["duration_seconds"] for s in dur_sets),
+                "steady_cardio_seconds": round(sum(
+                    s["duration_seconds"] or 0 for s in working
+                    if s["activity_class"] != CLASS_STRENGTH
+                    and s["activity_class"] != CLASS_INTERVAL)) or None,
+                "steady_cardio_distance_m": round(sum(
+                    s["distance_m"] or 0 for s in dist_sets)) or None,
+                # 单组表现只取非间歇记录；HIIT 使用 interval_* 指标
+                "longest_set_s": max((s["duration_seconds"] for s in steady_dur),
                                      default=None),
                 "distance_total_m": round(sum(s["distance_m"] or 0 for s in dist_sets))
                                     if dist_sets else None,
                 "farthest_set_m": max((s["distance_m"] for s in dist_sets),
                                       default=None),
                 "duration_min": _duration_min(working, data),
+                "actual_measurement": (working[0].get("type") or "weight_reps"),
+                "replacement": replacement,
                 "sets": working,
             })
     return sessions
@@ -254,15 +301,21 @@ def personal_records(sessions: list[dict]) -> dict:
             if st["e1rm"] is not None and (best_e1rm is None or st["e1rm"] > best_e1rm["e1rm"]):
                 best_e1rm = {"e1rm": st["e1rm"], "weight_kg": st["weight_kg"],
                              "reps": st["reps"], "date": s["date"]}
-            if st["reps"] and (max_reps is None or st["reps"] > max_reps["reps"]):
+            is_strength = st.get("activity_class") == CLASS_STRENGTH
+            if is_strength and st["reps"] and (
+                    max_reps is None or st["reps"] > max_reps["reps"]):
                 max_reps = {"reps": st["reps"], "weight_kg": st["weight_kg"], "date": s["date"]}
-            if st["duration_seconds"] and (longest is None
-                                           or st["duration_seconds"] > longest["duration_seconds"]):
+            if st.get("activity_class") != CLASS_INTERVAL \
+                    and st["duration_seconds"] and (longest is None
+                                                    or st["duration_seconds"] > longest["duration_seconds"]):
                 longest = {"duration_seconds": st["duration_seconds"], "date": s["date"]}
             if st["distance_m"] and (farthest is None or st["distance_m"] > farthest["distance_m"]):
                 farthest = {"distance_m": st["distance_m"], "date": s["date"]}
-        if best_vol is None or s["volume"] > best_vol["volume"]:
-            best_vol = {"volume": s["volume"], "working_sets": s["working_sets"], "date": s["date"]}
+        if s.get("strength_working_sets", s["working_sets"]) > 0 and (
+                best_vol is None or s["volume"] > best_vol["volume"]):
+            best_vol = {"volume": s["volume"],
+                        "working_sets": s.get("strength_working_sets", s["working_sets"]),
+                        "date": s["date"]}
     return {"heaviest": heaviest, "best_e1rm": best_e1rm,
             "max_reps": max_reps, "best_volume_session": best_vol,
             "longest_set": longest, "farthest": farthest}

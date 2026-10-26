@@ -168,6 +168,8 @@ def test_substitution_candidates_and_safety_validation(client):
     assert "不代表动作等价" in result["disclaimer"]
     candidate = next(x for x in result["candidates"] if x["id"] == "dumbbell_bench_press")
     assert candidate["differences"] and candidate["equipment_names"]
+    assert "goblet_squat" not in ids
+    assert result["excluded"]["unrelated"] > 0
 
     ok = c.post("/api/users/u/exercise-substitutions/validate", json={
         "source_exercise_id": "barbell_bench_press",
@@ -175,17 +177,26 @@ def test_substitution_candidates_and_safety_validation(client):
         "location_id": home["id"]})
     assert ok.status_code == 200 and ok.json()["safety_checked"] is True
 
+    c.patch(f"/api/users/u/locations/{home['id']}", json={
+        "required_equipment": ["dumbbell", "band"]})
     missing = c.post("/api/users/u/exercise-substitutions/validate", json={
         "source_exercise_id": "barbell_bench_press",
-        "target_exercise_id": "running",
+        "target_exercise_id": "dumbbell_bench_press",
         "location_id": home["id"]})
     assert missing.status_code == 422 and "缺少" in missing.json()["detail"]["error"]
 
     c.patch(f"/api/users/u/locations/{home['id']}", json={
-        "required_equipment": ["dumbbell", "band", "bench", "treadmill"]})
+        "required_equipment": ["dumbbell", "band", "bench"]})
+    db.add_custom_exercise("u", "test_chest_duration", {
+        "id": "test_chest_duration", "name": "胸部门控测试",
+        "pattern": "h_push", "primary": ["chest"],
+        "equipment": ["bodyweight"], "location": ["home"],
+        "measurement": "duration", "level_min": "beginner",
+        "status": "approved", "scope": "user",
+    })
     incompatible = c.post("/api/users/u/exercise-substitutions/validate", json={
         "source_exercise_id": "barbell_bench_press",
-        "target_exercise_id": "running",
+        "target_exercise_id": "test_chest_duration",
         "location_id": home["id"]})
     assert incompatible.status_code == 422
     assert "记录口径" in incompatible.json()["detail"]["error"]
@@ -218,6 +229,19 @@ def test_substitution_candidates_and_safety_validation(client):
                         "index": idx, "exercise": "dumbbell_bench_press"}],
         "reason": "居家替代", "base_version": plan["base_version"]})
     assert proposed.status_code == 422
+
+
+def test_unrelated_actions_never_fill_candidate_list(client):
+    c, _ = client
+    data = locations(c)
+    home = next(x for x in data["locations"] if x["kind"] == "home")
+    c.patch(f"/api/users/u/locations/{home['id']}", json={
+        "required_equipment": ["band"], "optional_equipment": []})
+    c.post(f"/api/users/u/locations/{home['id']}/select")
+    result = c.get("/api/users/u/exercise-substitutes", params={
+        "exercise_id": "barbell_bench_press", "location_id": home["id"]}).json()
+    assert result["candidates"] == []
+    assert result["excluded"]["unrelated"] > 0
 
 
 def test_session_replacement_rejects_wrong_measurement_type(client):

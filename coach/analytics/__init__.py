@@ -8,7 +8,15 @@
 """
 from __future__ import annotations
 
+from .activity_class import (
+    ACTIVITY_CLASS_VERSION, ACTIVITY_CLASSES, CLASS_INTERVAL, CLASS_STEADY_CARDIO,
+    CLASS_STRENGTH, classify_training_record,
+)
 from .exercise_metrics import exercise_sessions, personal_records
 from .training_calendar import month_calendar, period_summary
 
-__all__ = ["exercise_sessions", "personal_records", "month_calendar", "period_summary"]
+__all__ = [
+    "exercise_sessions", "personal_records", "month_calendar", "period_summary",
+    "classify_training_record", "ACTIVITY_CLASS_VERSION", "ACTIVITY_CLASSES",
+    "CLASS_STRENGTH", "CLASS_STEADY_CARDIO", "CLASS_INTERVAL",
+]

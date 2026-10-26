@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+from ..analytics.activity_class import (
+    CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH,
+)
 from ..analytics.exercise_metrics import entry_identity, exercise_sessions
 from ..analytics.fact_service import get_training_facts
 from ..analytics.progress_analysis import analyze_progress
@@ -166,6 +169,7 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
                                exercise_ids=exercise_ids)
     findings: list[dict] = []
     reports: list[dict] = []
+    nonstrength_reports: list[dict] = []
     source_checkins: dict[int, int] = {}
     option_templates: list[dict] = []
 
@@ -181,16 +185,73 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
             source_checkins[s["checkin_id"]] = s.get("revision") or 0
         prior = [s for s in sessions if s is not cur
                  and s["date"] <= cur["date"]]
-        # 趋势（含本次）：progress_analysis 自己判断样本是否足够
-        # prior 来自 sessions（新→旧），需转成旧→新再补本次
-        trend = analyze_progress(
-            [{"date": s["date"], "best_e1rm": s["best_e1rm"],
-              "best_set": s["best_set"], "longest_set_s": s.get("longest_set_s"),
-              "farthest_set_m": s.get("farthest_set_m")}
-             for s in list(reversed(prior)) + [cur]],
-            measurement_type=mtype)
         base = f"{ex_id}-{facts['window']['start'].replace('-', '')}-" \
                f"{facts['window']['end'].replace('-', '')}"
+        classes = set(cur.get("activity_classes") or [])
+        nonstrength_class = (CLASS_INTERVAL if CLASS_INTERVAL in classes
+                             else CLASS_STEADY_CARDIO
+                             if CLASS_STEADY_CARDIO in classes else None)
+        if nonstrength_class:
+            series = [{"date": s["date"],
+                       "activity_class": s.get("activity_class"),
+                       "interval_work_seconds": s.get("interval_work_seconds"),
+                       "interval_rest_seconds": s.get("interval_rest_seconds"),
+                       "interval_elapsed_seconds": s.get("interval_elapsed_seconds"),
+                       "steady_cardio_seconds": s.get("steady_cardio_seconds"),
+                       "steady_cardio_distance_m": s.get("steady_cardio_distance_m"),
+                       "longest_set_s": s.get("longest_set_s"),
+                       "farthest_set_m": s.get("farthest_set_m")}
+                      for s in list(reversed(prior)) + [cur]]
+            trend = analyze_progress(series, measurement_type=mtype,
+                                     activity_class=nonstrength_class)
+            src = [_src(checkin["id"], checkin.get("revision") or 0)]
+            fact_ids: list[str] = []
+            if nonstrength_class == CLASS_INTERVAL:
+                text = (f"{name}：HIIT 实际完成 {cur.get('interval_completed_rounds', 0)}"
+                        f"/{cur.get('interval_planned_rounds', 0)} 轮，"
+                        f"跳过 {cur.get('interval_skipped_rounds', 0)} 轮，"
+                        f"工作 {cur.get('interval_work_seconds', 0)} 秒、"
+                        f"休息 {cur.get('interval_rest_seconds', 0)} 秒"
+                        f"（总经过 {cur.get('interval_elapsed_seconds', 0)} 秒）。"
+                        "不折算力量容量或 e1RM。")
+                fact_ids = [f"interval-work-seconds-{base}",
+                            f"interval-rest-seconds-{base}",
+                            f"interval-rounds-{base}"]
+            else:
+                secs = cur.get("steady_cardio_seconds") or 0
+                dist = cur.get("steady_cardio_distance_m") or 0
+                text = (f"{name}：持续性有氧 {secs} 秒"
+                        + (f"、{dist} 米" if dist else "（未记录距离，不生成配速）")
+                        + "。不折算力量工作组或容量。")
+                fact_ids = [f"steady-cardio-seconds-{base}"]
+                if dist:
+                    fact_ids.append(f"steady-cardio-distance-{base}")
+            findings.append({
+                "finding_id": f"f-{ex_id}-nonstrength",
+                "kind": "session-baseline",
+                "text": text, "fact_ids": fact_ids, "source_ids": src,
+            })
+            findings.append({
+                "finding_id": f"f-{ex_id}-nonstrength-trend",
+                "kind": "trend",
+                "text": (f"{name}：{_verdict_label(trend['verdict'])}。"
+                         + trend.get("note", "")),
+                "fact_ids": fact_ids, "source_ids": src,
+            })
+            nonstrength_reports.append({
+                "exercise_id": ex_id, "name": name,
+                "activity_class": nonstrength_class, "trend": trend,
+            })
+            if CLASS_STRENGTH not in classes:
+                continue
+        # 力量口径（同一动作若同时含力量组，仍按 strength 单独分析）
+        trend = analyze_progress(
+            [{"date": s["date"], "activity_class": s.get("activity_class"),
+              "best_e1rm": s["best_e1rm"], "best_set": s["best_set"],
+              "longest_set_s": s.get("longest_set_s"),
+              "farthest_set_m": s.get("farthest_set_m")}
+             for s in list(reversed(prior)) + [cur]],
+            measurement_type=mtype, activity_class=CLASS_STRENGTH)
         report = {"exercise_id": ex_id, "name": name, "mtype": mtype,
                   "session": cur, "prior": prior, "trend": trend,
                   "sessions": len(sessions), "avg_rpe": _avg_rpe(cur),
@@ -233,16 +294,23 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
             "source_ids": [_src(cid, rev) for cid, rev in source_checkins.items()],
         })
 
-    if not reports:
+    if not reports and not nonstrength_reports:
         raise ValueError("本次训练记录未命中任何可分析会话")
 
     # ---- 方案（确定性规则，永远含「维持现状」） ----
     plan_hint = _plan_hint_for(db, user_id, reports)
+    nonstrength_basis = [fid for f in findings
+                         if f["finding_id"].endswith("-nonstrength")
+                         for fid in f["fact_ids"]]
     options = [_option(
         "keep-current", "延续当前安排，继续观察",
-        "依据：" + "；".join(f"{r['name']} {r['trend_text']}" for r in reports)
+        "依据：" + "；".join(
+            [f"{r['name']} {r['trend_text']}" for r in reports]
+            + [f"{r['name']} {_verdict_label(r['trend']['verdict'])}"
+               for r in nonstrength_reports])
         + "。现有记录不需要立刻改计划；继续按计划训练并记录即可。",
-        basis=[fid for r in reports for fid in r["basis_fact_ids"]],
+        basis=[fid for r in reports for fid in r["basis_fact_ids"]]
+              + nonstrength_basis,
         benefits="不引入新变量，归因清晰", costs="进步速度可能不变",
         conditions="无未解除的伤病限制；状态正常")]
     for report in reports:
@@ -263,11 +331,16 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
         uniq.append(opt)
     options = uniq[:4]
 
-    confidence, confidence_basis = _confidence([
-        {"name": r["name"], "sessions": r["sessions"],
-         "corrected": sum(1 for cid, rev in source_checkins.items() if rev > 0),
-         "max_gap_days": _max_gap([s["date"] for s in r["prior"] + [r["session"]]])}
-        for r in reports])
+    if reports:
+        confidence, confidence_basis = _confidence([
+            {"name": r["name"], "sessions": r["sessions"],
+             "corrected": sum(1 for cid, rev in source_checkins.items() if rev > 0),
+             "max_gap_days": _max_gap([s["date"] for s in r["prior"] + [r["session"]]])}
+            for r in reports])
+    else:
+        confidence = "low"
+        confidence_basis = ("本次仅含持续性有氧/间歇动作，"
+                            "不套用力量趋势置信度；结果只作事实回顾")
 
     limitations = []
     if unmatched:
@@ -280,15 +353,23 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
                            for lim in (r["trend"].get("limitations") or []))
         if r["mtype"] == "weight_reps":
             limitations.append(f"{r['name']}：e1RM 为 Epley 公式估算值（1-12 次区间），非实测极限")
+    for r in nonstrength_reports:
+        limitations.extend(f"{r['name']}：{lim}"
+                           for lim in (r["trend"].get("limitations") or []))
+        limitations.append(f"{r['name']}：该活动不计入力量工作组、容量或 e1RM")
     limitations.append("方案由规则生成（依据与取舍见各项），不构成必然正确的训练处方；"
                        "修改计划需经确认协议")
 
     plan_record = db.get_active_plan_record(user_id)
-    names = [r["name"] for r in reports]
+    names = [r["name"] for r in reports + nonstrength_reports]
     title = "训练后回顾 · " + "、".join(names[:2]) + ("等" if len(names) > 2 else "")
-    summary = (f"{len(reports)} 个动作已分析。"
-               + "；".join(f"{r['name']}趋势{_verdict_label(r['trend']['verdict'])}"
-                           for r in reports)
+    summary = (f"{len(names)} 个动作已分析（力量 {len(reports)}、"
+               f"有氧/间歇 {len(nonstrength_reports)}）。"
+               + "；".join(
+                   [f"{r['name']}趋势{_verdict_label(r['trend']['verdict'])}"
+                    for r in reports]
+                   + [f"{r['name']}{_verdict_label(r['trend']['verdict'])}"
+                      for r in nonstrength_reports])
                + f"。共 {len(options)} 个可选方向（含维持现状），均由你决定。")
 
     return {
@@ -314,7 +395,9 @@ def analyze_post_workout(db, user_id: str, input_refs: dict) -> dict:
             **({"plan_version": plan_record["version"]} if plan_record else {}),
         },
         "input_refs": {"checkin_id": checkin["id"],
-                       "exercise_ids": [r["exercise_id"] for r in reports]},
+                       "exercise_ids": list(dict.fromkeys(
+                           [r["exercise_id"] for r in reports]
+                           + [r["exercise_id"] for r in nonstrength_reports]))},
     }
 
 

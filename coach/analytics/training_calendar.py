@@ -1,9 +1,17 @@
 """训练日历与周期汇总：按日期聚合训练记录。
 
-口径（M6.3.1 修订）：
-- 训练所属日期 = 会话元数据的用户本地日期（session_meta.local_date），
-  旧记录回退服务器时间；
-- 肌群归口按动作 primary 主肌群（内置 + 本人自定义统一解析），一组只记一次。
+P5-B3 统一口径（所有类别先经 activity_class 分类）：
+- strength：工作组、容量、肌群；
+- steady_cardio：持续有氧时长/距离；有效 HIIT 绝不重复计入；
+- interval：计划/完成/跳过轮次与工作/休息/总经过秒数。
+
+兼容字段：
+- sessions = training_sessions；
+- working_sets = strength_working_sets；
+- volume = strength_volume_kg；
+- cardio_seconds = steady_cardio_seconds（P5-B 旧实现误把 HIIT 也计入持续性
+  有氧，B3 明确修正；间歇另见 interval_*）；
+- interval_seconds = interval_elapsed_seconds。
 """
 from __future__ import annotations
 
@@ -11,6 +19,10 @@ import calendar
 import json
 from datetime import date, datetime, timedelta
 
+from .activity_class import (
+    ACTIVITY_CLASS_VERSION, CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH,
+    classify_training_record, classification_quality,
+)
 from .exercise_metrics import entry_identity, parse_stamp, session_local_date, set_volume
 
 _MAX_SCAN_DAYS = 400  # 周期汇总最多回看范围，防全表滥用
@@ -38,8 +50,8 @@ def _exercise_doc(db, user_id: str, ex_id: str):
     return exercise_service.get_exercise(db, user_id, ex_id)
 
 
-def _iter_working_sets(db, user_id: str, data: dict):
-    """产出 (动作文档 | None, working_set)。文档按用户可见动作统一解析。"""
+def _iter_classified_sets(db, user_id: str, data: dict):
+    """产出 (动作文档 | None, working_set, classification)。"""
     for ex in data.get("exercises", []) or []:
         if not isinstance(ex, dict):
             continue
@@ -50,28 +62,143 @@ def _iter_working_sets(db, user_id: str, data: dict):
         logs = ex.get("set_logs") if isinstance(ex.get("set_logs"), list) else []
         for log in logs:
             if isinstance(log, dict) and not log.get("warmup"):
-                yield doc, log
+                yield doc, log, classify_training_record(doc, log)
+
+
+def _empty_metrics() -> dict:
+    return {
+        "training_sessions": 0,
+        "strength_working_sets": 0,
+        "strength_volume_kg": 0.0,
+        "steady_cardio_seconds": 0.0,
+        "steady_cardio_distance_m": 0.0,
+        "interval_work_seconds": 0,
+        "interval_rest_seconds": 0,
+        "interval_elapsed_seconds": 0,
+        "interval_planned_rounds": 0,
+        "interval_completed_rounds": 0,
+        "interval_skipped_rounds": 0,
+        "interval_ended_early": 0,
+        "strength_sessions": 0,
+        "steady_cardio_sessions": 0,
+        "interval_sessions": 0,
+        "by_muscle": {},
+        "cardio_by_activity": {},
+    }
+
+
+def _add_classified_log(metrics: dict, doc, log: dict, cls: dict,
+                        session_id: int, session_classes: set[str]) -> None:
+    category = cls["class"]
+    session_classes.add(category)
+    if category == CLASS_STRENGTH:
+        metrics["strength_working_sets"] += 1
+        metrics["strength_volume_kg"] += set_volume(log)
+        muscle = (doc.get("primary") or ["other"])[0] if doc else "other"
+        metrics["by_muscle"][muscle] = metrics["by_muscle"].get(muscle, 0) + 1
+        return
+    if category == CLASS_STEADY_CARDIO:
+        metrics["steady_cardio_seconds"] += float(log.get("duration_seconds") or 0)
+        distance = float(log.get("distance_m") or 0)
+        metrics["steady_cardio_distance_m"] += distance
+        key = (doc or {}).get("id") or str(log.get("exercise_name") or "cardio")
+        group = metrics["cardio_by_activity"].setdefault(key, {
+            "name": (doc or {}).get("name") or key,
+            "session_ids": set(), "duration_seconds": 0.0, "distance_m": 0.0,
+        })
+        group["session_ids"].add(session_id)
+        group["duration_seconds"] += float(log.get("duration_seconds") or 0)
+        group["distance_m"] += distance
+        return
+    hiit = log.get("hiit") if isinstance(log.get("hiit"), dict) else {}
+    work = int(hiit.get("work_seconds_done") or 0)
+    rest = int(hiit.get("rest_seconds_done") or 0)
+    elapsed = int(log.get("duration_seconds") or 0)
+    if elapsed <= 0:
+        elapsed = work + rest
+    metrics["interval_work_seconds"] += work
+    metrics["interval_rest_seconds"] += rest
+    metrics["interval_elapsed_seconds"] += elapsed
+    metrics["interval_planned_rounds"] += int(hiit.get("planned_rounds") or 0)
+    metrics["interval_completed_rounds"] += int(hiit.get("completed_rounds") or 0)
+    metrics["interval_skipped_rounds"] += len(hiit.get("skipped") or [])
+    if hiit.get("ended_early"):
+        metrics["interval_ended_early"] += 1
+
+
+def _finalize_metrics(metrics: dict, session_classes: set[str]) -> dict:
+    if CLASS_STRENGTH in session_classes:
+        metrics["strength_sessions"] += 1
+    if CLASS_STEADY_CARDIO in session_classes:
+        metrics["steady_cardio_sessions"] += 1
+    if CLASS_INTERVAL in session_classes:
+        metrics["interval_sessions"] += 1
+    return metrics
+
+
+def _cardio_activity_rows(metrics: dict) -> list[dict]:
+    rows = []
+    for key in sorted(metrics["cardio_by_activity"]):
+        group = metrics["cardio_by_activity"][key]
+        seconds = group["duration_seconds"]
+        distance = group["distance_m"]
+        rows.append({
+            "exercise_id": key,
+            "name": group["name"],
+            "sessions": len(group["session_ids"]),
+            "duration_seconds": round(seconds),
+            "distance_m": round(distance),
+            "speed_mps": round(distance / seconds, 3) if seconds > 0 and distance > 0 else None,
+            "pace_sec_per_km": round(seconds / (distance / 1000), 1)
+                                if distance > 0 and seconds > 0 else None,
+        })
+    return rows
 
 
 def month_calendar(db, user_id: str, year: int, month: int) -> dict:
-    """某月训练日历：每天的训练次数/工作组数/容量（同日多次合并计数）。"""
+    """某月训练日历。
+
+    工作组/容量只含 strength；有氧与间歇分别单列。sessions 仍保留为全部
+    训练会话数（兼容），训练日不再因类别而拆分。
+    """
     first = date(year, month, 1)
     last = date(year, month, calendar.monthrange(year, month)[1])
-    # 会话本地日期可能与服务端日期跨日（临近午夜），回看缓冲 1 天
     since = (first - timedelta(days=1)).isoformat()
     days: dict[str, dict] = {}
+    classification_rows = []
     for row, data in _load_training_rows(db, user_id, since=since):
         day = session_local_date(row["created_at"], data)
         if day < first.isoformat() or day > last.isoformat():
             continue
-        slot = days.setdefault(day, {"date": day, "sessions": 0, "working_sets": 0, "volume": 0})
-        slot["sessions"] += 1
-        for _doc, log in _iter_working_sets(db, user_id, data):
-            slot["working_sets"] += 1
-            slot["volume"] += set_volume(log)
+        slot = days.setdefault(day, {
+            "date": day, **_empty_metrics(),
+            "classification_sources": {},
+        })
+        slot["training_sessions"] += 1
+        session_classes: set[str] = set()
+        for doc, log, cls in _iter_classified_sets(db, user_id, data):
+            classification_rows.append(cls)
+            slot["classification_sources"][cls["source"]] = \
+                slot["classification_sources"].get(cls["source"], 0) + 1
+            _add_classified_log(slot, doc, log, cls, row["id"], session_classes)
+        _finalize_metrics(slot, session_classes)
+    out_days = []
+    for key in sorted(days):
+        slot = days[key]
+        cardio_rows = _cardio_activity_rows(slot)
+        out_days.append({
+            **{k: v for k, v in slot.items()
+               if k not in ("cardio_by_activity",)},
+            "sessions": slot["training_sessions"],
+            "working_sets": slot["strength_working_sets"],
+            "volume": round(slot["strength_volume_kg"]),
+            "cardio_by_activity": cardio_rows,
+        })
     return {
         "year": year, "month": month,
-        "days": [days[k] for k in sorted(days)],
+        "days": out_days,
+        "activity_class_version": ACTIVITY_CLASS_VERSION,
+        "classification": classification_quality(classification_rows),
     }
 
 
@@ -89,61 +216,57 @@ def _session_duration_min(data: dict, stamps: list[str]) -> float | None:
 
 
 def period_summary(db, user_id: str, days: int = 30) -> dict:
-    """周期统计：训练次数 / 工作组数 / 容量 / 肌群分布 / 会话时长。
-
-    会话时长优先使用 session_meta（真实起止，含休息）；旧记录回退逐组时间跨度。
-    """
+    """周期统计：统一类别口径 + 兼容字段别名。"""
     days = max(1, min(int(days), _MAX_SCAN_DAYS))
     since = (datetime.now() - timedelta(days=days)).isoformat()
-    sessions = 0
-    working_sets = 0
-    volume = 0
-    by_muscle: dict[str, int] = {}
+    metrics = _empty_metrics()
     durations: list[float] = []
     session_dates: set[str] = set()
-    # P5-B：有氧/间歇分口径统计（不并入力量容量）
-    cardio_seconds = 0.0
-    cardio_distance_m = 0.0
-    interval_seconds = 0
+    classification_rows = []
     for row, data in _load_training_rows(db, user_id, since=since):
-        sessions += 1
+        metrics["training_sessions"] += 1
         session_dates.add(session_local_date(row["created_at"], data))
         stamps: list[str] = []
-        for doc, log in _iter_working_sets(db, user_id, data):
-            if doc is not None and doc.get("activity") == "cardio":
-                # 有氧：只累计时间/距离，不计力量组数与容量
-                cardio_seconds += float(log.get("duration_seconds") or 0)
-                cardio_distance_m += float(log.get("distance_m") or 0)
-                h = log.get("hiit")
-                if isinstance(h, dict):
-                    interval_seconds += int(h.get("work_seconds_done") or 0) \
-                        + int(h.get("rest_seconds_done") or 0)
-                continue
-            hiit = log.get("hiit")
-            if isinstance(hiit, dict):
-                # 非 cardio 动作承载的 HIIT（如力量动作间歇）：按间歇口径
-                interval_seconds += int(hiit.get("work_seconds_done") or 0) \
-                    + int(hiit.get("rest_seconds_done") or 0)
-                continue
-            working_sets += 1
-            volume += set_volume(log)
-            muscle = (doc.get("primary") or ["other"])[0] if doc else "other"
-            by_muscle[muscle] = by_muscle.get(muscle, 0) + 1
+        session_classes: set[str] = set()
+        for doc, log, cls in _iter_classified_sets(db, user_id, data):
+            classification_rows.append(cls)
+            session_classes.add(cls["class"])
+            _add_classified_log(metrics, doc, log, cls, row["id"], session_classes)
             if log.get("at"):
                 stamps.append(log["at"])
+        _finalize_metrics(metrics, session_classes)
         duration = _session_duration_min(data, stamps)
         if duration is not None:
             durations.append(duration)
     return {
         "days": days,
-        "sessions": sessions,
+        "training_sessions": metrics["training_sessions"],
         "training_days": len(session_dates),
-        "per_week": round(sessions * 7 / days, 1),
-        "working_sets": working_sets,
-        "volume": round(volume),
-        "by_muscle": dict(sorted(by_muscle.items(), key=lambda kv: -kv[1])),
+        "per_week": round(metrics["training_sessions"] * 7 / days, 1),
+        "strength_working_sets": metrics["strength_working_sets"],
+        "strength_volume_kg": round(metrics["strength_volume_kg"]),
+        "steady_cardio_seconds": round(metrics["steady_cardio_seconds"]),
+        "steady_cardio_distance_m": round(metrics["steady_cardio_distance_m"]),
+        "interval_work_seconds": metrics["interval_work_seconds"],
+        "interval_rest_seconds": metrics["interval_rest_seconds"],
+        "interval_elapsed_seconds": metrics["interval_elapsed_seconds"],
+        "interval_planned_rounds": metrics["interval_planned_rounds"],
+        "interval_completed_rounds": metrics["interval_completed_rounds"],
+        "interval_skipped_rounds": metrics["interval_skipped_rounds"],
+        "interval_ended_early": metrics["interval_ended_early"],
+        "strength_sessions": metrics["strength_sessions"],
+        "steady_cardio_sessions": metrics["steady_cardio_sessions"],
+        "interval_sessions": metrics["interval_sessions"],
+        "by_muscle": dict(sorted(metrics["by_muscle"].items(), key=lambda kv: -kv[1])),
+        "cardio_by_activity": _cardio_activity_rows(metrics),
         "avg_duration_min": (round(sum(durations) / len(durations)) if durations else None),
-        "cardio_seconds": round(cardio_seconds),
-        "cardio_distance_m": round(cardio_distance_m),
-        "interval_seconds": interval_seconds,
+        "activity_class_version": ACTIVITY_CLASS_VERSION,
+        "classification": classification_quality(classification_rows),
+        # 兼容别名（语义已在模块 docstring 固定）
+        "sessions": metrics["training_sessions"],
+        "working_sets": metrics["strength_working_sets"],
+        "volume": round(metrics["strength_volume_kg"]),
+        "cardio_seconds": round(metrics["steady_cardio_seconds"]),
+        "cardio_distance_m": round(metrics["steady_cardio_distance_m"]),
+        "interval_seconds": metrics["interval_elapsed_seconds"],
     }
