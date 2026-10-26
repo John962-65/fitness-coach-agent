@@ -251,6 +251,17 @@ export default function Today() {
                 ))}
               </div>
               <p className="mt-2 text-2xs text-faint">{recoveryBrief.note}</p>
+              {/* P6：真实数据规则触发的跨领域复盘提示（恢复信号偏高 + 有训练计划） */}
+              {recoveryBrief.stance === 'caution' && plan && (
+                <Link to="/experts/collaboration"
+                      className="mt-2.5 flex items-center justify-between rounded-xl
+                                 border border-line bg-surface px-3 py-2.5 hover:border-accent-deep/40">
+                  <span className="text-xs font-medium text-ink">
+                    发现一项值得进行跨领域复盘的情况（训练 × 恢复）
+                  </span>
+                  <span className="text-2xs text-accent-deep">查看 →</span>
+                </Link>
+              )}
             </div>
           )}
 

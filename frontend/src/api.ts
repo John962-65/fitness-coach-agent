@@ -217,6 +217,19 @@ export const api = {
     req<{ trial: Trial; observation: TrialObservation;
           review?: TrialReview }>(
       `/users/${uid}/trials/${trialId}${review ? '?review=1' : ''}`),
+  // P6：跨专家协作
+  requestCollaboration: (uid: string, scenario: string,
+                         extra: { exercise_id?: string;
+                                  window_days?: number } = {}) =>
+    post<{ task: ExpertTask; insight: ExpertInsight | null; error?: string }>(
+      `/users/${uid}/collaboration/analysis`, { scenario, ...extra }),
+  collaborationDecision: (uid: string, insightId: string,
+                          decision: 'ignore' | 'observe' | 'propose',
+                          optionId?: string) =>
+    post<{ decision: string; status?: string; proposal_id?: string;
+           note: string }>(
+      `/users/${uid}/collaboration/${insightId}/decision`,
+      { decision, ...(optionId ? { option_id: optionId } : {}) }),
   trialDecision: (uid: string, trialId: number,
                   payload: { decision: 'keep' | 'adjust' | 'stop' | 'observe';
                              note?: string }) =>

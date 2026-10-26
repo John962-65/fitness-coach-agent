@@ -19,6 +19,7 @@ import Rehab from './pages/experts/Rehabilitation'
 import Recovery from './pages/experts/Recovery'
 import BodyMetrics from './pages/BodyMetrics'
 import TrainingExpert from './pages/experts/TrainingExpert'
+import Collaboration from './pages/experts/Collaboration'
 import Nutrition from './pages/Nutrition'
 import NutritionHistory from './pages/nutrition/NutritionHistory'
 import NutritionTargets from './pages/nutrition/NutritionTargets'
@@ -81,6 +82,7 @@ function Shell() {
           <Route path="/experts/recovery" element={<Recovery />} />
           <Route path="/experts/rehabilitation" element={<Rehab />} />
           <Route path="/experts/movement" element={<MovementExpert />} />
+          <Route path="/experts/collaboration" element={<Collaboration />} />
           <Route path="/mine/body" element={<BodyMetrics />} />
           <Route path="/mine/locations" element={<TrainingLocations />} />
           <Route path="/experts/chat" element={<Coach />} />

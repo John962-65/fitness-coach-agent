@@ -569,6 +569,8 @@ export interface ExpertInsightSummary {
   expires_at: string | null
   status_reason?: string
   read_at?: string | null
+  input_refs?: { scenario?: string; exercise_id?: string;
+                 checkin_id?: number; exercise_ids?: string[] }
 }
 
 export interface ExpertInsight extends ExpertInsightSummary {
@@ -577,14 +579,17 @@ export interface ExpertInsight extends ExpertInsightSummary {
   evidence_refs: string[]
   facts_snapshot: { window: { start: string; end: string; days: number }
                     facts: ExpertFact[]
-                    exercises_covered: string[]
-                    caliber: string }
+                    exercises_covered?: string[]
+                    caliber: string
+                    collaboration?: CollaborationReport }
   knowledge_refs: { engine: string; ref: string; title: string
                     provenance: string }[]
   options: InsightOption[]
   limitations: string[]
   source_revision: { checkins?: Record<string, number>; plan_version?: number }
-  input_refs?: { checkin_id?: number; exercise_ids?: string[] }
+  input_refs?: { checkin_id?: number; exercise_ids?: string[];
+                 scenario?: string; exercise_id?: string;
+                 window_days?: number }
 }
 
 export interface ExpertTask {
@@ -1165,4 +1170,76 @@ export interface TrialReview {
               unconfirmed: string[] }
   decision_options: { decision: string; label: string; note: string }[]
   decision_note: string
+}
+
+// ---- P6：跨专家协作 ----
+
+export type CollabDomain = 'training' | 'nutrition' | 'body' | 'recovery'
+  | 'rehabilitation' | 'movement'
+
+export interface CollabEvidenceItem {
+  fact_id: string
+  domain: CollabDomain
+  metric: string
+  value: unknown
+  unit: string
+  time_window: { start: string; end: string; days: number }
+  source_ids: string[]
+  source_revisions: Record<string, unknown>
+  calculation: string
+  data_quality: Record<string, unknown>
+  limitations: string[]
+}
+
+export interface CollabDirection {
+  direction: string
+  basis_fact_ids: string[]
+  note: string
+}
+
+export interface SpecialistOpinion {
+  specialist: string
+  question: string
+  directions: CollabDirection[]
+  observations: string[]
+  interpretations: string[]
+  recommendations: string[]
+  evidence_refs: string[]
+  limitations: string[]
+}
+
+export interface CollabDisagreement {
+  kind: string
+  between: string[]
+  positions: { specialist: string; direction: string; note: string;
+               basis_fact_ids: string[] }[]
+  shared_facts: string[]
+  missing_information: string[]
+  maintain_option: string
+}
+
+export interface CollabOption {
+  option_id: string
+  title: string
+  detail: string
+  basis: string[]
+  action: string
+  limitations?: string[]
+}
+
+export interface CollaborationReport {
+  kind: string
+  rules_version: string
+  scenario: string
+  question: string
+  participants: string[]
+  shared_facts: CollabEvidenceItem[]
+  specialist_opinions: SpecialistOpinion[]
+  agreements: { direction: string; between: string[]; basis_fact_ids: string[] }[]
+  disagreements: CollabDisagreement[]
+  unknowns: { specialist: string; note: string; limitations: string[] }[]
+  candidate_options: CollabOption[]
+  decision_requirements: string[]
+  safety_gates: { source: string; basis_fact_ids: string[]; note: string }[]
+  source_revisions: Record<string, unknown>
 }

@@ -193,7 +193,10 @@ def run_rehab_opinion(question: str, bundle: dict) -> dict:
         evidence.append(ep["fact_id"])
         if action == "urgent_evaluation":
             urgent.append(ep)
-    blocked = bool(restrictions) or (permission and permission["value"] != "ok")
+    # 许可状态：prohibited/pending/limited/allowed（allowed 为未阻断）
+    blocked = bool(restrictions) or (
+        permission and permission["value"] in ("prohibited", "pending",
+                                               "limited"))
     if urgent:
         directions.append({"direction": "safety_gate",
                            "basis_fact_ids": [f["fact_id"] for f in urgent],
