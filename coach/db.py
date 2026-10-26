@@ -627,6 +627,26 @@ class Database:
         self.conn.commit()
 
     # ---- users ----
+    def delete_user(self, user_id: str) -> dict:
+        """P7-B 账户删除：删除该用户在所有带 user_id 列的表中的数据。
+
+        返回逐表删除计数；媒体文件本体留在磁盘（清单随 media_assets
+        行删除，文件回收由部署级清理完成）。不可逆操作由调用方确认。
+        """
+        tables = [r["name"] for r in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        counts: dict = {}
+        with self.conn:
+            for t in sorted(tables):
+                cols = [r["name"] for r in self.conn.execute(
+                    f"PRAGMA table_info({t})").fetchall()]
+                if "user_id" in cols:
+                    cur = self.conn.execute(
+                        f"DELETE FROM {t} WHERE user_id=?", (user_id,))
+                    if cur.rowcount:
+                        counts[t] = cur.rowcount
+        return counts
+
     def get_existing_profile(self, user_id: str) -> dict:
         row = self.conn.execute("SELECT profile FROM users WHERE user_id=?", (user_id,)).fetchone()
         return json.loads(row["profile"]) if row else {}

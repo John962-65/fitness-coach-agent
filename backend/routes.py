@@ -217,6 +217,19 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422,
                                 detail={"error": str(e)}) from None
 
+    @api.delete("/users/{uid}/account")
+    def delete_account(uid: str, request: Request, confirm: str = Query("")):
+        """P7-B 账户删除（数据自主）：不可逆；必须显式 confirm=DELETE。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if confirm != "DELETE":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "删除账户不可逆：需要 confirm=DELETE 显式确认"})
+        counts = db.delete_user(uid)
+        return {"deleted": True, "user": uid, "rows": counts,
+                "note": "该用户的全部数据已删除；媒体文件由部署级清理回收"}
+
     @api.get("/users/{uid}/profile")
     def get_profile(uid: str, request: Request):
         db = request.app.state.db
