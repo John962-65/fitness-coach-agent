@@ -246,6 +246,7 @@ function TrialsCard({ uid, trials, onChanged, note }: {
       <div className="flex items-start justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-[15px] font-semibold">
           <FlaskConical size={15} className="text-accent-deep" /> 个人尝试
+          <Link to="/mine/overview" className="ml-auto text-xs font-normal text-accent-deep">长期成长概览 →</Link>
         </h2>
         {!active && (
           <button className="btn-sm btn border border-line bg-surface font-medium"

@@ -1,6 +1,6 @@
 // API 客户端：错误统一为 ApiError（status + 人可读 message + details 列表）
 import type {
-  ApproachRevision, ApproachView, Checkin, Consultation, DayNutrition, ExerciseDetail,
+  ApproachRevision, LongTermReport, ApproachView, Checkin, Consultation, DayNutrition, ExerciseDetail,
   ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, ExpertInsight,
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
@@ -217,6 +217,14 @@ export const api = {
     req<{ trial: Trial; observation: TrialObservation;
           review?: TrialReview }>(
       `/users/${uid}/trials/${trialId}${review ? '?review=1' : ''}`),
+  // P7-D：长期个人报告
+  longTermReport: (uid: string, period: 'week' | 'month' | 'custom' = 'month',
+                   start?: string, end?: string) => {
+    const qs = new URLSearchParams({ period })
+    if (start) qs.set('start', start)
+    if (end) qs.set('end', end)
+    return req<LongTermReport>(`/users/${uid}/long-term-report?${qs}`)
+  },
   // P6：跨专家协作
   requestCollaboration: (uid: string, scenario: string,
                          extra: { exercise_id?: string;

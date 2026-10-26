@@ -1243,3 +1243,34 @@ export interface CollaborationReport {
   safety_gates: { source: string; basis_fact_ids: string[]; note: string }[]
   source_revisions: Record<string, unknown>
 }
+
+// ---- P7-D / P8-E：长期个人报告 ----
+
+export interface LongTermReport {
+  kind: string
+  period: string
+  range: { start: string; end: string; days: number }
+  training: { days_trained: number; sessions: number;
+              strength_volume_kg: number; working_sets: number;
+              steady_cardio_seconds: number; steady_cardio_distance_m: number;
+              interval_sessions: number;
+              plan: { plan_version?: number | null;
+                      expected_sessions_hint?: number | null;
+                      note: string } }
+  strength_trends: { exercise_id: string; verdict: string; metric: string;
+                     limitations: string[] }[]
+  nutrition: { days_recorded: number; days_total: number; completeness: number
+               avg_calories_recorded: number | null
+               avg_protein_g_recorded: number | null; note: string }
+  body: { facts: { fact_id: string; metric: string; value: unknown;
+                   unit: string }[]; limitations: string[] }
+  recovery: { records_count: number; facts: unknown[]; limitations: string[] }
+  trials: { id: number; change_desc: string; status: string;
+            decision: string | null }[]
+  expert_adoption: { insights_generated: number; viewed: number;
+                     dismissed: number; invalidated: number; note: string }
+  plan_changes_applied: number
+  approach_dimensions: string[]
+  limitations: string[]
+  note: string
+}
