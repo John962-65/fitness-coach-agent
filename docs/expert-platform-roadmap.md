@@ -29,7 +29,10 @@
 | P4 | 动作技术工作台 | ✅ 已交付（2026-10-25） | [p4-movement-expert.md](p4-movement-expert.md) |
 | P5 | 进阶训练功能（组法/有氧/器械/统计/下一次建议） | ✅ 已完成（P5-A/B/C 全部交付；C3 个人尝试闭环 2026-10-27） | [p5c3-progression-trial-acceptance.md](p5c3-progression-trial-acceptance.md) |
 | P6 | 跨专家协作 | ✅ 已完成（P6-A/B/C 三次提交，2026-10-27） | [p6-cross-specialist-collaboration.md](p6-cross-specialist-collaboration.md) |
-| P7 | 设备、数据互通与长期使用 | ⬜ 独立规划 | — |
+| P7 | 设备、数据互通与长期使用 | ✅ A/B/C/D 已交付（云端身份为设计+验收门，2026-10-27） | [p7a-data-export-import.md](p7a-data-export-import.md) |
+| P8 | 产品功能深化 | ◑ 长期成长概览已交付（8438cfd）；营养数据扩展/视频评测集待数据源 | — |
+| P9 | 专业可信度与质量保障 | ✅ A/B/E 已交付；C/D 待外部资源（2026-10-27） | [p9-quality-gates.md](p9-quality-gates.md) |
+| P10 | 真实用户试用与发布 | ⏳ 门槛清单就绪；T4/T5/T6 需真实外部资源 | [p10-release-readiness.md](p10-release-readiness.md) |
 
 ## 目标信息架构
 
