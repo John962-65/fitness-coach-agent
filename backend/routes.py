@@ -19,7 +19,7 @@ from coach.agent import CoachAgent
 from coach.approach import approach_view, initialize_approach, restore_revision
 from coach.changes import (ProposalRejected, confirm_proposal, stage_ai,
                            submit_manual)
-from coach.exercises import library
+from coach.exercises import CUSTOM_HIIT_EXERCISE_ID, library
 from coach.goals import SUPPORTED_GOALS
 from coach.medical import training_permission
 from coach.plan import generate_plan, plan_to_text
@@ -1084,16 +1084,32 @@ def register_routes(app) -> None:
                 raw_name = ex.get("name", "")
                 if claimed_ok:
                     ex.pop("name_raw", None)
-                    continue
-                ex_id, official, _via = library.normalize(raw_name)
-                if ex_id:
-                    ex["exercise_id"] = ex_id
-                    if official != raw_name:
-                        ex["name_raw"] = raw_name
-                    ex["name"] = official
                 else:
-                    _log_unmatched(request, uid, raw_name)
-                    notes.append(f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
+                    ex_id, official, _via = library.normalize(raw_name)
+                    if ex_id:
+                        ex["exercise_id"] = ex_id
+                        if official != raw_name:
+                            ex["name_raw"] = raw_name
+                        ex["name"] = official
+                    else:
+                        _log_unmatched(request, uid, raw_name)
+                        notes.append(f"未识别动作「{raw_name}」：已按原名记录并进入待补队列")
+                record_id = ex.get("exercise_id") or CUSTOM_HIIT_EXERCISE_ID
+                for log in ex.get("set_logs") or []:
+                    hiit = log.get("hiit") if isinstance(log, dict) else None
+                    if not isinstance(hiit, dict):
+                        continue
+                    if hiit.get("exercise_id") and hiit["exercise_id"] != record_id:
+                        notes.append("HIIT 计划身份与记录动作不一致，已以记录动作为准")
+                    hiit["exercise_id"] = record_id
+                    for block in hiit.get("blocks") or []:
+                        block_id = block.get("exercise_id")
+                        valid_block_id = isinstance(block_id, str) and block_id and (
+                            bool(library.get(block_id))
+                            or db.get_custom_exercise(uid, block_id) is not None)
+                        if not valid_block_id:
+                            block["exercise_id"] = CUSTOM_HIIT_EXERCISE_ID
+                            notes.append("HIIT 动作身份无法识别，已按自定义间歇活动记录")
         checkin_id = db.record_checkin(uid, ctype, data)
         if submission_id and not db.record_checkin_submission(uid, submission_id, checkin_id):
             # 并发同 ID（极小窗口）：删除刚落的重复行，以先落库者为准
@@ -1157,11 +1173,24 @@ def register_routes(app) -> None:
                         or not isinstance(rest, int) or isinstance(rest, bool) or not 0 <= rest <= 86400
                         or not isinstance(rounds, int) or isinstance(rounds, bool) or not 1 <= rounds <= 999):
                     raise HTTPException(status_code=422, detail={"error": "HIIT 模板编排无效"})
+                block_id = block.get("exercise_id")
+                if (not isinstance(block_id, str) or not block_id
+                        or not (library.get(block_id)
+                                or db.get_custom_exercise(uid, block_id))):
+                    raise HTTPException(status_code=422,
+                                        detail={"error": "HIIT 模板动作身份无效"})
                 total_work += work * rounds
                 total_rest += rest * rounds
             if total_work > 86400 or total_rest > 86400:
                 raise HTTPException(status_code=422,
                                     detail={"error": "HIIT 模板总时长不能超过 24 小时"})
+            plan_id = hiit.get("exercise_id")
+            if plan_id is not None and (
+                    not isinstance(plan_id, str) or not plan_id
+                    or not (library.get(plan_id)
+                            or db.get_custom_exercise(uid, plan_id))):
+                raise HTTPException(status_code=422,
+                                    detail={"error": "HIIT 模板动作身份无效"})
             doc["hiit"] = hiit
             hiit_index = payload.get("hiit_index", len(entries))
             if (not isinstance(hiit_index, int) or isinstance(hiit_index, bool)

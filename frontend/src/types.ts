@@ -804,8 +804,10 @@ export interface CarePlan {
 
 // ---- P5-B：活动类别与有氧/HIIT 执行状态 ----
 export type ActivityMode = 'strength' | 'cardio' | 'hiit'
+export type CardioStatus = 'idle' | 'running' | 'paused' | 'ended'
 export interface SessionEntryCardio {
-  startedAt: number
+  status: CardioStatus
+  startedAt: number | null
   pausedAt: number | null
   pausedTotalMs: number
   endedAt: number | null
@@ -824,10 +826,12 @@ export interface HiitBlock {
 }
 export interface HiitPlan {
   name: string
+  exercise_id?: string
   blocks: HiitBlock[]
 }
 export interface HiitResult {
   name: string
+  exercise_id?: string
   blocks: HiitBlock[]
   planned_rounds: number
   completed_rounds: number
@@ -838,11 +842,11 @@ export interface HiitResult {
   end_reason: string
 }
 export interface HiitRun {
-  status: 'running_work' | 'running_rest' | 'paused' | 'completed' | 'stopped_early'
+  status: 'idle' | 'running_work' | 'running_rest' | 'paused' | 'completed' | 'stopped_early'
   blockIdx: number
   round: number
   phase: 'work' | 'rest'
-  phaseStartTs: number
+  phaseStartTs: number | null
   pausedTotalMs: number
   pausedAt: number | null
   workDone: number

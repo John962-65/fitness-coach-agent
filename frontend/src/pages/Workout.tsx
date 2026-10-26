@@ -9,7 +9,8 @@ import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { parseTrainingNumber, validateSetDraft } from '../lib/validate'
 import CardioTimer, { createCardioState } from '../components/workout/CardioTimer'
-import HiitRunner, { createHiitRun, HiitPlanner } from '../components/workout/HiitRunner'
+import HiitRunner, { createHiitRun, createIdleHiitRun, HiitPlanner } from '../components/workout/HiitRunner'
+import { hiitPlanExerciseId } from '../lib/hiit'
 import { formatSetCompact, formatSetRecord } from '../lib/setDisplay'
 import { LoggedSet, SessionEntry, useApp } from '../store'
 import type { MeasurementType } from '../types'
@@ -64,9 +65,9 @@ export default function Workout() {
           const addHiit = () => {
             if (!hiitPlan) return
             useApp.getState().addFreeExercise({
-              exercise_id: hiitPlan.blocks[0]?.exercise_id || 'jumping_jack',
+              exercise_id: hiitPlanExerciseId(hiitPlan),
               name: hiitPlan.name, activity: 'hiit', hiitPlan,
-              hiitRun: createHiitRun(), measurement: 'duration',
+              hiitRun: createIdleHiitRun(), measurement: 'duration',
               target: { sets: '—', reps: '—', weight: null }, logged: [],
             })
           }
@@ -487,9 +488,9 @@ export default function Workout() {
       {/* P5-B：HIIT 快速编排 */}
       {hiitPlanning && (
         <Sheet open onClose={() => setHiitPlanning(false)} title="编排间歇训练">
-          <HiitPlanner onStart={(plan) => {
+          <HiitPlanner uid={uid} onStart={(plan) => {
             addFreeExercise({
-              exercise_id: plan.blocks[0]?.exercise_id || 'jumping_jack',
+              exercise_id: hiitPlanExerciseId(plan),
               name: plan.name, activity: 'hiit', hiitPlan: plan,
               hiitRun: createHiitRun(), measurement: 'duration',
               target: { sets: '—', reps: '—', weight: null }, logged: [],

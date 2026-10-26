@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Flag, Pause, Play, SkipForward } from 'lucide-react'
+import { api } from '../../api'
 import { Button, Input } from '../Bits'
 import type { LoggedSet, SessionEntry } from '../../store'
-import type { HiitBlock, HiitPlan, HiitRun } from '../../types'
+import { CUSTOM_HIIT_EXERCISE_ID } from '../../lib/exerciseIds'
+import { hiitPlanExerciseId } from '../../lib/hiit'
+import type { ExerciseSummary, HiitBlock, HiitPlan, HiitRun } from '../../types'
 
 const fmt = (s: number) =>
   `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, '0')}:${String(Math.max(0, s) % 60).padStart(2, '0')}`
@@ -12,15 +15,25 @@ export interface HiitTransition {
   result?: LoggedSet
 }
 
-export function createHiitRun(now = Date.now()): HiitRun {
+export function createIdleHiitRun(): HiitRun {
   return {
-    status: 'running_work', blockIdx: 0, round: 1, phase: 'work',
-    phaseStartTs: now, pausedTotalMs: 0, pausedAt: null,
+    status: 'idle', blockIdx: 0, round: 1, phase: 'work',
+    phaseStartTs: null, pausedTotalMs: 0, pausedAt: null,
     workDone: 0, restDone: 0, completedRounds: 0, skipped: [], endedEarly: false,
   }
 }
 
+export function createHiitRun(now = Date.now()): HiitRun {
+  return startHiit(createIdleHiitRun(), now)
+}
+
+export function startHiit(run: HiitRun, now = Date.now()): HiitRun {
+  if (run.status !== 'idle') return run
+  return { ...run, status: 'running_work', phaseStartTs: now }
+}
+
 export function hiitPhaseElapsed(run: HiitRun, now = Date.now()) {
+  if (run.phaseStartTs == null) return 0
   const end = run.pausedAt ?? now
   return Math.max(0, Math.floor((end - run.phaseStartTs - run.pausedTotalMs) / 1000))
 }
@@ -61,9 +74,9 @@ export function restartHiitPhase(run: HiitRun, now = Date.now()): HiitRun {
 function buildHiitLog(plan: HiitPlan, run: HiitRun, now: number,
                       endedEarly: boolean, reason: string): LoggedSet {
   return {
-    type: 'duration', duration_seconds: run.workDone, warmup: false,
+    type: 'duration', duration_seconds: run.workDone + run.restDone, warmup: false,
     hiit: {
-      name: plan.name, blocks: plan.blocks,
+      name: plan.name, exercise_id: hiitPlanExerciseId(plan), blocks: plan.blocks,
       planned_rounds: plan.blocks.reduce((n, b) => n + b.rounds, 0),
       completed_rounds: run.completedRounds,
       work_seconds_done: run.workDone,
@@ -195,6 +208,7 @@ export default function HiitRunner({ idx, entry, onUpdate, onLog }: {
   const block: HiitBlock | undefined = plan.blocks[run.blockIdx]
   const phaseLeft = Math.max(0, phaseDuration(plan, run) - hiitPhaseElapsed(run, now))
   const statusText = {
+    idle: '未开始',
     running_work: '工作阶段', running_rest: '休息阶段',
     paused: '已暂停', completed: '已完成', stopped_early: '已提前结束',
   }[run.status]
@@ -245,7 +259,16 @@ export default function HiitRunner({ idx, entry, onUpdate, onLog }: {
         </div>
       )}
 
-      {run.status === 'paused' && run.pendingPhaseConfirm == null ? (
+      {run.status === 'idle' ? (
+        <Button block className="mt-2.5" onClick={() => {
+          const at = Date.now()
+          lastTick.current = at
+          onUpdate({ hiitRun: startHiit(run, at) })
+          setNow(at)
+        }}>
+          <Play size={15} /> 开始间歇训练
+        </Button>
+      ) : run.status === 'paused' && run.pendingPhaseConfirm == null ? (
         <div className="mt-2.5 flex gap-2">
           <button className="btn-primary btn flex-1" onClick={() => {
             const at = Date.now()
@@ -295,18 +318,28 @@ export default function HiitRunner({ idx, entry, onUpdate, onLog }: {
   )
 }
 
-export function HiitPlanner({ onStart }: {
+export function HiitPlanner({ uid, onStart }: {
+  uid?: string
   onStart: (plan: HiitPlan) => void
 }) {
   const [name, setName] = useState('四轮间歇训练')
-  const [exerciseName, setExerciseName] = useState('开合跳')
+  const [mode, setMode] = useState<'catalog' | 'custom'>('catalog')
+  const [catalogId, setCatalogId] = useState('')
+  const [exerciseName, setExerciseName] = useState('')
+  const [catalog, setCatalog] = useState<ExerciseSummary[]>([])
   const [work, setWork] = useState('30')
   const [rest, setRest] = useState('30')
   const [rounds, setRounds] = useState('4')
+  useEffect(() => {
+    api.exercises({ uid }).then((r) => setCatalog(r.exercises)).catch(() => setCatalog([]))
+  }, [uid])
+  const selected = catalog.find((ex) => ex.id === catalogId)
+  const blockName = mode === 'catalog' ? selected?.name || '' : exerciseName.trim()
+  const identity = mode === 'custom' ? CUSTOM_HIIT_EXERCISE_ID : catalogId
   const workSeconds = Number(work)
   const restSeconds = Number(rest)
   const roundCount = Number(rounds)
-  const valid = !!name.trim() && !!exerciseName.trim()
+  const valid = !!name.trim() && !!blockName && !!identity
     && Number.isInteger(workSeconds) && workSeconds > 0 && workSeconds <= 86400
     && Number.isInteger(restSeconds) && restSeconds >= 0 && restSeconds <= 86400
     && Number.isInteger(roundCount) && roundCount >= 1 && roundCount <= 99
@@ -315,11 +348,32 @@ export function HiitPlanner({ onStart }: {
   return (
     <div className="space-y-2 border-t border-line bg-canvas/60 px-4 pb-4 pt-3">
       <p className="text-sm font-semibold">编排间歇训练</p>
-      <label className="block"><span className="mb-1 block text-xs text-muted">名称</span>
+      <label className="block"><span className="mb-1 block text-xs text-muted">计划名称</span>
         <Input value={name} onChange={(e) => setName(e.target.value)} /></label>
+      <div className="flex items-center gap-1.5" aria-label="间歇动作身份">
+        {([['catalog', '已收录动作'], ['custom', '自定义活动']] as const).map(([m, label]) => (
+          <button key={m} onClick={() => setMode(m)}
+                  className={`tag min-h-7 px-2 transition-colors ${
+                    mode === m ? 'bg-night text-white'
+                      : 'border border-line bg-surface text-muted'}`}
+                  aria-pressed={mode === m}>{label}</button>
+        ))}
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <label><span className="mb-1 block text-xs text-muted">动作名</span>
-          <Input value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} /></label>
+        {mode === 'catalog' ? (
+          <label><span className="mb-1 block text-xs text-muted">动作（稳定 ID）</span>
+            <select className="input" value={catalogId}
+                    onChange={(e) => setCatalogId(e.target.value)}>
+              <option value="">请选择已收录动作</option>
+              {catalog.filter((ex) => ex.id !== CUSTOM_HIIT_EXERCISE_ID).map((ex) => (
+                <option key={ex.id} value={ex.id}>{ex.name}</option>
+              ))}
+            </select></label>
+        ) : (
+          <label><span className="mb-1 block text-xs text-muted">活动名称</span>
+            <Input value={exerciseName} placeholder="如 波比跳"
+                   onChange={(e) => setExerciseName(e.target.value)} /></label>
+        )}
         <label><span className="mb-1 block text-xs text-muted">轮次</span>
           <Input inputMode="numeric" value={rounds} onChange={(e) => setRounds(e.target.value)} /></label>
         <label><span className="mb-1 block text-xs text-muted">工作（秒）</span>
@@ -327,9 +381,14 @@ export function HiitPlanner({ onStart }: {
         <label><span className="mb-1 block text-xs text-muted">休息（秒）</span>
           <Input inputMode="numeric" value={rest} onChange={(e) => setRest(e.target.value)} /></label>
       </div>
+      {mode === 'custom' && (
+        <p className="text-2xs leading-relaxed text-faint">
+          自定义活动使用通用身份 custom_hiit 保存，活动名称保持独立，不会记到某个已收录动作上。
+        </p>
+      )}
       <Button block disabled={!valid} onClick={() => onStart({
-        name: name.trim(),
-        blocks: [{ name: exerciseName.trim(), exercise_id: 'jumping_jack',
+        name: name.trim(), exercise_id: identity,
+        blocks: [{ name: blockName, exercise_id: identity,
           work_seconds: workSeconds, rest_seconds: restSeconds, rounds: roundCount }],
       })}>
         开始间歇训练

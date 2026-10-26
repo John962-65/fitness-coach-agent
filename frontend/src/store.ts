@@ -74,9 +74,20 @@ const hasProgress = (s: WorkoutSession | null) =>
   !!s && s.entries.some((e) => e.logged.length > 0 || !!e.cardio || !!e.hiitRun)
 
 /** 兼容旧持久化数据：补 id / mode / drafts（升级前创建的进行中会话） */
-function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
+export function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
   if (!s) return null
-  return { ...s, id: s.id || newSessionId(), mode: s.mode || 'planned',
+  const entries = (s.entries || []).map((entry) => {
+    const cardio = entry.cardio
+    if (!cardio) return entry
+    const status = cardio.status
+      ?? (cardio.endedAt != null ? 'ended'
+        : cardio.pausedAt != null ? 'paused'
+          : cardio.startedAt != null ? 'running' : 'idle')
+    return { ...entry, cardio: { ...cardio, status,
+      startedAt: cardio.startedAt ?? null, pausedAt: cardio.pausedAt ?? null,
+      endedAt: cardio.endedAt ?? null, pausedTotalMs: cardio.pausedTotalMs ?? 0 } }
+  })
+  return { ...s, entries, id: s.id || newSessionId(), mode: s.mode || 'planned',
            drafts: s.drafts || {} }
 }
 

@@ -53,6 +53,132 @@ def _to_reps(v) -> int | None:
     return int(n) if n is not None and n >= 1 and n.is_integer() else None
 
 
+def _int_in(v, lo: int, hi: int) -> int | None:
+    n = _to_number(v)
+    if n is None or not n.is_integer() or not lo <= n <= hi:
+        return None
+    return int(n)
+
+
+def _coerce_hiit(h: dict, duration_seconds) -> tuple[dict | None, list[str]]:
+    """严格清洗 HIIT 元数据；任一一致性失败则整段丢弃并返回原因。"""
+    reasons: list[str] = []
+    name = h.get("name")
+    if not isinstance(name, str) or not name.strip():
+        reasons.append("缺少名称")
+        name = ""
+    if h.get("exercise_id") is not None and (
+            not isinstance(h.get("exercise_id"), str) or not h["exercise_id"].strip()):
+        reasons.append("计划动作身份无效")
+
+    blocks = []
+    raw_blocks = h.get("blocks")
+    if not isinstance(raw_blocks, list) or not 1 <= len(raw_blocks) <= 12:
+        reasons.append("编排块数量无效")
+        raw_blocks = []
+    for raw in raw_blocks:
+        if not isinstance(raw, dict):
+            reasons.append("编排块不是对象")
+            continue
+        block_name = str(raw.get("name") or "").strip()[:40]
+        work = _int_in(raw.get("work_seconds"), 1, 86400)
+        rest = _int_in(raw.get("rest_seconds"), 0, 86400)
+        rounds = _int_in(raw.get("rounds"), 1, 999)
+        exercise_id = raw.get("exercise_id")
+        if (not block_name or work is None or rest is None or rounds is None
+                or not isinstance(exercise_id, str) or not exercise_id.strip()):
+            reasons.append("编排块缺少名称、动作身份或有效时长/轮次")
+            continue
+        blocks.append({"name": block_name, "exercise_id": exercise_id[:60],
+                       "work_seconds": work, "rest_seconds": rest,
+                       "rounds": rounds})
+    if not blocks:
+        reasons.append("没有有效编排块")
+
+    planned = sum(b["work_seconds"] * b["rounds"] for b in blocks)
+    rest_planned = sum(b["rest_seconds"] * b["rounds"] for b in blocks)
+    rounds_planned = sum(b["rounds"] for b in blocks)
+    if planned > 86400 or rest_planned > 86400:
+        reasons.append("计划工作或休息总时长超过 24 小时")
+    supplied_planned = _int_in(h.get("planned_rounds"), 1, 11988)
+    if supplied_planned is None or supplied_planned != rounds_planned:
+        reasons.append("计划轮次与编排块总和不一致")
+
+    completed = _int_in(h.get("completed_rounds"), 0, 11988)
+    if completed is None or completed > rounds_planned:
+        reasons.append("完成轮次无效或超过计划轮次")
+        completed = 0
+    work_done = _int_in(h.get("work_seconds_done"), 0, 86400)
+    rest_done = _int_in(h.get("rest_seconds_done"), 0, 86400)
+    if work_done is None or work_done > planned:
+        reasons.append("实际工作秒数无效或超过计划")
+        work_done = 0
+    if rest_done is None or rest_done > rest_planned:
+        reasons.append("实际休息秒数无效或超过计划")
+        rest_done = 0
+    if completed > 0 and work_done <= 0:
+        reasons.append("已完成轮次与实际工作秒数矛盾")
+
+    raw_skipped = h.get("skipped", [])
+    clean_skipped = []
+    seen_skipped = set()
+    if not isinstance(raw_skipped, list):
+        reasons.append("跳过记录不是列表")
+        raw_skipped = []
+    for item in raw_skipped[:12000]:
+        if not isinstance(item, dict):
+            reasons.append("跳过记录不是对象")
+            continue
+        block = _int_in(item.get("block"), 0, len(blocks) - 1)
+        round_ = _int_in(item.get("round"), 1,
+                         blocks[block]["rounds"] if block is not None else 0)
+        if block is None or round_ is None:
+            reasons.append("跳过记录超出编排范围")
+            continue
+        key = (block, round_)
+        if key in seen_skipped:
+            reasons.append("跳过记录重复")
+            continue
+        seen_skipped.add(key)
+        clean_skipped.append({"block": block, "round": round_})
+    if completed + len(clean_skipped) > rounds_planned:
+        reasons.append("完成与跳过轮次之和超过计划")
+
+    if duration_seconds is None or not isinstance(duration_seconds, (int, float)) \
+            or isinstance(duration_seconds, bool) \
+            or not float(duration_seconds).is_integer() \
+            or duration_seconds != work_done + rest_done:
+        reasons.append("记录时长与实际工作/休息秒数不一致")
+
+    ended_early = h.get("ended_early", False)
+    if not isinstance(ended_early, bool):
+        reasons.append("提前结束标记无效")
+        ended_early = False
+    if not ended_early and completed + len(clean_skipped) != rounds_planned:
+        reasons.append("未标记提前结束但完成与跳过轮次不足计划")
+    end_reason = h.get("end_reason")
+    if end_reason is not None and not isinstance(end_reason, str):
+        reasons.append("结束原因无效")
+        end_reason = ""
+
+    if reasons:
+        return None, reasons
+    clean = {
+        "name": name[:80], "blocks": blocks,
+        "planned_rounds": rounds_planned,
+        "completed_rounds": completed,
+        "work_seconds_done": work_done,
+        "rest_seconds_done": rest_done,
+        "skipped": clean_skipped,
+        "ended_early": ended_early,
+    }
+    if h.get("exercise_id"):
+        clean["exercise_id"] = h["exercise_id"][:60]
+    if end_reason:
+        clean["end_reason"] = end_reason[:200]
+    return clean, []
+
+
 def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
     """打卡落库前清洗。返回 (清洗后数据, 警告列表)。坏行剔除并说明。"""
     warnings: list[str] = []
@@ -206,64 +332,21 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                                 s["segments"] = clean_segs
                         else:
                             s.pop("segments", None)
-                        # P5-B：HIIT 元数据（可选；非法字段剔除不炸整条）
+                        # P5-B：HIIT 元数据严格一致性校验；无效时不保留成果
                         if isinstance(s.get("hiit"), dict):
-                            h = s["hiit"]
-                            clean_h = {}
-                            if isinstance(h.get("name"), str) and h["name"].strip():
-                                clean_h["name"] = h["name"][:80]
-                            blocks = []
-                            if isinstance(h.get("blocks"), list):
-                                for b in h["blocks"][:12]:
-                                    if not isinstance(b, dict):
-                                        continue
-                                    nb = {"name": str(b.get("name") or "")[:40]}
-                                    if b.get("exercise_id"):
-                                        nb["exercise_id"] = str(b["exercise_id"])[:60]
-                                    for k in ("work_seconds", "rest_seconds", "rounds"):
-                                        if b.get(k) is not None:
-                                            n = _to_number(b[k])
-                                            cap = 999 if k == "rounds" else 86400
-                                            if (n is not None and 0 <= n <= cap
-                                                    and float(n).is_integer()):
-                                                nb[k] = int(n)
-                                    if nb.get("work_seconds") and nb["name"]:
-                                        blocks.append(nb)
-                            if blocks:
-                                clean_h["blocks"] = blocks
-                                for key, lo, hi_cap in (
-                                        ("planned_rounds", 0, 999),
-                                        ("completed_rounds", 0, 999),
-                                        ("work_seconds_done", 0, 86400),
-                                        ("rest_seconds_done", 0, 86400)):
-                                    if h.get(key) is not None:
-                                        n = _to_number(h[key])
-                                        if (n is not None and lo <= n <= hi_cap
-                                                and float(n).is_integer()):
-                                            clean_h[key] = int(n)
-                                if isinstance(h.get("skipped"), list):
-                                    clean_skipped = []
-                                    for x in h["skipped"][:12000]:
-                                        if not isinstance(x, dict):
-                                            continue
-                                        block = _to_number(x.get("block", 0))
-                                        round_ = _to_number(x.get("round", 0))
-                                        if (block is None or round_ is None
-                                                or not float(block).is_integer()
-                                                or not float(round_).is_integer()
-                                                or not 0 <= block < 12
-                                                or not 1 <= round_ <= 999):
-                                            continue
-                                        clean_skipped.append(
-                                            {"block": int(block), "round": int(round_)})
-                                    clean_h["skipped"] = clean_skipped
-                                clean_h["ended_early"] = bool(h.get("ended_early"))
-                                if h.get("end_reason"):
-                                    clean_h["end_reason"] = str(h["end_reason"])[:200]
-                            s["hiit"] = clean_h if clean_h else None
-                            if s["hiit"] is None:
+                            clean_h, hiit_errors = _coerce_hiit(
+                                s["hiit"], s.get("duration_seconds"))
+                            if hiit_errors:
+                                warnings.append(
+                                    f"{ex['name']} 的 HIIT 数据不自洽（"
+                                    + "；".join(hiit_errors[:3])
+                                    + "），已丢弃间歇元数据")
+                            if clean_h:
+                                s["hiit"] = clean_h
+                            else:
                                 s.pop("hiit", None)
                         elif s.get("hiit") is not None:
+                            warnings.append(f"{ex['name']} 的 HIIT 字段不是对象，已丢弃")
                             s.pop("hiit", None)
                         if bad:
                             continue

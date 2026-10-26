@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   cardioElapsedSeconds, createCardioState, endCardio, pauseCardio, resumeCardio,
+  startCardio,
 } from './CardioTimer'
 import {
-  completeHiitPhase, createHiitRun, hiitPhaseElapsed, needsHiitConfirmation,
-  pauseHiit, resumeHiit, skipHiitPhase, stopHiitEarly,
+  completeHiitPhase, createHiitRun, createIdleHiitRun, hiitPhaseElapsed,
+  needsHiitConfirmation, pauseHiit, resumeHiit, skipHiitPhase, startHiit,
+  stopHiitEarly,
 } from './HiitRunner'
+import { CUSTOM_HIIT_EXERCISE_ID } from '../../lib/exerciseIds'
+import { hiitPlanExerciseId } from '../../lib/hiit'
 import type { HiitPlan } from '../../types'
 
 const plan = (rounds = 2): HiitPlan => ({
@@ -15,24 +19,58 @@ const plan = (rounds = 2): HiitPlan => ({
 })
 
 describe('有氧时间戳状态', () => {
+  it('新增后保持 idle，点击开始才记录起始时间', () => {
+    let state = createCardioState()
+    expect(state).toMatchObject({ status: 'idle', startedAt: null })
+    expect(cardioElapsedSeconds(state, 60_000)).toBe(0)
+    state = startCardio(state, 60_000)
+    expect(state).toMatchObject({ status: 'running', startedAt: 60_000 })
+    expect(cardioElapsedSeconds(state, 70_000)).toBe(10)
+  })
+
   it('暂停不计时，暂停中结束也不把最后一段暂停计入成绩', () => {
-    let state = createCardioState(0)
-    state = pauseCardio(state, 10_000)
-    expect(cardioElapsedSeconds(state, 15_000)).toBe(10)
-    state = resumeCardio(state, 15_000)
-    expect(cardioElapsedSeconds(state, 20_000)).toBe(15)
-    state = pauseCardio(state, 20_000)
-    state = endCardio(state, 25_000)
+    let state = startCardio(createCardioState(), 1_000)
+    state = pauseCardio(state, 11_000)
+    expect(cardioElapsedSeconds(state, 16_000)).toBe(10)
+    state = resumeCardio(state, 16_000)
+    expect(cardioElapsedSeconds(state, 21_000)).toBe(15)
+    state = pauseCardio(state, 21_000)
+    state = endCardio(state, 26_000)
     expect(cardioElapsedSeconds(state, 30_000)).toBe(15)
   })
 
   it('序列化恢复后保留开始、暂停和结束状态', () => {
-    let state = createCardioState(1_000)
+    let state = startCardio(createCardioState(), 1_000)
     state = pauseCardio(state, 6_000)
     state = endCardio(state, 11_000)
     const restored = JSON.parse(JSON.stringify(state)) as typeof state
     expect(cardioElapsedSeconds(restored, 60_000)).toBe(5)
     expect(restored.endedAt).toBe(11_000)
+    expect(restored.status).toBe('ended')
+  })
+})
+
+describe('HIIT 身份与 idle', () => {
+  it('模板载入保持 idle，明确开始后才启动时间戳', () => {
+    const idle = createIdleHiitRun()
+    expect(idle).toMatchObject({ status: 'idle', phaseStartTs: null })
+    expect(hiitPhaseElapsed(idle, 60_000)).toBe(0)
+    const running = startHiit(idle, 60_000)
+    expect(running).toMatchObject({ status: 'running_work', phaseStartTs: 60_000 })
+    expect(hiitPhaseElapsed(running, 70_000)).toBe(10)
+  })
+
+  it('计划身份优先使用显式稳定 ID；旧单块计划兼容块 ID；多块回落通用身份', () => {
+    expect(hiitPlanExerciseId({
+      name: '间歇', exercise_id: 'running', blocks: [
+        { name: '跑步', exercise_id: 'running', work_seconds: 30, rest_seconds: 0, rounds: 1 }],
+    })).toBe('running')
+    expect(hiitPlanExerciseId(plan(1))).toBe('jumping_jack')
+    expect(hiitPlanExerciseId({
+      name: '混合', blocks: [
+        { name: '开合跳', exercise_id: 'jumping_jack', work_seconds: 30, rest_seconds: 0, rounds: 1 },
+        { name: '高抬腿', exercise_id: 'high_knees', work_seconds: 30, rest_seconds: 0, rounds: 1 }],
+    })).toBe(CUSTOM_HIIT_EXERCISE_ID)
   })
 })
 
@@ -52,7 +90,7 @@ describe('HIIT 阶段与结果状态机', () => {
     transition = completeHiitPhase(plan(), run, 100_000)
     expect(transition.run.status).toBe('completed')
     expect(transition.result).toMatchObject({
-      duration_seconds: 60,
+      duration_seconds: 100,
       hiit: { planned_rounds: 2, completed_rounds: 2,
         work_seconds_done: 60, rest_seconds_done: 40, ended_early: false },
     })

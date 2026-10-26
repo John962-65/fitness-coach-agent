@@ -144,11 +144,9 @@ def test_hiit_metadata_contract(client):
                       "planned_rounds": 99999}}]}],
         "session_meta": {"mode": "free", "local_date": TODAY}}})
     assert r2.status_code == 200
-    log2 = r2.json() and c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
-    h2 = log2["data"]["exercises"][0]["set_logs"][0].get("hiit")
-    assert (h2 or {}).get("planned_rounds") in (None, 99999)  # 非法值清洗或剔除
-    blocks = (h2 or {}).get("blocks") or []
-    assert all(b.get("work_seconds", 0) <= 86400 for b in blocks)
+    assert any("HIIT 数据不自洽" in w for w in r2.json()["warnings"])
+    log2 = c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
+    assert "hiit" not in log2["data"]["exercises"][0]["set_logs"][0]
     # 隔离
     assert c.get("/api/users/other/checkins?limit=5").json()["checkins"] == []
 
@@ -192,12 +190,15 @@ def test_hiit_correction_invalidates_insight(client):
     if ins:
         # 纠错（完成轮次 3→4）→ 引用旧修订的洞察失效
         cur = c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
-        new_meta = {**HIIT_META, "completed_rounds": 4, "ended_early": False}
+        new_meta = {**HIIT_META, "completed_rounds": 4,
+                    "work_seconds_done": 120, "rest_seconds_done": 120,
+                    "skipped": [], "ended_early": False,
+                    "end_reason": "全部计划完成"}
         c.post(f"/api/users/u/checkins/{cid}/correct", json={
             "expected_revision": cur["revision"],
             "data": {**cur["data"], "exercises": [{
                 "name": HIIT_META["name"],
-                "set_logs": [{"type": "duration", "duration_seconds": 210,
+                "set_logs": [{"type": "duration", "duration_seconds": 240,
                               "hiit": new_meta}]}]},
             "reason": "记错了", "evidence": "用户说其实完成了 4 轮"})
         stale = insight_service.get_insight(db, "u", ins["id"])
@@ -231,14 +232,74 @@ def test_hiit_template_rejects_invalid_timing_and_position(client):
     c, _ = client
     base = {"name": "坏编排", "entries": [],
             "hiit": {"name": "坏编排", "blocks": [{
-                "name": "开合跳", "work_seconds": 0.5,
-                "rest_seconds": 20, "rounds": 2}]}}
+                "name": "开合跳", "exercise_id": "jumping_jack",
+                "work_seconds": 0.5, "rest_seconds": 20, "rounds": 2}]}}
     assert c.post("/api/users/u/training-templates", json=base).status_code == 422
     base["hiit"]["blocks"][0].update(work_seconds=86400, rounds=2)
     assert c.post("/api/users/u/training-templates", json=base).status_code == 422
     base["hiit"]["blocks"][0].update(work_seconds=30, rounds=2)
     base["hiit_index"] = 1
     assert c.post("/api/users/u/training-templates", json=base).status_code == 422
+    base["hiit_index"] = 0
+    base["hiit"]["blocks"][0]["exercise_id"] = "not_in_library"
+    assert c.post("/api/users/u/training-templates", json=base).status_code == 422
+
+
+def test_custom_hiit_identity_is_generic_and_name_independent(client):
+    c, db = client
+    resp = c.post("/api/users/u/checkins", json={"type": "training", "data": {
+        "exercises": [{"name": "波比循环", "exercise_id": "custom_hiit",
+                       "set_logs": [{
+                           "type": "duration", "duration_seconds": 60,
+                           "hiit": {
+                               "name": "波比循环", "exercise_id": "custom_hiit",
+                               "blocks": [{"name": "波比跳",
+                                           "exercise_id": "custom_hiit",
+                                           "work_seconds": 30, "rest_seconds": 30,
+                                           "rounds": 1}],
+                               "planned_rounds": 1, "completed_rounds": 1,
+                               "work_seconds_done": 30, "rest_seconds_done": 30,
+                               "skipped": [], "ended_early": False,
+                               "end_reason": "全部计划完成",
+                           }}]}],
+        "session_meta": {"mode": "free", "local_date": TODAY}}})
+    assert resp.status_code == 200
+    assert not any("HIIT" in w for w in resp.json()["warnings"])
+    saved = c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
+    ex = saved["data"]["exercises"][0]
+    assert ex["exercise_id"] == "custom_hiit" and ex["name"] == "波比循环"
+    assert ex["set_logs"][0]["hiit"]["exercise_id"] == "custom_hiit"
+    assert ex["set_logs"][0]["hiit"]["name"] == "波比循环"
+    assert ex["set_logs"][0]["hiit"]["blocks"][0] == {
+        "name": "波比跳", "exercise_id": "custom_hiit",
+        "work_seconds": 30, "rest_seconds": 30, "rounds": 1}
+    sessions = exercise_sessions(db, "u", "custom_hiit")
+    assert len(sessions) == 1 and sessions[0]["duration_total_s"] == 60
+    assert exercise_sessions(db, "u", "jumping_jack") == []
+
+
+def test_unknown_hiit_block_identity_falls_back_with_warning(client):
+    c, _ = client
+    resp = c.post("/api/users/u/checkins", json={"type": "training", "data": {
+        "exercises": [{"name": "身份校验", "exercise_id": "custom_hiit",
+                       "set_logs": [{
+                           "type": "duration", "duration_seconds": 30,
+                           "hiit": {
+                               "name": "身份校验", "exercise_id": "custom_hiit",
+                               "blocks": [{"name": "未知活动",
+                                           "exercise_id": "not_in_library",
+                                           "work_seconds": 30, "rest_seconds": 0,
+                                           "rounds": 1}],
+                               "planned_rounds": 1, "completed_rounds": 1,
+                               "work_seconds_done": 30, "rest_seconds_done": 0,
+                               "skipped": [], "ended_early": False,
+                           }}]}],
+        "session_meta": {"mode": "free", "local_date": TODAY}}})
+    assert resp.status_code == 200
+    assert any("动作身份无法识别" in w for w in resp.json()["warnings"])
+    saved = c.get("/api/users/u/checkins?limit=1").json()["checkins"][0]
+    block = saved["data"]["exercises"][0]["set_logs"][0]["hiit"]["blocks"][0]
+    assert block["exercise_id"] == "custom_hiit" and block["name"] == "未知活动"
 
 
 def test_offline_idempotent_with_cardio(client):
@@ -268,23 +329,46 @@ def test_old_records_unchanged(tmp_path):
     assert ps["cardio_seconds"] == 0 and ps["interval_seconds"] == 0
 
 
-def test_hiit_invalid_nested_fields_are_dropped_without_raising():
+def test_hiit_inconsistent_metadata_is_rejected_not_repaired():
     from coach.validate import coerce_checkin
-    data, _ = coerce_checkin("training", {"exercises": [{
+    data, warnings = coerce_checkin("training", {"exercises": [{
         "name": "间歇", "set_logs": [{
             "type": "duration", "duration_seconds": 30,
             "hiit": {
                 "name": "间歇", "planned_rounds": 1000,
-                "blocks": [{"name": "开合跳", "work_seconds": 30,
-                            "rest_seconds": 20, "rounds": 1000}],
-                "skipped": [{"block": "bad", "round": "x"},
-                            {"block": 0, "round": 2}],
+                "blocks": [{"name": "开合跳", "exercise_id": "jumping_jack",
+                            "work_seconds": 30, "rest_seconds": 20, "rounds": 1000}],
+                "completed_rounds": 1000, "work_seconds_done": 30000,
+                "rest_seconds_done": 20000,
+                "skipped": [{"block": "bad", "round": "x"}],
             }}]}]})
-    hiit = data["exercises"][0]["set_logs"][0]["hiit"]
-    assert hiit["blocks"][0]["work_seconds"] == 30
-    assert "rounds" not in hiit["blocks"][0]
-    assert "planned_rounds" not in hiit
-    assert hiit["skipped"] == [{"block": 0, "round": 2}]
+    log = data["exercises"][0]["set_logs"][0]
+    assert "hiit" not in log
+    assert any("HIIT 数据不自洽" in w for w in warnings)
+
+
+@pytest.mark.parametrize("patch,duration", [
+    ({"planned_rounds": 3}, 100),
+    ({"completed_rounds": 3}, 100),
+    ({"completed_rounds": 1, "ended_early": False}, 50),
+    ({"duration_seconds": 101}, 101),
+])
+def test_hiit_round_and_duration_mismatch_is_rejected(patch, duration):
+    from coach.validate import coerce_checkin
+    good = {
+        "name": "间歇",
+        "blocks": [{"name": "开合跳", "exercise_id": "jumping_jack",
+                    "work_seconds": 30, "rest_seconds": 20, "rounds": 2}],
+        "planned_rounds": 2, "completed_rounds": 2,
+        "work_seconds_done": 60, "rest_seconds_done": 40,
+        "skipped": [], "ended_early": False,
+    }
+    hiit = {**good, **patch}
+    data, warnings = coerce_checkin("training", {"exercises": [{
+        "name": "间歇", "set_logs": [{
+            "type": "duration", "duration_seconds": duration, "hiit": hiit}]}]})
+    assert "hiit" not in data["exercises"][0]["set_logs"][0]
+    assert any("HIIT 数据不自洽" in w for w in warnings)
 
 
 def test_zero_work_hiit_and_99_skips_roundtrip(client):
@@ -295,8 +379,8 @@ def test_zero_work_hiit_and_99_skips_roundtrip(client):
             "type": "duration", "duration_seconds": 0,
             "hiit": {
                 "name": "全部跳过",
-                "blocks": [{"name": "开合跳", "work_seconds": 30,
-                            "rest_seconds": 20, "rounds": 99}],
+                "blocks": [{"name": "开合跳", "exercise_id": "jumping_jack",
+                            "work_seconds": 30, "rest_seconds": 20, "rounds": 99}],
                 "planned_rounds": 99, "completed_rounds": 0,
                 "work_seconds_done": 0, "rest_seconds_done": 0,
                 "skipped": skipped, "ended_early": False,

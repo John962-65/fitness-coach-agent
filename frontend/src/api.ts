@@ -117,7 +117,7 @@ export const api = {
                    payload: { expected_revision: number; data: unknown; reason: string; evidence: string }) =>
     post<Checkin>(`/users/${uid}/checkins/${checkinId}/correct`, payload),
 
-  exercises: (params: { q?: string; muscle?: string; status?: string } = {}) => {
+  exercises: (params: { q?: string; muscle?: string; status?: string; uid?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][])
     return req<{ count: number; exercises: ExerciseSummary[] }>(
       `/exercises${qs.size ? `?${qs}` : ''}`)

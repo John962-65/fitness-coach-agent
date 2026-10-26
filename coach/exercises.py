@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 EXERCISES_ROOT = Path(__file__).resolve().parent.parent / "exercises"
+CUSTOM_HIIT_EXERCISE_ID = "custom_hiit"
 
 # 变式修饰词：输入含有而命中别名不含 → 是另一个动作（或库里没有的新变式）
 _VARIANT_MARKERS = (

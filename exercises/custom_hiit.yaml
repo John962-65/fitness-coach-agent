@@ -1,0 +1,20 @@
+id: custom_hiit
+name: 自定义间歇活动
+aliases: [自定义间歇, 自定义HIIT]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: []
+equipment: ['bodyweight']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 0, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: duration
+status: approved
+_provenance:
+  note: 自定义间歇活动的通用稳定身份；实际活动名称由计划与组记录独立保存

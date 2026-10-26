@@ -4,32 +4,41 @@ import { Button, Input } from '../Bits'
 import type { SessionEntry, LoggedSet } from '../../store'
 import type { SessionEntryCardio } from '../../types'
 
-export function createCardioState(now = Date.now()): SessionEntryCardio {
-  return { startedAt: now, pausedAt: null, pausedTotalMs: 0, endedAt: null }
+export function createCardioState(): SessionEntryCardio {
+  return {
+    status: 'idle', startedAt: null, pausedAt: null,
+    pausedTotalMs: 0, endedAt: null,
+  }
+}
+
+export function startCardio(cardio: SessionEntryCardio, now = Date.now()): SessionEntryCardio {
+  if (cardio.status !== 'idle') return cardio
+  return { ...cardio, status: 'running', startedAt: now }
 }
 
 export function cardioElapsedSeconds(cardio: SessionEntryCardio, now = Date.now()) {
+  if (cardio.status === 'idle' || cardio.startedAt == null) return 0
   const end = cardio.endedAt ?? cardio.pausedAt ?? now
   return Math.max(0, Math.floor((end - cardio.startedAt - cardio.pausedTotalMs) / 1000))
 }
 
 export function pauseCardio(cardio: SessionEntryCardio, now = Date.now()): SessionEntryCardio {
-  if (cardio.endedAt || cardio.pausedAt) return cardio
-  return { ...cardio, pausedAt: now }
+  if (cardio.status !== 'running') return cardio
+  return { ...cardio, status: 'paused', pausedAt: now }
 }
 
 export function resumeCardio(cardio: SessionEntryCardio, now = Date.now()): SessionEntryCardio {
-  if (cardio.endedAt || !cardio.pausedAt) return cardio
-  return { ...cardio,
+  if (cardio.status !== 'paused' || cardio.pausedAt == null) return cardio
+  return { ...cardio, status: 'running',
     pausedTotalMs: cardio.pausedTotalMs + Math.max(0, now - cardio.pausedAt),
     pausedAt: null }
 }
 
 export function endCardio(cardio: SessionEntryCardio, now = Date.now()): SessionEntryCardio {
-  if (cardio.endedAt) return cardio
+  if (cardio.status === 'idle' || cardio.status === 'ended') return cardio
   const pausedTotalMs = cardio.pausedTotalMs
-    + (cardio.pausedAt ? Math.max(0, now - cardio.pausedAt) : 0)
-  return { ...cardio, endedAt: now, pausedAt: null, pausedTotalMs }
+    + (cardio.pausedAt != null ? Math.max(0, now - cardio.pausedAt) : 0)
+  return { ...cardio, status: 'ended', endedAt: now, pausedAt: null, pausedTotalMs }
 }
 
 export default function CardioTimer({ idx, entry, onUpdate, onLog, onUndo }: {
@@ -45,13 +54,12 @@ export default function CardioTimer({ idx, entry, onUpdate, onLog, onUndo }: {
   const logged = entry.logged.some((l) => !l.warmup)
 
   useEffect(() => {
-    if (!cardio || cardio.endedAt || cardio.pausedAt) return
+    if (!cardio || cardio.status !== 'running') return
     const h = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(h)
   }, [cardio])
 
   if (!cardio) return null
-  const running = !cardio.pausedAt && !cardio.endedAt
   const measuredSeconds = cardioElapsedSeconds(cardio, now)
   const elapsedSec = cardio.elapsedOverride != null && cardio.elapsedOverride !== ''
     ? Number(cardio.elapsedOverride) : measuredSeconds
@@ -59,12 +67,12 @@ export default function CardioTimer({ idx, entry, onUpdate, onLog, onUndo }: {
   const mm = String(Math.floor(displaySeconds / 60)).padStart(2, '0')
   const ss = String(displaySeconds % 60).padStart(2, '0')
 
-  function patch(patch: Partial<SessionEntryCardio>) {
-    onUpdate({ cardio: { ...cardio!, ...patch } })
+  function patch(next: Partial<SessionEntryCardio>) {
+    onUpdate({ cardio: { ...cardio!, ...next } })
   }
 
   function log() {
-    if (logged) return
+    if (logged || cardio!.status !== 'ended') return
     const seconds = Number(elapsedSec)
     const distance = cardio!.distance?.trim() ? Number(cardio!.distance) : undefined
     const rpe = cardio!.rpe?.trim() ? Number(cardio!.rpe) : undefined
@@ -87,21 +95,32 @@ export default function CardioTimer({ idx, entry, onUpdate, onLog, onUndo }: {
     setError('')
   }
 
+  const statusText = {
+    idle: '未开始', running: '进行中', paused: '已暂停', ended: '已结束',
+  }[cardio.status]
+
   return (
     <div className="border-t border-line bg-canvas/60 px-4 pb-4 pt-3">
       <div className="rounded-xl bg-night p-4 text-center text-white">
         <p className="flex items-center justify-center gap-1.5 text-2xs text-white/60">
           <Timer size={12} />
-          {cardio.endedAt ? '已结束' : running ? '进行中' : '已暂停'}
+          {statusText}
         </p>
         <p className="nums mt-1 text-4xl font-bold tabular-nums">{mm}:{ss}</p>
         <p className="mt-1 text-2xs text-white/50">
-          按时间戳计时，暂停时间不计入；后台经过时间如实计入，结束后可修正
+          点击开始后按时间戳计时，暂停时间不计入；后台经过时间如实计入，结束后可修正
         </p>
       </div>
-      {!cardio.endedAt ? (
+      {cardio.status === 'idle' ? (
+        <Button block className="mt-2.5" onClick={() => {
+          onUpdate({ cardio: startCardio(cardio, Date.now()) })
+          setNow(Date.now())
+        }}>
+          <Play size={15} /> 开始有氧
+        </Button>
+      ) : cardio.status !== 'ended' ? (
         <div className="mt-2.5 flex gap-2">
-          {running ? (
+          {cardio.status === 'running' ? (
             <button className="btn-soft btn flex-1"
                     onClick={() => onUpdate({ cardio: pauseCardio(cardio, Date.now()) })}>
               <Pause size={15} /> 暂停
@@ -109,8 +128,7 @@ export default function CardioTimer({ idx, entry, onUpdate, onLog, onUndo }: {
           ) : (
             <button className="btn-primary btn flex-1"
                     onClick={() => {
-                      const resumed = resumeCardio(cardio, Date.now())
-                      onUpdate({ cardio: resumed })
+                      onUpdate({ cardio: resumeCardio(cardio, Date.now()) })
                       setNow(Date.now())
                     }}>
               <Play size={15} /> 恢复
