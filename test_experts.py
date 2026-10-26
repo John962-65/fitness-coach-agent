@@ -429,12 +429,13 @@ def test_overview_lists_registry_and_settings(client):
     body = c.get("/api/users/u1/experts/overview").json()
     labels = {s["specialist"]: s for s in body["specialists"]}
     assert set(labels) == {"training_science", "nutrition", "recovery",
-                           "rehabilitation", "movement"}
+                           "rehabilitation", "movement", "collaboration"}
     assert labels["training_science"]["workbench"] == "ready"
     assert labels["nutrition"]["workbench"] == "ready"          # P1 已上线
     assert labels["recovery"]["workbench"] == "ready"           # P2 已上线
     assert labels["rehabilitation"]["workbench"] == "ready"        # P3 已上线
     assert labels["movement"]["workbench"] == "ready"             # P4 已上线
+    assert labels["collaboration"]["workbench"] == "ready"        # P6 已上线
     assert body["settings"]["proactive_enabled"] is True
     # 关闭主动分析
     resp = c.post("/api/users/u1/experts/settings",

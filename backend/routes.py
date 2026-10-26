@@ -146,6 +146,77 @@ def register_routes(app) -> None:
 
     # ---- 档案 ----
 
+    # ---- P7-A：数据导出与备份导入 ----
+
+    @api.post("/users/{uid}/export")
+    def export_data(uid: str, request: Request, payload: dict = Body(...)):
+        """导出个人数据（敏感健康数据：必须显式 confirm=true）。
+
+        format=json → 完整结构化备份（含完整性清单）；
+        format=csv  → 可读 CSV（zip，训练逐组展开 + 完整性清单）。
+        """
+        from fastapi.responses import Response
+        from coach.data_transfer import export_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if payload.get("confirm") is not True:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "导出包含敏感健康数据：需要显式 confirm=true"})
+        fmt = str(payload.get("format") or "json")
+        try:
+            export = export_service.export_user_data(db, uid)
+        except ValueError as e:
+            raise HTTPException(status_code=404,
+                                detail={"error": str(e)}) from None
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        if fmt == "csv":
+            data = export_service.export_csv(export)
+            return Response(
+                content=data, media_type="application/zip",
+                headers={"Content-Disposition":
+                         f'attachment; filename="fitness-coach-{uid}-{stamp}.zip"'})
+        if fmt != "json":
+            raise HTTPException(status_code=422,
+                                detail={"error": "format 必须是 json 或 csv"})
+        return Response(
+            content=json.dumps(export, ensure_ascii=False, default=str),
+            media_type="application/json",
+            headers={"Content-Disposition":
+                     f'attachment; filename="fitness-coach-{uid}-{stamp}.json"'})
+
+    @api.post("/users/{uid}/import/preview")
+    def import_preview(uid: str, request: Request, payload: dict = Body(...)):
+        """备份导入预览：版本/计数/重复/映射冲突；不写库。"""
+        from coach.data_transfer import import_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return import_service.preview_import(db, uid, payload)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
+    @api.post("/users/{uid}/import/apply")
+    def import_apply(uid: str, request: Request, payload: dict = Body(...)):
+        """应用导入：需 confirmed=true（预览后用户确认）；单事务可回滚。"""
+        from coach.data_transfer import import_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if payload.get("confirmed") is not True:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "导入需要先预览并显式确认（confirmed=true）"})
+        body = payload.get("backup")
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=422,
+                                detail={"error": "backup（备份 JSON）必填"})
+        try:
+            return import_service.apply_import(db, uid, body)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
     @api.get("/users/{uid}/profile")
     def get_profile(uid: str, request: Request):
         db = request.app.state.db
