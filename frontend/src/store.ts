@@ -291,20 +291,29 @@ export const useApp = create<AppState>()((set) => ({
         : st.session,
     })),
   replaceExercise: (entryIdx, newName, exerciseId, measurement) =>
-    set((st) => ({
-      session: st.session
-        ? { ...st.session, entries: st.session.entries.map((e, i) => {
-            if (i !== entryIdx) return e
-            const measurementChanged = !!measurement && measurement !== e.measurement
-            return { ...e, replaced_with: newName,
-              replace_exercise_id: exerciseId,
-              replaced_from_id: e.replaced_from_id ?? e.exercise_id,
-              ...(measurement ? { measurement } : {}),
-              ...(measurementChanged
-                ? { target: { ...e.target, weight: null } } : {}) }
-          }) }
-        : st.session,
-    })),
+    set((st) => {
+      const session = st.session
+      if (!session) return { session }
+      const rec = session.appliedTargets?.[entryIdx]
+      const appliedTargets = rec
+        ? Object.fromEntries(
+            Object.entries(session.appliedTargets || {}).filter(([k]) => Number(k) !== entryIdx))
+        : session.appliedTargets
+      const revertedTarget = rec?.from
+      const entries = session.entries.map((e, i) => {
+        if (i !== entryIdx) return e
+        const measurementChanged = !!measurement && measurement !== e.measurement
+        return { ...e, replaced_with: newName,
+          replace_exercise_id: exerciseId,
+          replaced_from_id: e.replaced_from_id ?? e.exercise_id,
+          ...(measurement ? { measurement } : {}),
+          ...(revertedTarget ? { target: revertedTarget } : {}),
+          ...(measurementChanged
+            ? { target: { ...(revertedTarget || e.target), weight: null } } : {})
+        }
+      })
+      return { session: { ...session, appliedTargets, entries } }
+    }),
   applySessionTarget: (entryIdx, targets, optionId) => {
     const st = useApp.getState()
     const session = st.session

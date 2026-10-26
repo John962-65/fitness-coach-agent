@@ -775,6 +775,8 @@ def analyze_next_training(db, user_id: str, input_refs: dict) -> dict:
         "equipment": (context.get("source_revisions") or {}).get("equipment"),
         "rules_version": progression_service.PROGRESSION_RULES_VERSION,
         "recovery_records": {str(k): v for k, v in recovery_records.items()},
+        # 新增恢复记录也要使旧洞察失效（不只盯已引用的记录）
+        "recovery_records_count": len(recovery_records),
     }
     if plan_version is not None:
         source_revision["plan_version"] = plan_version

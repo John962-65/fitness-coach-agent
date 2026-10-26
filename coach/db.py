@@ -612,6 +612,18 @@ class Database:
             for col in cols:
                 if col not in have:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        # P5-C3：个人尝试与进阶候选/计划上下文关联（可空；老数据保持 NULL）
+        trial_cols = (("origin", "TEXT"), ("exercise_id", "TEXT"),
+                      ("plan_id", "TEXT"), ("plan_version", "TEXT"),
+                      ("chosen_target", "TEXT"), ("observation_metric", "TEXT"),
+                      ("observation_window_days", "TEXT"),
+                      ("min_sessions", "TEXT"),
+                      ("baseline_source_revisions", "TEXT"))
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(personal_trials)")}
+        for col, decl in trial_cols:
+            if col not in have:
+                self.conn.execute(
+                    f"ALTER TABLE personal_trials ADD COLUMN {col} {decl}")
         self.conn.commit()
 
     # ---- users ----
@@ -1048,7 +1060,16 @@ class Database:
     def start_personal_trial(self, user_id: str, change_desc: str, reason: str,
                              observe: str, stop_rule: str,
                              review_days: int | None = None,
-                             baseline: str | None = None) -> int:
+                             baseline: str | None = None,
+                             origin: str | None = None,
+                             exercise_id: str | None = None,
+                             plan_id: int | None = None,
+                             plan_version: int | None = None,
+                             chosen_target: str | None = None,
+                             observation_metric: str | None = None,
+                             observation_window_days: int | None = None,
+                             min_sessions: int | None = None,
+                             baseline_source_revisions: str | None = None) -> int:
         row = self.conn.execute(
             "SELECT id, change_desc FROM personal_trials WHERE user_id=? AND status='active'",
             (user_id,)).fetchone()
@@ -1062,12 +1083,51 @@ class Database:
                       ).isoformat(timespec="seconds")
         cur = self.conn.execute(
             "INSERT INTO personal_trials(user_id, change_desc, reason, observe,"
-            " stop_rule, review_at, baseline, status, created_at)"
-            " VALUES(?,?,?,?,?,?,?,'active',?)",
+            " stop_rule, review_at, baseline, origin, exercise_id, plan_id,"
+            " plan_version, chosen_target, observation_metric,"
+            " observation_window_days, min_sessions, baseline_source_revisions,"
+            " status, created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?)",
             (user_id, change_desc, reason, observe, stop_rule, review,
-             baseline, _now()))
+             baseline, origin, exercise_id,
+             str(plan_id) if plan_id is not None else None,
+             str(plan_version) if plan_version is not None else None,
+             chosen_target, observation_metric,
+             str(observation_window_days) if observation_window_days is not None else None,
+             str(min_sessions) if min_sessions is not None else None,
+             baseline_source_revisions, _now()))
         self.conn.commit()
         return cur.lastrowid
+
+    def get_personal_trial(self, user_id: str, trial_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM personal_trials WHERE user_id=? AND id=?",
+            (user_id, int(trial_id))).fetchone()
+        return dict(row) if row else None
+
+    def extend_personal_trial(self, user_id: str, trial_id: int,
+                              days: int) -> bool:
+        """暂不判断，继续观察：仅延长 review_at，不结束尝试（P5-C3）。"""
+        if not 1 <= int(days) <= 180:
+            raise ValueError("观察延长天数必须是 1-180 的整数")
+        row = self.conn.execute(
+            "SELECT id, review_at FROM personal_trials"
+            " WHERE user_id=? AND id=? AND status='active'",
+            (user_id, int(trial_id))).fetchone()
+        if not row:
+            return False
+        base = row["review_at"] or _now()
+        try:
+            start = datetime.fromisoformat(base)
+        except ValueError:
+            start = datetime.now()
+        extended = (max(start, datetime.now())
+                    + timedelta(days=int(days))).isoformat(timespec="seconds")
+        cur = self.conn.execute(
+            "UPDATE personal_trials SET review_at=? WHERE user_id=? AND id=?",
+            (extended, user_id, int(trial_id)))
+        self.conn.commit()
+        return cur.rowcount > 0
 
     def end_personal_trial(self, user_id: str, trial_id: int,
                            outcome: str, decision: str) -> bool:

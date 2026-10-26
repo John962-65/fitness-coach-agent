@@ -894,6 +894,38 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422, detail={"error": str(e)}) from None
         return {"trial_id": trial_id, "status": "active"}
 
+    @api.get("/users/{uid}/trials/{trial_id}")
+    def trial_detail(uid: str, trial_id: int, request: Request,
+                     review: int = Query(0, ge=0, le=1)):
+        """尝试详情：观察进展；review=1 或到达观察条件时附复盘草稿。"""
+        from coach.training_progression import trial_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        trial = db.get_personal_trial(uid, trial_id)
+        if not trial:
+            raise HTTPException(status_code=404,
+                                detail={"error": "尝试不存在"})
+        observation = trial_service.trial_observation(db, uid, trial)
+        out = {"trial": trial_service.public_trial(trial), "observation": observation}
+        if review or observation.get("due_for_review") or trial["status"] != "active":
+            out["review"] = trial_service.trial_review(db, uid, trial)
+        return out
+
+    @api.post("/users/{uid}/trials/{trial_id}/decision")
+    def trial_decision(uid: str, trial_id: int, request: Request,
+                       payload: dict = Body(...)):
+        """P5-C3 用户决策：keep/adjust/stop/observe；任何分支都不自动改计划。"""
+        from coach.training_progression import trial_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return trial_service.decide_trial(
+                db, uid, trial_id, str(payload.get("decision") or ""),
+                str(payload.get("note") or ""))
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
     @api.post("/users/{uid}/trials/{trial_id}/end")
     def trial_end(uid: str, trial_id: int, request: Request,
                   payload: dict = Body(...)):
@@ -1299,6 +1331,85 @@ def register_routes(app) -> None:
             "generated_at": related[0]["generated_at"],
         } if related else None
         return result
+
+    @api.post("/users/{uid}/training-progression/{exercise_id}/adopt")
+    def training_progression_adopt(uid: str, exercise_id: str,
+                                   request: Request, payload: dict = Body(...)):
+        """P5-C3：长期采用候选——由服务端根据当前有效候选构造提案操作。
+
+        不信任前端提交的 proposed_targets：服务端重新计算候选并按
+        option_id 取出对应操作，再走统一 ChangeProposal 确认协议
+        （pending → 用户确认 → 重新校验版本与安全后提交）。
+        """
+        from coach.changes import ProposalRejected, stage_ai
+        from coach.training_progression import progression_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        option_id = str(payload.get("option_id") or "").strip()
+        if not option_id:
+            raise HTTPException(status_code=422,
+                                detail={"error": "option_id 必填"})
+        plan_context = {k: payload.get(k) for k in (
+            "plan_id", "plan_version", "planned_day", "index",
+            "planned_exercise_id")} if isinstance(payload, dict) else {}
+        plan_context = {k: v for k, v in plan_context.items() if v is not None}
+        try:
+            result = progression_service.get_next_training_options(
+                db, uid, exercise_id, plan_context or None)
+        except ValueError as e:
+            raise HTTPException(status_code=404,
+                                detail={"error": str(e)}) from None
+        option = next((o for o in result.get("options") or []
+                       if o.get("option_id") == option_id), None)
+        if not option:
+            raise HTTPException(status_code=422,
+                                detail={"error": "候选不存在或已过期，"
+                                        "请重新获取建议后再采用"})
+        proposal = option.get("plan_proposal")
+        if not proposal:
+            raise HTTPException(status_code=422,
+                                detail={"error": "该候选与当前计划没有实际差异，"
+                                        "没有可提交的修改操作"})
+        base = result["context"]
+        if not base.get("plan_id") or base.get("plan_version") is None:
+            raise HTTPException(status_code=422,
+                                detail={"error": "当前没有生效计划上下文，"
+                                        "无法创建长期修改提案"})
+        try:
+            staged = stage_ai(
+                db, uid, "plan", proposal["operations"],
+                f"采用下一次训练建议：{option['title']}"
+                f"（候选 {option_id}，规则 {result['rules_version']}）",
+                {"plan_id": base["plan_id"],
+                 "plan_version": base["plan_version"]})
+        except ProposalRejected as e:
+            raise _reject(e) from None
+        return {**staged, "note": "提案已暂存（pending）：确认前长期计划保持不变；"
+                                 "确认时会重新校验计划版本与安全状态"}
+
+    @api.post("/users/{uid}/training-progression/{exercise_id}/trial")
+    def training_progression_trial(uid: str, exercise_id: str,
+                                   request: Request, payload: dict = Body(...)):
+        """P5-C3：从一个确定性候选创建个人尝试（服务端重新计算候选）。"""
+        from coach.training_progression import trial_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        option_id = str(payload.get("option_id") or "").strip()
+        if not option_id:
+            raise HTTPException(status_code=422,
+                                detail={"error": "option_id 必填"})
+        plan_context = {k: payload.get(k) for k in (
+            "plan_id", "plan_version", "planned_day", "index",
+            "planned_exercise_id")}
+        plan_context = {k: v for k, v in plan_context.items() if v is not None}
+        try:
+            return trial_service.start_trial_from_candidate(
+                db, uid, exercise_id, option_id, plan_context or None,
+                window_days=payload.get("window_days") or 14,
+                min_sessions=payload.get("min_sessions") or 3)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
 
     @api.post("/users/{uid}/checkins/{checkin_id}/correct")
     def correct_checkin(uid: str, checkin_id: int, request: Request,

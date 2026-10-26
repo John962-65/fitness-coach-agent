@@ -3,7 +3,7 @@
 // （TrainingScienceAgent，next-training-review）；仅本次采用走
 // store.applySessionTarget；长期修改走统一 ChangeProposal 确认协议。
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react'
+import { AlertTriangle, FlaskConical, ShieldCheck, Sparkles } from 'lucide-react'
 import { api, ApiError } from '../../api'
 import { Button, Empty, ErrorBox, Notice, Sheet, Spinner, Tag } from '../Bits'
 import { PanelDataStatus } from './ProgressionEvidence'
@@ -97,6 +97,7 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
   const [busy, setBusy] = useState('')
   const [proposalId, setProposalId] = useState('')
   const [proposalStatus, setProposalStatus] = useState('')
+  const [trialStarted, setTrialStarted] = useState<number | null>(null)
   const [insight, setInsight] = useState<ExpertInsight | null>(null)
   const [insightOpen, setInsightOpen] = useState(false)
 
@@ -144,6 +145,8 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
     : null
   const canApply = !!compat && Object.keys(compat.patch).length > 0
   const canPropose = !!selected?.plan_proposal && !!planContext
+  const canTrial = !!selected
+    && Object.keys(selected.proposed_targets || {}).length > 0
 
   const applyForThisSession = () => {
     if (!selected) return
@@ -160,17 +163,37 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
   }
 
   const proposeLongTerm = async () => {
-    if (!selected?.plan_proposal || !planContext) return
+    if (!selected || !planContext) return
     setBusy('plan'); setNotice(''); setError('')
     try {
-      const staged = await api.stageChange(
-        uid, 'plan', selected.plan_proposal.operations,
-        `采用下一次训练建议：${selected.title}`,
-        planContext.baseVersion
-          || { plan_id: planContext.planId, plan_version: planContext.planVersion })
+      // 服务端按当前有效候选构造提案操作（不信任前端提交的目标数值）
+      const staged = await api.adoptProgressionCandidate(uid, exerciseId || '', {
+        option_id: selected.option_id,
+        plan_id: planContext.planId, plan_version: planContext.planVersion,
+        planned_day: planContext.day, index: planContext.index,
+        planned_exercise_id: planContext.plannedExerciseId,
+      })
       setProposalId(staged.proposal_id)
       setProposalStatus(staged.status)
-      setNotice('已创建待确认修改提案；确认前长期计划保持不变')
+      setNotice(staged.note || '已创建待确认修改提案；确认前长期计划保持不变')
+    } catch (e) {
+      setError((e as ApiError).message)
+    } finally { setBusy('') }
+  }
+
+  const startTrial = async () => {
+    if (!selected) return
+    setBusy('trial'); setNotice(''); setError('')
+    try {
+      const out = await api.startProgressionTrial(uid, exerciseId || '', {
+        option_id: selected.option_id,
+        plan_id: planContext?.planId, plan_version: planContext?.planVersion,
+        planned_day: planContext?.day, index: planContext?.index,
+        planned_exercise_id: planContext?.plannedExerciseId,
+      })
+      setTrialStarted(out.trial.id)
+      setNotice(`个人尝试 #${out.trial.id} 已开始（${out.trial.stop_rule}）；`
+        + '照常训练并记录，到「我的 → 个人尝试」复盘')
     } catch (e) {
       setError((e as ApiError).message)
     } finally { setBusy('') }
@@ -397,7 +420,7 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
             )}
           </section>
 
-          {/* 动作条：仅本次采用 / 申请修改长期计划 / 忽略 */}
+          {/* 动作条：仅本次采用 / 申请修改长期计划 / 个人尝试 / 忽略 */}
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             <Button className="btn-sm flex-1" disabled={!canApply || busy !== ''}
                     onClick={applyForThisSession}>
@@ -408,6 +431,12 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
                       || proposalStatus === 'applied'}
                     onClick={proposeLongTerm}>
               <ShieldCheck size={14} /> 申请修改长期计划
+            </Button>
+            <Button variant="ghost" className="btn-sm"
+                    disabled={!canTrial || busy !== '' || trialStarted != null}
+                    onClick={startTrial}>
+              <FlaskConical size={14} />
+              {trialStarted ? `尝试 #${trialStarted} 进行中` : '开始个人尝试'}
             </Button>
             <Button variant="ghost" className="btn-sm" onClick={ignoreAdvice}>
               忽略

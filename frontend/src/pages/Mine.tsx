@@ -9,7 +9,7 @@ import {
   Button, Empty, ErrorBox, Field, Input, PageHeader, Sheet, Spinner, Tag, Textarea,
 } from '../components/Bits'
 import { useApp } from '../store'
-import { ApproachView, Profile, Trial } from '../types'
+import { ApproachView, Profile, Trial, TrialObservation, TrialReview } from '../types'
 
 const STRUCTURE_LABEL: Record<string, string> = {
   full_body: '全身', upper_lower: '上下肢分化', ppl: '推拉腿分化',
@@ -271,8 +271,14 @@ function TrialsCard({ uid, trials, onChanged, note }: {
               <p>观察：{active.observe}</p>
               <p>停止条件：{active.stop_rule}</p>
               {active.review_at && <p>复盘时点：{active.review_at.slice(0, 10)}</p>}
-              {active.baseline && <p>尝试前基线：{active.baseline}</p>}
+              {typeof active.baseline === 'string' && active.baseline
+  && !active.baseline.trim().startsWith('{')
+  && <p>尝试前基线：{active.baseline}</p>}
             </dl>
+            {active.exercise_id && (
+              <TrialProgress uid={uid} trialId={active.id} due={active.due_review}
+                             onChanged={onChanged} note={note} />
+            )}
             {ending ? (
               <div className="mt-3 space-y-2.5 rounded-xl border border-line bg-surface p-3">
                 <Field label="复盘（必填）：这段时间的感受与执行情况">
@@ -360,4 +366,110 @@ function TrialsCard({ uid, trials, onChanged, note }: {
       </Sheet>
     </div>
   )
+}
+
+/** P5-C3：候选来源尝试的观察进展与复盘决策。
+ *  进展/复盘由服务端按真实训练记录确定性生成；任何决策都不自动改计划。 */
+function TrialProgress({ uid, trialId, due, onChanged, note }: {
+  uid: string
+  trialId: number
+  due: boolean
+  onChanged: () => void
+  note: (msg: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [detail, setDetail] = useState<{
+    observation: TrialObservation; review?: TrialReview } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = (withReview: boolean) => {
+    setError('')
+    api.trialDetail(uid, trialId, withReview)
+      .then(setDetail)
+      .catch((e: ApiError) => setError(e.message))
+  }
+
+  const decide = (decision: 'keep' | 'adjust' | 'stop' | 'observe') => {
+    setBusy(true); setError('')
+    api.trialDecision(uid, trialId, { decision })
+      .then((out) => {
+        note(out.note || '已记录你的决定')
+        setOpen(false); setDetail(null)
+        onChanged()
+      })
+      .catch((e: ApiError) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
+  if (!open) {
+    return (
+      <button className="btn-plain mt-2 !px-0 text-xs"
+              onClick={() => { setOpen(true); load(due) }}>
+        查看观察进展{due ? '与复盘草稿' : ''}
+      </button>
+    )
+  }
+  const obs = detail?.observation
+  const review = detail?.review
+  return (
+    <div className="mt-2.5 space-y-2 rounded-xl border border-line bg-surface p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-ink">观察进展</p>
+        <button className="text-2xs text-muted underline underline-offset-2"
+                onClick={() => { setOpen(false); setDetail(null) }}>收起</button>
+      </div>
+      {error && <ErrorBox message={error} />}
+      {!detail && !error && <Spinner />}
+      {obs && (
+        <p className="text-xs leading-relaxed text-muted">
+          指标 <b className="text-ink">{metricLabel(obs.observation_metric)}</b>：
+          观察期内 {obs.sessions_total} 次训练，达成 {obs.sessions_met} 次
+          {obs.sessions_unmet > 0 ? `，未达成 ${obs.sessions_unmet} 次` : ''}。
+          {obs.due_for_review
+            ? '已到达观察条件，可以复盘。'
+            : `复盘条件：${obs.min_sessions ? `${obs.min_sessions} 次训练` : ''}`
+              + `${obs.review_at ? `或 ${obs.review_at.slice(0, 10)}（先到为准）` : ''}`}
+          {obs.plan_changed_since_start && ' · 尝试期间计划版本已变化（存在同期混杂）'}
+        </p>
+      )}
+      {obs && !review && (
+        <Button variant="ghost" className="btn-sm" disabled={busy}
+                onClick={() => load(true)}>
+          生成复盘草稿
+        </Button>
+      )}
+      {review && (
+        <div className="space-y-2 text-xs leading-relaxed">
+          <div>
+            <p className="font-medium text-ink">已观察</p>
+            {review.sections.observed.map((line, i) => <p key={i} className="text-muted">· {line}</p>)}
+          </div>
+          <div>
+            <p className="font-medium text-ink">无法确认 / 注意</p>
+            {review.sections.unconfirmed.map((line, i) => <p key={i} className="text-muted">· {line}</p>)}
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {review.decision_options.map((o) => (
+              <button key={o.decision} disabled={busy}
+                      title={o.note}
+                      onClick={() => decide(o.decision as 'keep' | 'adjust' | 'stop' | 'observe')}
+                      className={`tag min-h-9 px-3 ${
+                        o.decision === 'observe' ? 'border border-line bg-surface text-muted'
+                          : 'border border-line bg-surface text-ink hover:border-accent-deep/40'}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-2xs text-faint">{review.decision_note}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function metricLabel(metric: string): string {
+  return ({ 'target-completion': '目标次数达成', 'duration-attainment': '目标时长达成',
+            'steady-cardio-seconds': '有氧时长', 'interval-completion': 'HIIT 完整轮次',
+            records: '训练记录' } as Record<string, string>)[metric] || metric
 }

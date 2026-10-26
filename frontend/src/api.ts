@@ -4,7 +4,7 @@ import type {
   ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, ExpertInsight,
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
-  NutritionTrendDay, PlanOp, ProgressionResult,
+  NutritionTrendDay, PlanOp, ProgressionResult, TrialObservation, TrialReview,
   BodyMeasurement, BodySummary, BodyTrend, CarePlan, EquipmentItem, LocationsResponse,
   PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief,
   RecoveryCheckin, RecoverySummary, SubstituteResult, SymptomEpisode, TodayBrief,
@@ -199,6 +199,29 @@ export const api = {
     decision: 'keep' | 'stop' | 'adjust' }) =>
     post<{ trial_id: number; decision: string }>(
       `/users/${uid}/trials/${trialId}/end`, payload),
+  // ---- P5-C3：进阶候选 → 服务端构造提案 / 个人尝试闭环 ----
+  adoptProgressionCandidate: (
+    uid: string, exerciseId: string,
+    payload: { option_id: string } & Record<string, unknown>,
+  ) => post<{ proposal_id: string; status: string; note: string }>(
+    `/users/${uid}/training-progression/${encodeURIComponent(exerciseId)}/adopt`,
+    payload),
+  startProgressionTrial: (
+    uid: string, exerciseId: string,
+    payload: { option_id: string; window_days?: number; min_sessions?: number
+               } & Record<string, unknown>,
+  ) => post<{ trial: Trial; observation: TrialObservation; note: string }>(
+    `/users/${uid}/training-progression/${encodeURIComponent(exerciseId)}/trial`,
+    payload),
+  trialDetail: (uid: string, trialId: number, review = false) =>
+    req<{ trial: Trial; observation: TrialObservation;
+          review?: TrialReview }>(
+      `/users/${uid}/trials/${trialId}${review ? '?review=1' : ''}`),
+  trialDecision: (uid: string, trialId: number,
+                  payload: { decision: 'keep' | 'adjust' | 'stop' | 'observe';
+                             note?: string }) =>
+    post<{ trial: Trial; status: string; note: string }>(
+      `/users/${uid}/trials/${trialId}/decision`, payload),
   approachRevision: (uid: string, revision: number) =>
     req<{ revision: number; content: ApproachView['approach'];
           created_at: string; initiator: string }>(

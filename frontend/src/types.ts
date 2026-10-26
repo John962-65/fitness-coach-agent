@@ -349,21 +349,6 @@ export interface PlanRevision {
   days: (string | undefined)[]
 }
 
-export interface Trial {
-  id: number
-  change_desc: string
-  reason: string
-  observe: string
-  stop_rule: string
-  review_at: string | null
-  outcome: string | null
-  baseline?: string | null
-  decision: string | null
-  status: string
-  created_at: string
-  due_review: boolean
-}
-
 export interface ExerciseState {
   exercise_id: string
   last_weight: number | null
@@ -1118,4 +1103,66 @@ export interface ProgressionResult {
   requires_user_confirmation: boolean
   insight?: { id: string; status: string; status_reason?: string;
               generated_at?: string } | null
+}
+
+// ---- P5-C3：个人尝试（PersonalTrial）闭环 ----
+
+export interface Trial {
+  id: number
+  change_desc: string
+  reason: string
+  observe: string
+  stop_rule: string
+  review_at: string | null
+  outcome: string | null
+  baseline?: string | { kind?: string; snapshot_at?: string;
+    last_actual_performance?: unknown } | null
+  decision: string | null
+  status: string
+  created_at: string
+  due_review: boolean
+  // P5-C3：与进阶候选的关联（手动创建的老尝试为空）
+  origin?: { kind?: string; origin_insight_id?: string | null;
+             origin_option_id?: string; rules_version?: string } | null
+  exercise_id?: string | null
+  plan_id?: number | null
+  plan_version?: number | null
+  chosen_target?: Record<string, number | string> | null
+  observation_metric?: string | null
+  observation_window_days?: number | null
+  min_sessions?: number | null
+}
+
+export interface TrialObservationSession {
+  checkin_id: number
+  date: string
+  revision: number
+  meets: boolean | null
+  attainment?: { level: string; label?: string; note?: string }
+}
+
+export interface TrialObservation {
+  observation_metric: string
+  target?: { kind: string; min?: number; max?: number; seconds?: number } | null
+  sessions_total: number
+  sessions_met: number
+  sessions_unmet: number
+  sessions: TrialObservationSession[]
+  window_elapsed: boolean
+  review_at: string | null
+  min_sessions: number | null
+  sessions_due: boolean
+  due_for_review: boolean
+  plan_changed_since_start: boolean
+}
+
+export interface TrialReview {
+  trial_id: number
+  change_desc: string
+  observe: string
+  stop_rule: string
+  sections: { observed: string[]; possible_explanations: string[]
+              unconfirmed: string[] }
+  decision_options: { decision: string; label: string; note: string }[]
+  decision_note: string
 }

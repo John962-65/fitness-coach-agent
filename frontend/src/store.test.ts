@@ -168,3 +168,21 @@ describe('P5-C2：仅本次采用候选目标（applySessionTarget）', () => {
     expect(useApp.getState().session!.appliedTargets?.[1]).toBeUndefined()
   })
 })
+
+describe('P5-C3：替换动作后仅本次目标不沿用', () => {
+  it('应用候选后临时替换 → 目标恢复应用前原值且撤销记录清除', () => {
+    useApp.setState({ uid: 'u', session: null })
+    useApp.getState().startSession('周一 · 推', [{
+      exercise_id: 'barbell_bench_press', name: '杠铃平板卧推',
+      measurement: 'weight_reps',
+      target: { sets: 4, reps: '5-8', weight: 60 }, planIndex: 0, logged: [],
+    }], { planId: 1, planVersion: 1 })
+    useApp.getState().applySessionTarget(
+      0, { sets: 4, reps: '5-8', weight_kg: 62.5 }, 'consider-increase-load')
+    expect(useApp.getState().session!.entries[0].target.weight).toBe(62.5)
+    useApp.getState().replaceExercise(0, '哑铃卧推', 'dumbbell_bench_press')
+    const entry = useApp.getState().session!.entries[0]
+    expect(entry.target).toMatchObject({ sets: 4, weight: 60 })
+    expect(useApp.getState().session!.appliedTargets?.[0]).toBeUndefined()
+  })
+})

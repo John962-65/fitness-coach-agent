@@ -81,6 +81,13 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if str(row["rev"]) != str(stored):
             return (f"引用的恢复记录 #{rid} 已更新（修订 {stored} → {row['rev']}），"
                     "该分析基于旧数据，请重新分析")
+    if "recovery_records_count" in rev:
+        # P5-C3：分析之后新增恢复记录同样构成数据漂移
+        count = db.conn.execute(
+            "SELECT COUNT(*) AS c FROM recovery_checkins WHERE user_id=?",
+            (user_id,)).fetchone()["c"]
+        if int(count) > int(rev["recovery_records_count"] or 0):
+            return "分析后新增了恢复记录，恢复上下文已变化，请重新分析"
     if "motion" in rev:
         current = db.motion_profile_version(user_id)
         if str(current) != str(rev["motion"]):
