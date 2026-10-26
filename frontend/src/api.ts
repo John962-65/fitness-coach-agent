@@ -170,7 +170,8 @@ export const api = {
   trainingTemplates: (uid: string) =>
     req<{ templates: TrainingTemplate[] }>(`/users/${uid}/training-templates`),
   saveTrainingTemplate: (uid: string, payload: { id?: number; name: string;
-    entries: unknown[]; note?: string }) =>
+    entries: unknown[]; hiit?: TrainingTemplate['hiit'];
+    hiit_index?: number; note?: string }) =>
     post<{ id: number; name: string }>(`/users/${uid}/training-templates`, payload),
   deleteTrainingTemplate: (uid: string, templateId: number) =>
     req<{ deleted: number }>(`/users/${uid}/training-templates/${templateId}`,

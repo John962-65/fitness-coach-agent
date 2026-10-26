@@ -1130,10 +1130,45 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422, detail={"error": "模板名称必填"})
         entries = payload.get("entries")
         if not isinstance(entries, list) or not entries:
-            raise HTTPException(status_code=422, detail={"error": "模板至少需要一个动作"})
+            # P5-B：HIIT 模板（doc.hiit）允许无力量动作条目
+            if not (isinstance(payload.get("hiit"), dict)
+                    and payload["hiit"].get("blocks")):
+                raise HTTPException(status_code=422,
+                                    detail={"error": "模板至少需要一个动作"})
         doc = {"entries": entries}
         if payload.get("note"):
             doc["note"] = str(payload["note"])[:200]
+        # P5-B：HIIT 模板（编排块随模板保存，load 自动带出）
+        if isinstance(payload.get("hiit"), dict) and payload["hiit"].get("blocks"):
+            hiit = payload["hiit"]
+            blocks = hiit["blocks"]
+            if (not isinstance(hiit.get("name"), str) or not hiit["name"].strip()
+                    or not isinstance(blocks, list) or not 1 <= len(blocks) <= 12):
+                raise HTTPException(status_code=422, detail={"error": "HIIT 模板编排无效"})
+            total_work = 0
+            total_rest = 0
+            for block in blocks:
+                if not isinstance(block, dict) or not str(block.get("name") or "").strip():
+                    raise HTTPException(status_code=422, detail={"error": "HIIT 模板编排无效"})
+                work = block.get("work_seconds")
+                rest = block.get("rest_seconds")
+                rounds = block.get("rounds")
+                if (not isinstance(work, int) or isinstance(work, bool) or not 1 <= work <= 86400
+                        or not isinstance(rest, int) or isinstance(rest, bool) or not 0 <= rest <= 86400
+                        or not isinstance(rounds, int) or isinstance(rounds, bool) or not 1 <= rounds <= 999):
+                    raise HTTPException(status_code=422, detail={"error": "HIIT 模板编排无效"})
+                total_work += work * rounds
+                total_rest += rest * rounds
+            if total_work > 86400 or total_rest > 86400:
+                raise HTTPException(status_code=422,
+                                    detail={"error": "HIIT 模板总时长不能超过 24 小时"})
+            doc["hiit"] = hiit
+            hiit_index = payload.get("hiit_index", len(entries))
+            if (not isinstance(hiit_index, int) or isinstance(hiit_index, bool)
+                    or not 0 <= hiit_index <= len(entries)):
+                raise HTTPException(status_code=422,
+                                    detail={"error": "HIIT 模板位置无效"})
+            doc["hiit_index"] = hiit_index
         try:
             tid = db.save_training_template(
                 uid, name[:40], doc,
@@ -1219,6 +1254,7 @@ def register_routes(app) -> None:
                                "location": e.get("location") or [],
                                "status": e.get("status"),
                                "measurement": e.get("measurement") or "weight_reps",
+                               "activity": e.get("activity") or "strength",
                                "scope": e.get("scope", "builtin")} for e in items]}
 
     @api.get("/exercises/{ex_id}")

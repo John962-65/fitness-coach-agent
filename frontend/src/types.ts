@@ -91,8 +91,10 @@ export type SetRecord =
       method?: SetMethod; segments?: SetSegment[] }
   | { type: 'assisted_reps'; reps: number; assistance_kg: number; rpe?: number
       method?: SetMethod; segments?: SetSegment[] }
-  | { type: 'duration'; duration_seconds: number }
-  | { type: 'distance_time'; distance_m: number; duration_seconds: number; weight_kg?: number }
+  | { type: 'duration'; duration_seconds: number; reps?: number; rpe?: number
+      hiit?: HiitResult }
+  | { type: 'distance_time'; distance_m: number; duration_seconds: number
+      weight_kg?: number; rpe?: number }
 
 export interface SetLog {
   type?: MeasurementType            // 缺省按 weight_reps（旧记录兼容）
@@ -107,6 +109,7 @@ export interface SetLog {
   assistance_kg?: number | null
   duration_seconds?: number | null
   distance_m?: number | null
+  hiit?: HiitResult
 }
 
 export interface CheckinExercise {
@@ -139,6 +142,7 @@ export interface ExerciseSummary {
   location: string[]
   status: string
   measurement?: MeasurementType   // 记录类型（缺省 weight_reps）
+  activity?: 'strength' | 'cardio'  // P5-B：活动类别（缺省 strength）
 }
 
 export interface TrainingTemplate {
@@ -148,8 +152,11 @@ export interface TrainingTemplate {
     exercise_id: string
     name: string
     measurement?: MeasurementType
+    activity?: 'strength' | 'cardio'
     superset_group?: string
   }[]
+  hiit?: HiitPlan                 // P5-B：HIIT 模板（与 entries 并存）
+  hiit_index?: number             // HIIT 在原始条目顺序中的插入位置
   note?: string
   created_at?: string
   updated_at?: string
@@ -355,6 +362,10 @@ export interface PeriodSummary {
   volume: number
   by_muscle: Record<string, number>
   avg_duration_min: number | null
+  // P5-B：有氧/间歇分口径
+  cardio_seconds?: number
+  cardio_distance_m?: number
+  interval_seconds?: number
 }
 
 // 统一修改协议的操作（与 coach/plan_edit.py PLAN_OPS 对齐）
@@ -789,4 +800,57 @@ export interface CarePlan {
   review_at: string | null
   status: string
   activities: CareActivity[]
+}
+
+// ---- P5-B：活动类别与有氧/HIIT 执行状态 ----
+export type ActivityMode = 'strength' | 'cardio' | 'hiit'
+export interface SessionEntryCardio {
+  startedAt: number
+  pausedAt: number | null
+  pausedTotalMs: number
+  endedAt: number | null
+  elapsedOverride?: string
+  distance?: string
+  rpe?: string
+}
+
+// ---- P5-B：HIIT 编排与执行状态（执行结果落 set_log.hiit 元数据） ----
+export interface HiitBlock {
+  name: string
+  exercise_id?: string
+  work_seconds: number
+  rest_seconds: number
+  rounds: number
+}
+export interface HiitPlan {
+  name: string
+  blocks: HiitBlock[]
+}
+export interface HiitResult {
+  name: string
+  blocks: HiitBlock[]
+  planned_rounds: number
+  completed_rounds: number
+  work_seconds_done: number
+  rest_seconds_done: number
+  skipped: { block: number; round: number }[]
+  ended_early: boolean
+  end_reason: string
+}
+export interface HiitRun {
+  status: 'running_work' | 'running_rest' | 'paused' | 'completed' | 'stopped_early'
+  blockIdx: number
+  round: number
+  phase: 'work' | 'rest'
+  phaseStartTs: number
+  pausedTotalMs: number
+  pausedAt: number | null
+  workDone: number
+  restDone: number
+  completedRounds: number
+  skipped: { block: number; round: number }[]
+  endedEarly: boolean
+  endReason?: string
+  pendingPhaseConfirm?: number
+  totalRounds?: number
 }

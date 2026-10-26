@@ -8,6 +8,8 @@ import { Button, ErrorBox, Sheet, Spinner, SuccessBlock } from '../components/Bi
 import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { parseTrainingNumber, validateSetDraft } from '../lib/validate'
+import CardioTimer, { createCardioState } from '../components/workout/CardioTimer'
+import HiitRunner, { createHiitRun, HiitPlanner } from '../components/workout/HiitRunner'
 import { formatSetCompact, formatSetRecord } from '../lib/setDisplay'
 import { LoggedSet, SessionEntry, useApp } from '../store'
 import type { MeasurementType } from '../types'
@@ -20,6 +22,8 @@ export default function Workout() {
           setSessionNotes, clearSession, restEndsAt, settings } = useApp((s) => s)
   const [error, setError] = useState('')
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
+  const [addingCardio, setAddingCardio] = useState(false)
+  const [hiitPlanning, setHiitPlanning] = useState(false)
   const [addingFree, setAddingFree] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
@@ -54,25 +58,48 @@ export default function Workout() {
         const tpl = r.templates.find((t) => t.id === tid)
         if (!tpl) { setError('模板不存在或已删除'); return }
         const label = `模板 · ${tpl.name}`
+        const populate = () => {
+          const hiitPlan = tpl.hiit
+          const hiitIndex = tpl.hiit_index ?? tpl.entries.length
+          const addHiit = () => {
+            if (!hiitPlan) return
+            useApp.getState().addFreeExercise({
+              exercise_id: hiitPlan.blocks[0]?.exercise_id || 'jumping_jack',
+              name: hiitPlan.name, activity: 'hiit', hiitPlan,
+              hiitRun: createHiitRun(), measurement: 'duration',
+              target: { sets: '—', reps: '—', weight: null }, logged: [],
+            })
+          }
+          for (let i = 0; i <= tpl.entries.length; i++) {
+            if (i === hiitIndex) addHiit()
+            const en = tpl.entries[i]
+            if (!en) continue
+            useApp.getState().addFreeExercise({
+              exercise_id: en.exercise_id, name: en.name,
+              measurement: en.measurement, activity: en.activity,
+              cardio: en.activity === 'cardio' ? createCardioState() : undefined,
+              supersetGroup: en.superset_group,
+              target: { sets: '—', reps: '—', weight: null }, logged: [],
+            })
+          }
+        }
+        const begin = () => {
+          startFreeSession({ label, templateId: tid })
+          populate()
+        }
         const rr = startFreeSession({ label, templateId: tid })
         if (rr.resumed) return        // 同模板会话恢复：已预填，直接继续
         if (rr.kept) {
           const cur = useApp.getState().session!
           const n = cur.entries.reduce((s, e) => s + e.logged.filter((l) => !l.warmup).length, 0)
+          switchBeginRef.current = begin
           setSwitchPrompt({
             activeLabel: `${cur.day === 'free' ? '自由训练' : cur.day}（已记录 ${n} 组）`,
-            activeHref: '/workout/free',
-            begin: () => startFreeSession({ label, templateId: tid }),
+            activeHref: '/workout/free', begin,
           })
           return
         }
-        for (const en of tpl.entries) {
-          useApp.getState().addFreeExercise({
-            exercise_id: en.exercise_id, name: en.name,
-            measurement: en.measurement, supersetGroup: en.superset_group,
-            target: { sets: '—', reps: '—', weight: null }, logged: [],
-          })
-        }
+        populate()
       }).catch((e) => setError(e.message))
       return
     }
@@ -210,6 +237,7 @@ export default function Workout() {
   if (!entries) return <Spinner />
 
   const totalSets = entries.reduce((n, e) => n + e.logged.filter((l) => !l.warmup).length, 0)
+  const hiitCount = entries.filter((e) => e.activity === 'hiit').length
   // P5-A：复杂组容量=各执行段求和（与后端 exercise_metrics.set_volume 同公式）
   const segVolume = (l: LoggedSet): number => {
     const m = l as { method?: string; segments?: Record<string, number>[] }
@@ -259,6 +287,7 @@ export default function Workout() {
           duration_seconds: 'duration_seconds' in l ? l.duration_seconds : undefined,
           distance_m: 'distance_m' in l ? l.distance_m : undefined,
           rpe: 'rpe' in l ? l.rpe : undefined,
+          hiit: 'hiit' in l ? l.hiit : undefined,
           warmup: l.warmup, at: l.at,
         })),
       }]
@@ -345,9 +374,17 @@ export default function Workout() {
             <p className="max-w-64 text-sm leading-relaxed text-muted">
               不按计划、想练什么就练什么。添加动作、逐组记录，完成后保存为历史——不影响当前计划。
             </p>
-            <Button onClick={() => setAddingFree(true)}>
-              <Plus size={16} /> 添加第一个动作
-            </Button>
+            <div className="grid w-full grid-cols-3 gap-2">
+              <Button variant="ghost" onClick={() => setAddingFree(true)}>
+                <Plus size={16} /> 力量动作
+              </Button>
+              <Button variant="ghost" onClick={() => setAddingCardio(true)}>
+                <Plus size={16} /> 有氧
+              </Button>
+              <Button variant="ghost" onClick={() => setHiitPlanning(true)}>
+                <Plus size={16} /> HIIT
+              </Button>
+            </div>
           </div>
         )}
 
@@ -359,9 +396,17 @@ export default function Workout() {
 
         {isFree && entries.length > 0 && (
           <>
-            <Button variant="ghost" block onClick={() => setAddingFree(true)}>
-              <Plus size={16} /> 添加动作
-            </Button>
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="ghost" onClick={() => setAddingFree(true)}>
+                <Plus size={16} /> 力量动作
+              </Button>
+              <Button variant="ghost" onClick={() => setAddingCardio(true)}>
+                <Plus size={16} /> 有氧
+              </Button>
+              <Button variant="ghost" onClick={() => setHiitPlanning(true)}>
+                <Plus size={16} /> HIIT
+              </Button>
+            </div>
             <Button variant="ghost" block
                     onClick={() => { setTemplateName(''); setTemplateNote(''); setTemplateSaved(''); setSavingTemplate(true) }}>
               <BookMarked size={16} /> 存为训练模板
@@ -427,6 +472,32 @@ export default function Workout() {
           })}
         />
       )}
+      {/* P5-B：有氧动作选择（activity=cardio） */}
+      {addingCardio && (
+        <ExercisePicker cardioOnly
+          onClose={() => setAddingCardio(false)}
+          onPick={(ex) => addFreeExercise({
+            exercise_id: ex.id, name: ex.name,
+            measurement: ex.measurement === 'distance_time' ? 'distance_time' : 'duration',
+            activity: 'cardio', cardio: createCardioState(),
+            target: { sets: '—', reps: '—', weight: null }, logged: [],
+          })}
+        />
+      )}
+      {/* P5-B：HIIT 快速编排 */}
+      {hiitPlanning && (
+        <Sheet open onClose={() => setHiitPlanning(false)} title="编排间歇训练">
+          <HiitPlanner onStart={(plan) => {
+            addFreeExercise({
+              exercise_id: plan.blocks[0]?.exercise_id || 'jumping_jack',
+              name: plan.name, activity: 'hiit', hiitPlan: plan,
+              hiitRun: createHiitRun(), measurement: 'duration',
+              target: { sets: '—', reps: '—', weight: null }, logged: [],
+            })
+            setHiitPlanning(false)
+          }} />
+        </Sheet>
+      )}
       {/* M6.4-A 场景 A：把这次训练存为可复用模板 */}
       {savingTemplate && (
         <Sheet open onClose={() => setSavingTemplate(false)} title="存为训练模板">
@@ -444,19 +515,29 @@ export default function Workout() {
               {templateSaved}
             </p>
           )}
+          {hiitCount > 1 && (
+            <p className="mt-3 text-xs text-amber-700" role="alert">
+              一个模板目前只支持一个 HIIT；请移除多余条目后再保存，其他动作不会丢失。
+            </p>
+          )}
           <Button block className="mt-3"
-                  disabled={!templateName.trim()}
+                  disabled={!templateName.trim() || hiitCount > 1}
                   onClick={async () => {
                     try {
+                      const hiitEntry = entries.find((e) => e.activity === 'hiit' && e.hiitPlan)
                       await api.saveTrainingTemplate(uid, {
                         name: templateName.trim(),
                         note: templateNote.trim() || undefined,
-                        entries: entries.map((e) => ({
+                        entries: entries.filter((e) => e.activity !== 'hiit').map((e) => ({
                           exercise_id: (e.replaced_with ? e.replace_exercise_id : e.exercise_id) || '',
                           name: e.replaced_with || e.name,
                           measurement: e.measurement,
+                          activity: e.activity === 'cardio' ? 'cardio' : undefined,
                           superset_group: e.supersetGroup,
                         })),
+                        ...(hiitEntry?.hiitPlan
+                          ? { hiit: hiitEntry.hiitPlan,
+                              hiit_index: entries.indexOf(hiitEntry) } : {}),
                       })
                       setSavingTemplate(false)
                       setTemplateSaved(`已保存模板「${templateName.trim()}」——训练页可随时开始`)
@@ -479,6 +560,7 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
   onPickReplace: () => void; onRemove: () => void
 }) {
   const logSet = useApp((s) => s.logSet)
+  const updateEntry = useApp((s) => s.updateEntry)
   const removeLastSet = useApp((s) => s.removeLastSet)
   const startRest = useApp((s) => s.startRest)
   const setEntryGroup = useApp((s) => s.setEntryGroup)
@@ -515,9 +597,11 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
               <BookOpen size={15} /> 教学
             </Link>
           )}
-          <button className="btn-plain" onClick={onPickReplace}>
-            <Repeat2 size={15} /> 替换
-          </button>
+          {(!entry.activity || entry.activity === 'strength') && (
+            <button className="btn-plain" onClick={onPickReplace}>
+              <Repeat2 size={15} /> 替换
+            </button>
+          )}
           {isFree && (
             <button className="btn-plain !text-red-500" onClick={onRemove} aria-label="移除动作">
               移除
@@ -525,19 +609,23 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 px-4 pb-2.5" aria-label="超级组分组">
-        <span className="text-2xs text-muted">超级组</span>
-        {([null, 'A', 'B', 'C'] as const).map((g) => (
-          <button key={g ?? 'none'} onClick={() => setEntryGroup(idx, g ?? undefined)}
-                  className={`tag min-h-7 px-2 transition-colors ${
-                    (entry.supersetGroup ?? null) === g
-                      ? 'bg-night text-white'
-                      : 'border border-line bg-surface text-muted'}`}>
-            {g ?? '无'}
-          </button>
-        ))}
-      </div>
-      <SupersetBanner idx={idx} entry={entry} />
+      {(!entry.activity || entry.activity === 'strength') && (
+        <>
+          <div className="flex items-center gap-1.5 px-4 pb-2.5" aria-label="超级组分组">
+            <span className="text-2xs text-muted">超级组</span>
+            {([null, 'A', 'B', 'C'] as const).map((g) => (
+              <button key={g ?? 'none'} onClick={() => setEntryGroup(idx, g ?? undefined)}
+                      className={`tag min-h-7 px-2 transition-colors ${
+                        (entry.supersetGroup ?? null) === g
+                          ? 'bg-night text-white'
+                          : 'border border-line bg-surface text-muted'}`}>
+                {g ?? '无'}
+              </button>
+            ))}
+          </div>
+          <SupersetBanner idx={idx} entry={entry} />
+        </>
+      )}
 
       {/* 已记录组 */}
       {entry.logged.length > 0 && (
@@ -573,14 +661,24 @@ function ExerciseBlock({ idx, entry, isFree, onPickReplace, onRemove }: {
         </p>
       )}
 
-      <SetForm measurement={entry.measurement || 'weight_reps'}
-               onDone={(s) => { logSet(idx, s); if (!s.warmup) startRest() }}
-               onUndo={() => removeLastSet(idx)}
-               canUndo={entry.logged.length > 0}
-               rpeOpen={rpeOpen} setRpeOpen={setRpeOpen}
-               suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined}
-               draftIdx={idx} initialDraft={drafts[idx]}
-               lastLogged={entry.logged.filter((l) => !l.warmup).slice(-1)[0]} />
+      {/* P5-B：有氧/HIIT 条目渲染执行器（无逐组输入） */}
+      {entry.activity === 'cardio' ? (
+        <CardioTimer idx={idx} entry={entry}
+                     onUpdate={(patch) => updateEntry(idx, patch)} onLog={logSet}
+                     onUndo={removeLastSet} />
+      ) : entry.activity === 'hiit' ? (
+        <HiitRunner idx={idx} entry={entry}
+                    onUpdate={(patch) => updateEntry(idx, patch)} onLog={logSet} />
+      ) : (
+        <SetForm measurement={entry.measurement || 'weight_reps'}
+                 onDone={(s) => { logSet(idx, s); if (!s.warmup) startRest() }}
+                 onUndo={() => removeLastSet(idx)}
+                 canUndo={entry.logged.length > 0}
+                 rpeOpen={rpeOpen} setRpeOpen={setRpeOpen}
+                 suggestWeight={prevWeight} suggestReps={Number(entry.target.reps) || undefined}
+                 draftIdx={idx} initialDraft={drafts[idx]}
+                 lastLogged={entry.logged.filter((l) => !l.warmup).slice(-1)[0]} />
+      )}
     </div>
   )
 }

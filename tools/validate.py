@@ -18,7 +18,7 @@ REQUIRED = {
     "substitutes": list, "status": str,
 }
 PATTERNS = {"squat", "hinge", "lunge", "h_push", "v_push", "h_pull", "v_pull",
-            "isolation", "core", "carry"}
+            "isolation", "core", "carry", "cardio"}  # P5-B：有氧动作类别
 LEVELS = {"beginner", "intermediate", "advanced"}
 JOINTS = {"knee", "lumbar", "shoulder", "wrist"}
 

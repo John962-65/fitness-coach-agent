@@ -1,0 +1,20 @@
+id: stair_climbing
+name: 爬楼梯
+aliases: [爬楼, 楼梯机]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: ['quads', 'glutes']
+equipment: ['bodyweight', 'stair_machine']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: duration
+status: approved
+_provenance:
+  note: 通用有氧动作定义

@@ -1,0 +1,20 @@
+id: high_knees
+name: 高抬腿
+aliases: [高抬腿跑]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: ['quads']
+equipment: ['bodyweight']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: duration
+status: approved
+_provenance:
+  note: 通用有氧/HIIT 动作定义

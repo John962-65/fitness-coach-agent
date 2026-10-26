@@ -1,0 +1,20 @@
+id: cycling
+name: 骑行
+aliases: [骑车, 动感单车, 自行车]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: []
+equipment: ['stationary_bike', 'bicycle']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: distance_time
+status: approved
+_provenance:
+  note: 通用有氧动作定义

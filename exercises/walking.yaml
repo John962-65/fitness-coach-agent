@@ -1,0 +1,20 @@
+id: walking
+name: 快走
+aliases: [健走, 散步快走]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: []
+equipment: ['bodyweight']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: low
+substitutes: []
+track_e1rm: false
+measurement: distance_time
+status: approved
+_provenance:
+  note: 通用有氧动作定义

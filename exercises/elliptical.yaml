@@ -1,0 +1,20 @@
+id: elliptical
+name: 椭圆机
+aliases: [太空漫步机]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: []
+equipment: ['elliptical_machine']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 0, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: duration        # 椭圆机距离意义弱：允许只记时间
+status: approved
+_provenance:
+  note: 通用有氧动作定义

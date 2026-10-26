@@ -101,11 +101,30 @@ def period_summary(db, user_id: str, days: int = 30) -> dict:
     by_muscle: dict[str, int] = {}
     durations: list[float] = []
     session_dates: set[str] = set()
+    # P5-B：有氧/间歇分口径统计（不并入力量容量）
+    cardio_seconds = 0.0
+    cardio_distance_m = 0.0
+    interval_seconds = 0
     for row, data in _load_training_rows(db, user_id, since=since):
         sessions += 1
         session_dates.add(session_local_date(row["created_at"], data))
         stamps: list[str] = []
         for doc, log in _iter_working_sets(db, user_id, data):
+            if doc is not None and doc.get("activity") == "cardio":
+                # 有氧：只累计时间/距离，不计力量组数与容量
+                cardio_seconds += float(log.get("duration_seconds") or 0)
+                cardio_distance_m += float(log.get("distance_m") or 0)
+                h = log.get("hiit")
+                if isinstance(h, dict):
+                    interval_seconds += int(h.get("work_seconds_done") or 0) \
+                        + int(h.get("rest_seconds_done") or 0)
+                continue
+            hiit = log.get("hiit")
+            if isinstance(hiit, dict):
+                # 非 cardio 动作承载的 HIIT（如力量动作间歇）：按间歇口径
+                interval_seconds += int(hiit.get("work_seconds_done") or 0) \
+                    + int(hiit.get("rest_seconds_done") or 0)
+                continue
             working_sets += 1
             volume += set_volume(log)
             muscle = (doc.get("primary") or ["other"])[0] if doc else "other"
@@ -124,4 +143,7 @@ def period_summary(db, user_id: str, days: int = 30) -> dict:
         "volume": round(volume),
         "by_muscle": dict(sorted(by_muscle.items(), key=lambda kv: -kv[1])),
         "avg_duration_min": (round(sum(durations) / len(durations)) if durations else None),
+        "cardio_seconds": round(cardio_seconds),
+        "cardio_distance_m": round(cardio_distance_m),
+        "interval_seconds": interval_seconds,
     }

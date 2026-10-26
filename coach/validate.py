@@ -206,12 +206,73 @@ def coerce_checkin(type_: str, data) -> tuple[dict, list[str]]:
                                 s["segments"] = clean_segs
                         else:
                             s.pop("segments", None)
+                        # P5-B：HIIT 元数据（可选；非法字段剔除不炸整条）
+                        if isinstance(s.get("hiit"), dict):
+                            h = s["hiit"]
+                            clean_h = {}
+                            if isinstance(h.get("name"), str) and h["name"].strip():
+                                clean_h["name"] = h["name"][:80]
+                            blocks = []
+                            if isinstance(h.get("blocks"), list):
+                                for b in h["blocks"][:12]:
+                                    if not isinstance(b, dict):
+                                        continue
+                                    nb = {"name": str(b.get("name") or "")[:40]}
+                                    if b.get("exercise_id"):
+                                        nb["exercise_id"] = str(b["exercise_id"])[:60]
+                                    for k in ("work_seconds", "rest_seconds", "rounds"):
+                                        if b.get(k) is not None:
+                                            n = _to_number(b[k])
+                                            cap = 999 if k == "rounds" else 86400
+                                            if (n is not None and 0 <= n <= cap
+                                                    and float(n).is_integer()):
+                                                nb[k] = int(n)
+                                    if nb.get("work_seconds") and nb["name"]:
+                                        blocks.append(nb)
+                            if blocks:
+                                clean_h["blocks"] = blocks
+                                for key, lo, hi_cap in (
+                                        ("planned_rounds", 0, 999),
+                                        ("completed_rounds", 0, 999),
+                                        ("work_seconds_done", 0, 86400),
+                                        ("rest_seconds_done", 0, 86400)):
+                                    if h.get(key) is not None:
+                                        n = _to_number(h[key])
+                                        if (n is not None and lo <= n <= hi_cap
+                                                and float(n).is_integer()):
+                                            clean_h[key] = int(n)
+                                if isinstance(h.get("skipped"), list):
+                                    clean_skipped = []
+                                    for x in h["skipped"][:12000]:
+                                        if not isinstance(x, dict):
+                                            continue
+                                        block = _to_number(x.get("block", 0))
+                                        round_ = _to_number(x.get("round", 0))
+                                        if (block is None or round_ is None
+                                                or not float(block).is_integer()
+                                                or not float(round_).is_integer()
+                                                or not 0 <= block < 12
+                                                or not 1 <= round_ <= 999):
+                                            continue
+                                        clean_skipped.append(
+                                            {"block": int(block), "round": int(round_)})
+                                    clean_h["skipped"] = clean_skipped
+                                clean_h["ended_early"] = bool(h.get("ended_early"))
+                                if h.get("end_reason"):
+                                    clean_h["end_reason"] = str(h["end_reason"])[:200]
+                            s["hiit"] = clean_h if clean_h else None
+                            if s["hiit"] is None:
+                                s.pop("hiit", None)
+                        elif s.get("hiit") is not None:
+                            s.pop("hiit", None)
                         if bad:
                             continue
                         # M6.4-A.1：按记录类型校验必填字段——缺本质量字段的组剔除，
                         # 不允许"丢字段后继续入库"（数据可能来自离线恢复/API/导入）
                         t = s.get("type") or "weight_reps"
-                        if t == "duration" and not s.get("duration_seconds"):
+                        if (t == "duration"
+                                and (s.get("duration_seconds") is None
+                                     or (not s.get("duration_seconds") and not s.get("hiit")))):
                             warnings.append(f"{ex['name']} 某组时长记录缺少时长，该组剔除")
                             continue
                         if t == "distance_time" and (not s.get("distance_m")

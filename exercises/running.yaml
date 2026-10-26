@@ -1,0 +1,20 @@
+id: running
+name: 跑步
+aliases: [跑步机, 慢跑, 户外跑]
+activity: cardio            # P5-B：有氧动作标注（统计分流依据，非力量）
+pattern: cardio
+primary: ['cardio']
+secondary: []
+equipment: ['bodyweight', 'treadmill']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 1, shoulder: 0, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: distance_time   # 主口径=距离+用时；允许只记时间（缺 distance）
+status: approved
+_provenance:
+  note: 通用有氧动作定义（无教学媒体依赖）

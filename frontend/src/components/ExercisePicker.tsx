@@ -12,10 +12,11 @@ const MUSCLE_LABEL: Record<string, string> = {
 }
 
 // 动作选择器：搜索 + 肌群筛选。选择结果只给官方名，校验在后端。
-export default function ExercisePicker({ onPick, onClose, uid }: {
+export default function ExercisePicker({ onPick, onClose, uid, cardioOnly }: {
   onPick: (ex: ExerciseSummary) => void
   onClose: () => void
   uid?: string
+  cardioOnly?: boolean   // P5-B：仅显示有氧动作（activity=cardio）
 }) {
   const [q, setQ] = useState('')
   const [muscle, setMuscle] = useState('')
@@ -54,7 +55,8 @@ export default function ExercisePicker({ onPick, onClose, uid }: {
       {!items && !error && <Spinner />}
       {items?.length === 0 && <Empty title="没有匹配的动作">换个关键词试试。</Empty>}
       <ul className="rows -mx-4">
-        {items?.map((ex) => (
+        {items?.filter((ex) => (cardioOnly ? ex.activity === 'cardio' : true))
+          .map((ex) => (
           <li key={ex.id}>
             <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-canvas"
                     onClick={() => { onPick({ ...ex, measurement: ex.measurement }); onClose() }}>

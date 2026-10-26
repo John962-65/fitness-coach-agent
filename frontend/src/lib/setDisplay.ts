@@ -9,6 +9,9 @@ export function formatSetRecord(l: { type?: SetLog['type']; weight_kg?: number |
   const METHOD_LABEL: Record<string, string> = {
     drop_set: '递减', rest_pause: '休息暂停', unilateral: '单侧',
   }
+  // P5-B：HIIT 记录展示（计划/完成轮次与实际时长）
+  const hiit = (l as { hiit?: { completed_rounds?: number; planned_rounds?: number
+                                work_seconds_done?: number; ended_early?: boolean } }).hiit
   const segText = (l.method && Array.isArray(l.segments) && l.segments.length)
     ? l.segments.map((sg) => {
         const seg = sg as Record<string, number | string>
@@ -40,6 +43,12 @@ export function formatSetRecord(l: { type?: SetLog['type']; weight_kg?: number |
   if (segText) return `${METHOD_LABEL[l.method ?? ''] ?? ''}：${segText}`
   if (l.method && l.method !== 'straight_set') {
     return `${METHOD_LABEL[l.method]} · ${base}`
+  }
+  if (hiit) {
+    const rounds = `${hiit.completed_rounds ?? 0}/${hiit.planned_rounds ?? 0} 轮`
+    const work = hiit.work_seconds_done != null
+      ? ` · 工作 ${Math.floor(hiit.work_seconds_done / 60)}分${hiit.work_seconds_done % 60}秒` : ''
+    return `间歇 · ${rounds}${work}${hiit.ended_early ? ' · 提前结束' : ''}`
   }
   return base
 }

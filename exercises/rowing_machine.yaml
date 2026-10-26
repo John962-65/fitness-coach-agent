@@ -1,0 +1,20 @@
+id: rowing_machine
+name: 划船机
+aliases: [赛艇测功仪]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: ['lats']
+equipment: ['rowing_erg']
+location: ['gym', 'home']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 1, lumbar: 2, shoulder: 1, wrist: 0}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: distance_time
+status: approved
+_provenance:
+  note: 通用有氧动作定义

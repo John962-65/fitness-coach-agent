@@ -1,0 +1,20 @@
+id: jump_rope
+name: 跳绳
+aliases: [跳绳训练]
+activity: cardio
+pattern: cardio
+primary: ['cardio']
+secondary: ['calves']
+equipment: ['jump_rope']
+location: ['gym', 'home', 'outdoor']
+level_min: beginner
+skill: low
+laterality: bilateral
+joint_stress: {knee: 2, lumbar: 0, shoulder: 1, wrist: 1}
+fatigue: medium
+substitutes: []
+track_e1rm: false
+measurement: duration        # 允许按时间或次数记录（次数用 reps 字段可选）
+status: approved
+_provenance:
+  note: 通用有氧动作定义

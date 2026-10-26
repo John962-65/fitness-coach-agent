@@ -25,8 +25,8 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
-from .exercise_metrics import (entry_set_type, exercise_sessions,
-                               session_local_date)
+from .exercise_metrics import (entry_identity, entry_set_type,
+                               exercise_sessions, session_local_date)
 from .training_calendar import period_summary
 
 MAX_WINDOW_DAYS = 400  # 与 training_calendar._MAX_SCAN_DAYS 对齐
@@ -411,6 +411,7 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
             "observed" if value is not None else "insufficient"))
 
     facts.extend(_plan_adherence_facts(db, user_id, window, start, end))
+    facts.extend(_cardio_interval_facts(db, user_id, window, start, end))
     return {
         "user_id": user_id,
         "window": window,
@@ -420,6 +421,116 @@ def get_training_facts(db, user_id: str, window_days: int = 30,
         "caliber": "与「我的表现」（exercise_metrics）、「周期统计」"
                    "（period_summary）同源同口径；e1RM 为 Epley 估算",
     }
+
+
+def _cardio_interval_facts(db, user_id: str, window: dict,
+                           start: str, end: str) -> list[dict]:
+    """P5-B：有氧与间歇训练事实（与力量同纪律：来源链/口径/质量说明）。
+
+    有氧判定 = 记录所属动作 activity=='cardio'（动作库标注，非文本猜测）；
+    间歇判定 = set_log 携带 hiit 元数据。
+    不生成力量容量，不生成 e1RM；不编造卡路里。
+    """
+    from .. import exercise_service
+    cardio_sessions: set[int] = set()
+    cardio_seconds = 0.0
+    cardio_distance = 0.0
+    cardio_srcs: dict[int, list[str]] = {}
+    interval_sessions: set[int] = set()
+    planned_rounds = 0
+    completed_rounds = 0
+    work_seconds = 0
+    rest_seconds = 0
+    interval_srcs: list[str] = []
+    skipped_count = 0
+    ended_early = 0
+    for row, data in _iter_training_rows(db, user_id):
+        local = session_local_date(row["created_at"], data)
+        if not (start <= local <= end):
+            continue
+        src = _src(row["id"], row["revision"])
+        has_cardio = False
+        has_interval = False
+        for ex in data.get("exercises") or []:
+            if not isinstance(ex, dict):
+                continue
+            ex_id = entry_identity(db, user_id, ex)
+            doc = exercise_service.get_exercise(db, user_id, ex_id) or {} \
+                if ex_id else {}
+            is_cardio = bool(doc.get("activity") == "cardio")
+            for st in ex.get("set_logs") or []:
+                if not isinstance(st, dict):
+                    continue
+                h = st.get("hiit")
+                if isinstance(h, dict):
+                    has_interval = True
+                    completed_rounds += int(h.get("completed_rounds") or 0)
+                    planned_rounds += int(h.get("planned_rounds") or 0)
+                    work_seconds += int(h.get("work_seconds_done") or 0)
+                    rest_seconds += int(h.get("rest_seconds_done") or 0)
+                    skipped_count += len(h.get("skipped") or [])
+                    if h.get("ended_early"):
+                        ended_early += 1
+                if is_cardio:
+                    secs = st.get("duration_seconds")
+                    if secs:
+                        cardio_seconds += float(secs)
+                        has_cardio = True
+                    dist = st.get("distance_m")
+                    if dist:
+                        cardio_distance += float(dist)
+                        has_cardio = True
+        if has_cardio:
+            cardio_sessions.add(row["id"])
+            cardio_srcs[row["id"]] = [src]
+        if has_interval:
+            interval_sessions.add(row["id"])
+            interval_srcs.append(src)
+
+    w = window
+    sc = w["start"].replace("-", "")
+    ec = w["end"].replace("-", "")
+    out: list[dict] = []
+    all_c_srcs = sorted({x for v in cardio_srcs.values() for x in v})
+    out.append(_fact(
+        f"cardio-sessions-{sc}-{ec}", "cardio-sessions", len(cardio_sessions),
+        "次", "cardio", w, all_c_srcs, "sessions_with_cardio_activity_records",
+        "observed" if cardio_sessions else "insufficient",
+        note="有氧判定=动作库 activity=='cardio'（含混合会话中的有氧条目）"))
+    out.append(_fact(
+        f"cardio-total-duration-{sc}-{ec}", "cardio-total-duration",
+        round(cardio_seconds / 60, 1), "分钟", "cardio", w, all_c_srcs,
+        "sum_duration_seconds_cardio_records",
+        "observed" if cardio_seconds else "insufficient",
+        note="仅累计有氧动作的 duration 记录；不含休息等待" if cardio_seconds else None))
+    out.append(_fact(
+        f"cardio-total-distance-{sc}-{ec}", "cardio-total-distance",
+        round(cardio_distance / 1000, 2), "公里", "cardio", w, all_c_srcs,
+        "sum_distance_m_cardio_records",
+        "observed" if cardio_distance else "insufficient",
+        note="仅统计填写了距离的记录；无距离的有氧（椭圆机等）不计入" if cardio_distance else None))
+    out.append(_fact(
+        f"interval-sessions-{sc}-{ec}", "interval-sessions",
+        len(interval_sessions), "次", "hiit", w, interval_srcs,
+        "sessions_with_hiit_metadata",
+        "observed" if interval_sessions else "insufficient"))
+    if interval_sessions:
+        out.append(_fact(
+            f"interval-planned-rounds-{sc}-{ec}", "interval-planned-rounds",
+            planned_rounds, "轮", "hiit", w, interval_srcs,
+            "sum_hiit_planned_rounds", "observed"))
+        out.append(_fact(
+            f"interval-completed-rounds-{sc}-{ec}", "interval-completed-rounds",
+            completed_rounds, "轮", "hiit", w, interval_srcs,
+            "sum_hiit_completed_rounds", "observed",
+            skipped=skipped_count, ended_early=ended_early,
+            note="实际完成轮次；跳过/提前结束按真实执行计"))
+        out.append(_fact(
+            f"interval-work-seconds-{sc}-{ec}", "interval-work-seconds",
+            work_seconds, "秒", "hiit", w, interval_srcs,
+            "sum_hiit_work_seconds_done", "observed", rest_seconds=rest_seconds,
+            note="工作/休息时长分别累计；不折算力量容量"))
+    return out
 
 
 def exercise_progress(db, user_id: str, exercise_id: str,

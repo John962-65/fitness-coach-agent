@@ -13,6 +13,10 @@ export interface SessionEntry {
   exercise_id: string
   name: string
   measurement?: import('./types').MeasurementType  // 记录类型（缺省 weight_reps）
+  activity?: import('./types').ActivityMode        // P5-B：活动类别
+  cardio?: import('./types').SessionEntryCardio    // P5-B：有氧执行状态
+  hiitPlan?: import('./types').HiitPlan            // P5-B：HIIT 编排
+  hiitRun?: import('./types').HiitRun              // P5-B：HIIT 执行状态
   supersetGroup?: string                           // M6.4-A：超级组分组（A/B/C…）
   target: { sets: number | string; reps: number | string; weight: number | null }
   note?: string
@@ -67,7 +71,7 @@ const today = () => {
 }
 
 const hasProgress = (s: WorkoutSession | null) =>
-  !!s && s.entries.some((e) => e.logged.length > 0)
+  !!s && s.entries.some((e) => e.logged.length > 0 || !!e.cardio || !!e.hiitRun)
 
 /** 兼容旧持久化数据：补 id / mode / drafts（升级前创建的进行中会话） */
 function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
@@ -90,6 +94,7 @@ interface AppState {
   startFreeSession: (opts?: { label?: string; templateId?: number }) =>
     { kept: boolean; resumed?: boolean }
   addFreeExercise: (entry: SessionEntry) => void
+  updateEntry: (entryIdx: number, patch: Partial<SessionEntry>) => void  // P5-B：有氧/HIIT 状态写入
   setEntryGroup: (entryIdx: number, group?: string) => void
   removeEntry: (entryIdx: number) => void
   logSet: (entryIdx: number, s: LoggedSet) => void
@@ -161,6 +166,11 @@ export const useApp = create<AppState>()((set) => ({
   addFreeExercise: (entry) =>
     set((st) => (st.session && st.session.mode === 'free'
       ? { session: { ...st.session, entries: [...st.session.entries, entry] } } : st)),
+  updateEntry: (entryIdx, patch) =>
+    set((st) => (st.session
+      ? { session: { ...st.session, entries: st.session.entries.map((e, i) =>
+            i === entryIdx ? { ...e, ...patch } : e) } }
+      : st)),
   setEntryGroup: (entryIdx, group) =>
     set((st) => (st.session
       ? { session: { ...st.session, entries: st.session.entries.map((e, i) =>
