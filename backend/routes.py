@@ -230,6 +230,65 @@ def register_routes(app) -> None:
         return {"deleted": True, "user": uid, "rows": counts,
                 "note": "该用户的全部数据已删除；媒体文件由部署级清理回收"}
 
+    @api.post("/users/{uid}/device-import/preview")
+    def device_import_preview(uid: str, request: Request,
+                              payload: dict = Body(...)):
+        """P7-C：设备数据文件导入预览（CSV/JSON；只读指标白名单）。"""
+        from coach.data_transfer import device_import
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            out = device_import.preview_device_import(
+                db, uid, payload.get("content"),
+                str(payload.get("format") or "csv"))
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+        out.pop("_rows", None)
+        return out
+
+    @api.post("/users/{uid}/device-import/apply")
+    def device_import_apply(uid: str, request: Request,
+                            payload: dict = Body(...)):
+        from coach.data_transfer import device_import
+        db = request.app.state.db
+        _user_profile(db, uid)
+        if payload.get("confirmed") is not True:
+            raise HTTPException(status_code=422,
+                                detail={"error": "导入需要先预览并确认"
+                                        "（confirmed=true）"})
+        try:
+            return device_import.apply_device_import(
+                db, uid, payload.get("content"),
+                str(payload.get("format") or "csv"))
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
+    @api.get("/users/{uid}/device-import/records")
+    def device_import_records(uid: str, request: Request,
+                              metric: str | None = Query(None),
+                              limit: int = Query(200, ge=1, le=1000)):
+        db = request.app.state.db
+        _user_profile(db, uid)
+        return {"records": db.list_imported_device_records(uid, metric, limit)}
+
+    @api.delete("/users/{uid}/device-import/records")
+    def device_import_delete(uid: str, request: Request,
+                             payload: dict = Body(...)):
+        """撤销授权数据：按来源平台删除已导入记录。"""
+        db = request.app.state.db
+        _user_profile(db, uid)
+        platform = str(payload.get("source_platform") or "")
+        if not platform:
+            raise HTTPException(status_code=422,
+                                detail={"error": "source_platform 必填"})
+        cur = db.conn.execute(
+            "DELETE FROM imported_device_records WHERE user_id=? AND"
+            " source_platform=?", (uid, platform))
+        db.conn.commit()
+        return {"deleted": cur.rowcount, "source_platform": platform}
+
     @api.get("/users/{uid}/profile")
     def get_profile(uid: str, request: Request):
         db = request.app.state.db

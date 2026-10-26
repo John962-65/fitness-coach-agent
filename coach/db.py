@@ -467,6 +467,22 @@ CREATE TABLE IF NOT EXISTS symptom_observations (
     updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_symptom_obs_episode ON symptom_observations(episode_id);
+CREATE TABLE IF NOT EXISTS imported_device_records (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT NOT NULL,
+    metric      TEXT NOT NULL,          -- weight/sleep_hours/heart_rate/exercise_minutes/steps/distance
+    value       REAL NOT NULL,
+    unit        TEXT NOT NULL,
+    measured_at TEXT NOT NULL,
+    source_platform TEXT NOT NULL,      -- healthkit / health_connect / csv:xxx
+    source_device   TEXT,
+    source_record_id TEXT NOT NULL,     -- 平台记录 ID（去重键）
+    measurement_method TEXT,
+    imported_at TEXT NOT NULL,
+    UNIQUE(user_id, source_platform, source_record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_imported_device_user ON
+    imported_device_records(user_id, metric, measured_at);
 CREATE TABLE IF NOT EXISTS training_restrictions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     TEXT NOT NULL,
@@ -627,6 +643,30 @@ class Database:
         self.conn.commit()
 
     # ---- users ----
+    def upsert_imported_device_record(self, user_id: str, r: dict) -> bool:
+        """P7-C 设备导入（只读观察数据，独立存储，不与手动记录混算）。"""
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO imported_device_records(user_id, metric,"
+            " value, unit, measured_at, source_platform, source_device,"
+            " source_record_id, measurement_method, imported_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (user_id, r["metric"], r["value"], r["unit"], r["measured_at"],
+             r["source_platform"], r.get("source_device"),
+             r["source_record_id"], r.get("measurement_method"), _now()))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def list_imported_device_records(self, user_id: str, metric: str | None = None,
+                                     limit: int = 200) -> list[dict]:
+        sql = ("SELECT * FROM imported_device_records WHERE user_id=?")
+        params: list = [user_id]
+        if metric:
+            sql += " AND metric=?"
+            params.append(metric)
+        return [dict(r) for r in self.conn.execute(
+            sql + " ORDER BY measured_at DESC LIMIT ?",
+            params + [limit]).fetchall()]
+
     def delete_user(self, user_id: str) -> dict:
         """P7-B 账户删除：删除该用户在所有带 user_id 列的表中的数据。
 
