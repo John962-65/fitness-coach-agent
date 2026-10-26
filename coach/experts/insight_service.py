@@ -69,6 +69,18 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
         if str(current) != str(stored):
             return (f"{local_date} 的恢复记录已变化，该分析基于旧数据，"
                     "请重新分析")
+    for rid, stored in (rev.get("recovery_records") or {}).items():
+        # P5-C2：下一次训练解读按恢复记录修订号失效（用户更正恢复打卡 → 失效）
+        row = db.conn.execute(
+            "SELECT (SELECT COUNT(*) FROM recovery_revisions rr"
+            " WHERE rr.recovery_id=recovery_checkins.id) AS rev"
+            " FROM recovery_checkins WHERE user_id=? AND id=?",
+            (user_id, int(rid))).fetchone()
+        if not row:
+            return f"引用的恢复记录 #{rid} 已不存在"
+        if str(row["rev"]) != str(stored):
+            return (f"引用的恢复记录 #{rid} 已更新（修订 {stored} → {row['rev']}），"
+                    "该分析基于旧数据，请重新分析")
     if "motion" in rev:
         current = db.motion_profile_version(user_id)
         if str(current) != str(rev["motion"]):
@@ -99,6 +111,17 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
                 and targets.get("updated_at") is not None:
             # 目标变更不影响「已记录摄入量」事实，只影响目标比较——保守失效
             return "营养目标已更新，目标比较基于旧目标，请重新分析"
+    if "equipment" in rev:
+        # P5-C2：器械/地点配置变化 → 候选可执行性必须重新检查
+        from ..equipment import equipment_version
+        if str(equipment_version(db, user_id)) != str(rev["equipment"]):
+            return ("训练地点或器械配置已变化，候选可执行性需重新检查，"
+                    "请重新分析")
+    if "rules_version" in rev:
+        from ..training_progression import progression_service
+        if str(rev["rules_version"]) != \
+                progression_service.PROGRESSION_RULES_VERSION:
+            return "进阶规则版本已更新，旧候选依据不再有效，请重新分析"
     if insight.get("expires_at") and insight["expires_at"] <= _now():
         return "分析已过有效期（数据窗口久远）"
     return None

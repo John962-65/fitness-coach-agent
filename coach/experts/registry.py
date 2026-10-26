@@ -23,6 +23,7 @@ TRIGGERS = ("WorkoutSaved", "MealRecorded", "RecoveryRecorded",
 # 任务类型 → 执行器（task_dispatcher 按表派发；确定性函数，不调 LLM）
 TASK_TYPES: dict[str, str] = {
     "post-workout-review": "coach.experts.training_science.analyze_post_workout",
+    "next-training-review": "coach.experts.training_science.analyze_next_training",
     "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
     "recovery-review": "coach.recovery.recovery_analysis.analyze_recovery",
     "symptom-review": "coach.rehab.analysis.analyze_symptom_review",
@@ -38,7 +39,8 @@ SPECIALISTS: dict[str, dict] = {
         "workbench": "ready",
         "workbench_path": "/experts/training",
         "triggers": {"WorkoutSaved": ["post-workout-review"],
-                     "UserRequested": ["post-workout-review"]},
+                     "UserRequested": ["post-workout-review",
+                                       "next-training-review"]},
     },
     "nutrition": {
         "label": "营养顾问",

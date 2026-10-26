@@ -1,9 +1,79 @@
 # P5-C 训练进阶与下一次训练建议
 
-> 基线：`e5cc1bf` ｜ 日期：2026-10-26
-> 当前状态：**P5-C1.1 候选引擎收尾已交付；P5-C2 专家服务集成进行中**
+> 基线：`0b222bc`（P5-C1.1）｜ 日期：2026-10-27
+> 当前状态：**P5-C2 专家服务集成与训练页面建议面板已交付；P5-C3 未启动**
 
-## 0. P5-C1.1（本轮）：结构可比与目标达成情况分离
+## 0.1 P5-C2（本轮）：候选引擎接入训练页面与训练科学顾问
+
+不新增 Agent、不重建训练系统；P5-C1 确定性候选成为唯一可执行数值来源。
+
+### 后端
+
+1. **只读 API**：`GET /users/{uid}/training-progression/{exercise_id}`
+   （query：`plan_id / plan_version / planned_day / index /
+   planned_exercise_id`）。返回 `rules_version / context / options /
+   recommendations_allowed / blocked_reasons / source_revisions` +
+   `insight`（最近一次同动作 next-training-review 的状态，读取时懒失效）。
+   只读：不建训练记录、不改计划；所有读取按 user_id 过滤，伪造他人
+   计划上下文只会得到"过期/不存在"。`options[]` 上按差异附加
+   `plan_proposal`（与当前处方有实际差异才有；是长期提案操作的
+   唯一来源）。
+2. **next-training-review 任务**：registry 新增任务类型（training_science），
+   触发 `UserRequested`（训练页面打开只读确定性候选，不调 LLM；用户点
+   "请求专业解释"才生成）。分析器 `analyze_next_training` 确定性打包：
+   - 解释候选、适用条件、取舍比较、数据不足标注；全部数值来自
+     P5-C 上下文（同源口径，构造保证不产生候选之外的可执行数值、
+     不编造历史、e1RM 标注"估算"）；
+   - findings 覆盖最近表现 / 目标达成分类 / 逐候选解释 / 数据缺口 /
+     恢复自报（独立事实，不做过度训练推断）；evidence_validator 复核；
+   - `source_revision` 记录 checkins 修订、计划版本、恢复记录修订、
+     限制版本、器械/地点指纹（新 `equipment_version()`）与进阶规则版本；
+   - 方案镜像确定性候选：有 `plan_proposal` 才带 `proposal_hint`。
+3. **洞察生命周期**：`_revision_drift` 新增恢复记录修订、器械/地点指纹、
+   规则版本三类失效检查（与既有 checkins/计划/限制失效并列）——
+   用户更正历史训练、修改计划、切换地点/器械、规则升级都会使旧洞察
+   失效；`list_expert_insights` 补齐 `input_refs` 列读取。
+4. `POST /users/{uid}/experts/analysis` 支持
+   `task_type=next-training-review`（必填 `params.exercise_id`）。
+
+### 前端
+
+1. **建议面板**（`NextTrainingAdvice.tsx` + `ProgressionOptionCard.tsx` +
+   `ProgressionEvidence.tsx`）：每个动作卡新增"查看下一次训练建议"；
+   打开时实时拉取确定性候选（不依赖前端缓存）；展示上次实际完成、
+   数据状态（结构可比/达成分类/恢复自报/生效限制/阻断原因）、候选方案
+   （含"查看依据与限制"展开：真实事实、可追溯来源、档位来源、限制、
+   取舍）。
+2. **仅本次采用**：store 新增 `applySessionTarget(entryIdx, targets,
+   optionId)` + `revertSessionTarget(entryIdx)`。只写 `entry.target`
+   （+`session.appliedTargets` 快照）；不碰已记录组、组法草稿、超级组、
+   休息计时器、有氧/HIIT 执行状态；`compatibleTargetPatch()` 把不兼容
+   字段剔除（复杂组不接受普通负重覆盖、有氧/HIIT/时长/距离不接受
+   次数/负重——这些候选只展示方向）；随会话持久化（刷新恢复）；
+   仅本次，不改长期计划。
+3. **长期修改**：面板内"申请修改长期计划"只对该候选的
+   `plan_proposal` 开放 → `ChangeProposal`（stage_ai）→ 展示修改前后
+   差异 → 用户明确确认 → 服务端确认时重新校验计划版本与安全状态。
+   用户只查看建议时不创建任何提案。
+4. AI 解释按需请求（UserRequested），面板显示状态徽标（有效/已读/
+   已失效+原因）、置信度、发现与限制；失效可"重新分析"；忽略面板时
+   同步忽略有效洞察。
+
+### 浏览器 E2E（真实浏览器交互；截图在 `docs/p5c2-shots/`）
+
+| 场景 | 结果 |
+|---|---|
+| A 普通卧推 | 面板显示真实历史与候选 → 仅本次采用 → 目标改 62.5kg、已完成组 0 组不变、计划仍 v1、无提案；刷新后恢复；撤销后目标复原 |
+| B 数据不足 | 上斜卧推仅 1 次记录 → 只给维持/先完成目标次数/恢复观察，无增长伪造 |
+| C 恢复数据 | 疲劳 5/酸痛 4/睡眠 5.5h 以"独立事实，不是诊断"呈现；候选含恢复观察方向，无过度训练判定 |
+| D 安全限制 | 站姿推举受限 → 无候选方案、动作按钮全部禁用；直接调 API 修改 → 422 |
+| E 长期修改 | 加重候选 → pending 提案（计划保持 v1，差异"负重 — → 62.5kg"可见）→ 确认 → v2 生效；旧上下文候选再提交 → 422 |
+
+E2E 期间发现并修复：确认语义门会拒绝含"考虑"（候选标题原词）的确认语
+——面板确认语改为明确肯定表述；确认时计划版本已变化的旧提案被服务端
+拒绝（关键要求验证）。
+
+## 0. P5-C1.1（上一轮）：结构可比与目标达成情况分离
 
 修复三个 C1 边界，不改变候选引擎的确定性边界：
 
@@ -63,14 +133,23 @@
 
 | 文件 | 职责 |
 |---|---|
-| `coach/training_progression/context_service.py` | NextTrainingContext / 计划定位 / 恢复、安全、器械、事实来源 |
-| `coach/training_progression/comparability.py` | 记录类型、方法、左右侧、超级组、HIIT 编排和目标范围的可比性 |
-| `coach/training_progression/candidate_rules.py` | A–E 类确定性候选与分类型规则 |
-| `coach/training_progression/progression_service.py` | `get_next_training_options()` 统一入口 |
+| `coach/training_progression/context_service.py` | NextTrainingContext / 计划定位 / 恢复、安全、器械、事实来源；P5-C1.1 comparability 视图与档位来源分级 |
+| `coach/training_progression/comparability.py` | 结构可比（方法/组织/编排/左右侧/HIIT 身份签名）与目标达成分类 |
+| `coach/training_progression/candidate_rules.py` | A–E 类确定性候选与分类型规则；档位来源门控 |
+| `coach/training_progression/progression_service.py` | `get_next_training_options()` 统一入口；plan_proposal 差异提案 |
+| `coach/experts/training_science.py` | `analyze_next_training`（P5-C2 确定性解读） |
+| `coach/experts/registry.py` / `task_dispatcher.py` / `insight_service.py` | next-training-review 任务登记与版本失效 |
+| `coach/equipment.py` | `equipment_version()` 器械/地点指纹 |
+| `backend/routes.py` | `GET /users/{uid}/training-progression/{exercise_id}`；experts/analysis 扩展 |
+| `frontend/src/components/workout/NextTrainingAdvice.tsx` | 训练科学顾问建议面板 |
+| `frontend/src/components/workout/ProgressionOptionCard.tsx` | 候选方案卡 |
+| `frontend/src/components/workout/ProgressionEvidence.tsx` | 依据/限制/数据状态展示 |
+| `frontend/src/store.ts` | `applySessionTarget` / `revertSessionTarget` / `compatibleTargetPatch` |
+| `frontend/src/pages/Workout.tsx` | 动作卡建议入口与撤销 |
 | `coach/analytics/exercise_metrics.py` | C0.1 距离口径；输出复杂组/超级组/替换上下文 |
 | `coach/analytics/activity_class.py` | 纠错快照继承边界 |
-| `coach/changes.py` | P3 限制校验覆盖“编辑既有动作处方”，不能借 API 绕过 |
-| `test_p5c1.py` | 确定性候选专项 |
+| `coach/changes.py` | P3 限制校验覆盖"编辑既有动作处方"，不能借 API 绕过 |
+| `test_p5c1.py` / `test_p5c11.py` / `test_p5c2.py` | 确定性候选 / C1.1 收尾 / C2 集成专项 |
 | `test_p5b3.py` | C0.1 边界回归 |
 
 ## 4. 事实与候选契约
@@ -161,10 +240,29 @@ RPE 缺失、计划缺失、最近记录不可比等进入 `data_quality` / `lim
 ```bash
 FAKE_LLM=1 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   python3 -m pytest -q -p no:cacheprovider --confcutdir=/home/johb/fitness-coach-agent \
-  test_p5c11.py test_p5c1.py test_p5b3.py test_p5b2.py test_p3.py
+  test_p5c2.py test_p5c11.py test_p5c1.py test_p5b3.py test_p5b2.py test_p3.py
 ```
 
-当前结果：**46 passed**。全量后端 **819 passed**。
+当前结果：**59 passed**。全量后端 **832 passed**；前端 **12 files / 73
+tests passed**，TypeScript + Vite 构建通过；浏览器 E2E 场景 A–E 全部通过。
+
+`test_p5c2.py`（P5-C2 专项）覆盖：
+
+1. 只读 API 契约（含顶层 source_revisions/insight 字段）；只查看建议
+   不创建提案/洞察、计划版本不变；
+2. 用户隔离：其他用户读自己的空数据而非他人记录；未知用户/未知动作
+   404；
+3. 过期计划上下文：不给处方、给阻断原因；
+4. 康复限制：API 返回 allowed=false + 原因；直接编辑 API 422；
+5. next-training-review 镜像确定性候选（无未批准的可执行目标、提案
+   操作逐字一致、事实引用全部可核）；
+6. 生命周期：查看/忽略/重新分析；纠错历史训练 → 洞察失效（修订漂移）
+   且候选数据源版本更新；计划更新 → 失效 + 旧提案 422；训练限制变化 →
+   失效；地点切换（器械指纹）→ 失效且候选阻断；
+7. 恢复事实独立呈现（不做过度训练推断，fact_ids 可核）；
+8. HIIT 用自身指标（无 e1RM、complete-interval-plan）；
+9. 长期修改统一协议：pending 不改版本 → 确认后 v+1 生效 → 旧版本
+   重放 422；确认前计划被其他操作更新 → 提案拒绝生效。
 
 `test_p5c11.py`（P5-C1.1 专项）覆盖：
 
@@ -200,11 +298,12 @@ FAKE_LLM=1 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 
 ## 8. 已知限制 / 未完成
 
-- 本轮（P5-C1.1）未接入 `next-training-review` ExpertInsight，也没有训练
-  页面候选面板；这些属于 P5-C2。
-- PersonalTrial 轻量接入、浏览器 E2E 属于 P5-C2/C3。
+- 洞察解释与候选解释均为确定性打包（与平台其他分析器一致，不调 LLM）；
+  LLM 叙事层（复述/自由问答）仍属后续阶段。
+- 长期修改目前覆盖 `edit_set_prescription`（组数/次数/负重）；段级/结构类
+  候选提案仍属后续。
 - 器械没有用户级"实际重量档位表"；已验证来源=内置动作元数据与用户自定义
   动作的 progression 配置，历史重量差只给方向。
 - 复杂组/超级组当前只禁用普通数值加重；尚未生成段级进阶数值。
 - 数据不足、计划上下文过期、恢复缺失均如实返回限制，不自动补齐。
-- 无实体手机测试。
+- 无实体手机测试；E2E 为桌面浏览器（移动视口）验证。

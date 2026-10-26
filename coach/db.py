@@ -1797,7 +1797,8 @@ class Database:
                              status: str | None = None, limit: int = 20) -> list[dict]:
         sql = ("SELECT id, user_id, task_id, specialist, insight_type, title,"
                " summary, status, confidence, confidence_basis, generated_at,"
-               " expires_at, source_revision, read_at FROM expert_insights"
+               " expires_at, source_revision, input_refs, read_at"
+               " FROM expert_insights"
                " WHERE user_id=?")
         params: list = [user_id]
         if specialist:

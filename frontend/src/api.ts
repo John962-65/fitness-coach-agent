@@ -4,7 +4,7 @@ import type {
   ExerciseRecords, ExerciseSession, ExerciseState, ExerciseSummary, ExpertInsight,
   ExpertInsightSummary, ExpertOverview, ExpertSettings, ExpertTask, FoodItem,
   MealType, NutritionReference, NutritionSummaryBlock, NutritionTargets,
-  NutritionTrendDay, PlanOp,
+  NutritionTrendDay, PlanOp, ProgressionResult,
   BodyMeasurement, BodySummary, BodyTrend, CarePlan, EquipmentItem, LocationsResponse,
   PlanResponse, PlanRevision, PeriodSummary, Profile, Proposal, Recipe, RecoveryBrief,
   RecoveryCheckin, RecoverySummary, SubstituteResult, SymptomEpisode, TodayBrief,
@@ -255,6 +255,22 @@ export const api = {
   restorePlanVersion: (uid: string, version: number, reason: string) =>
     post<{ plan_id: number; plan_version: number; restored_from: number }>(
       `/users/${uid}/plan/revisions/${version}/restore`, { reason }),
+  // P5-C2：下一次训练确定性候选（只读；每次打开都重新拉取，不依赖缓存）
+  trainingProgression: (
+    uid: string, exerciseId: string,
+    ctx?: { planId?: number | null; planVersion?: number | null;
+            plannedDay?: string | null; index?: number | null;
+            plannedExerciseId?: string | null },
+  ) => {
+    const qs = new URLSearchParams()
+    if (ctx?.planId != null) qs.set('plan_id', String(ctx.planId))
+    if (ctx?.planVersion != null) qs.set('plan_version', String(ctx.planVersion))
+    if (ctx?.plannedDay) qs.set('planned_day', ctx.plannedDay)
+    if (ctx?.index != null) qs.set('index', String(ctx.index))
+    if (ctx?.plannedExerciseId) qs.set('planned_exercise_id', ctx.plannedExerciseId)
+    return req<ProgressionResult>(
+      `/users/${uid}/training-progression/${encodeURIComponent(exerciseId)}${qs.size ? `?${qs}` : ''}`)
+  },
   chat: (uid: string, message: string) =>
     post<{ user_id: string; reply: string }>(`/users/${uid}/chat`, { message }),
 
@@ -265,9 +281,11 @@ export const api = {
     req<ExpertSettings>(`/users/${uid}/experts/settings`),
   saveExpertSettings: (uid: string, payload: ExpertSettings) =>
     post<ExpertSettings>(`/users/${uid}/experts/settings`, payload),
-  requestAnalysis: (uid: string, specialist: string, params: Record<string, unknown>) =>
+  requestAnalysis: (uid: string, specialist: string, params: Record<string, unknown>,
+                    taskType?: string) =>
     post<{ task: ExpertTask; insight: ExpertInsight | null; error?: string }>(
-      `/users/${uid}/experts/analysis`, { specialist, params }),
+      `/users/${uid}/experts/analysis`,
+      { specialist, params, ...(taskType ? { task_type: taskType } : {}) }),
   expertTasks: (uid: string, opts: { specialist?: string; status?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(opts).filter(([, v]) => v) as [string, string][])
     return req<{ tasks: ExpertTask[] }>(

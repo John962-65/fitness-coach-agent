@@ -68,3 +68,103 @@ describe('旧训练会话兼容', () => {
     }))!.entries[0].cardio!.status).toBe('ended')
   })
 })
+
+describe('P5-C2：仅本次采用候选目标（applySessionTarget）', () => {
+  const begin = (entries: Partial<Parameters<ReturnType<
+    typeof useApp.getState>['addFreeExercise']>[0]>[] = []) => {
+    useApp.setState({ uid: 'u', session: null })
+    useApp.getState().startFreeSession()
+    for (const e of entries) {
+      useApp.getState().addFreeExercise({
+        exercise_id: 'barbell_bench_press', name: '杠铃卧推',
+        measurement: 'weight_reps',
+        target: { sets: 3, reps: '8-12', weight: 60 }, logged: [],
+        ...e,
+      } as Parameters<ReturnType<typeof useApp.getState>['addFreeExercise']>[0])
+    }
+  }
+  const entryAt = (i: number) => useApp.getState().session!.entries[i]
+
+  it('仅本次采用：目标改变、已记录组与组法/超组/计时器原样保留', () => {
+    begin([{}])
+    useApp.getState().logSet(0, { type: 'weight_reps', weight_kg: 60,
+      reps: 10, warmup: false } as never)
+    useApp.getState().setEntryGroup(0, 'A')
+    useApp.getState().setSupersetConfig('A', { rounds: 4 })
+    useApp.getState().setEntryDraft(0, { reps: '10' })
+    useApp.getState().startRest()
+
+    const restBefore = useApp.getState().restEndsAt
+    const outcome = useApp.getState().applySessionTarget(
+      0, { sets: 3, reps: '8-12', weight_kg: 62.5 }, 'consider-increase-load')
+    expect(outcome.applied).toBe(true)
+    const entry = entryAt(0)
+    expect(entry.target).toMatchObject({ sets: 3, weight: 62.5 })
+    expect(entry.logged).toHaveLength(1)
+    expect(entry.logged[0]).toMatchObject({ weight_kg: 60, reps: 10 })
+    expect(entry.supersetGroup).toBe('A')
+    expect(useApp.getState().session!.supersetConfig?.A?.rounds).toBe(4)
+    expect(useApp.getState().session!.drafts?.[0]?.reps).toBe('10')
+    expect(useApp.getState().restEndsAt).toBe(restBefore)
+    expect(useApp.getState().session!.appliedTargets?.[0]).toMatchObject(
+      { optionId: 'consider-increase-load' })
+    // 仅本次：不触碰计划溯源
+    expect(useApp.getState().session!.mode).toBe('free')
+  })
+
+  it('撤销本次调整后目标恢复原值', () => {
+    begin([{}])
+    useApp.getState().applySessionTarget(
+      0, { weight_kg: 65 }, 'consider-increase-load')
+    expect(entryAt(0).target.weight).toBe(65)
+    expect(useApp.getState().revertSessionTarget(0)).toBe(true)
+    expect(entryAt(0).target).toMatchObject({ sets: 3, reps: '8-12', weight: 60 })
+    expect(useApp.getState().session!.appliedTargets?.[0]).toBeUndefined()
+    expect(useApp.getState().revertSessionTarget(0)).toBe(false)
+  })
+
+  it('复杂组结构不接受普通负重覆盖（只展示方向）', () => {
+    begin([{}])
+    useApp.getState().setEntryDraft(0, { method: 'drop_set' })
+    const outcome = useApp.getState().applySessionTarget(
+      0, { weight_kg: 62.5, reps: '8-12' }, 'consider-increase-load')
+    expect(outcome.applied).toBe(false)
+    expect(outcome.incompatible).toContain('weight_kg')
+    expect(entryAt(0).target.weight).toBe(60)
+  })
+
+  it('有氧/HIIT 与时长/距离记录不接受次数/负重字段', () => {
+    begin([{ exercise_id: 'running', name: '跑步', activity: 'cardio',
+             measurement: 'distance_time' }])
+    const outcome = useApp.getState().applySessionTarget(
+      0, { sets: 1, reps: 10, weight_kg: 20 }, 'keep-current')
+    expect(outcome.applied).toBe(false)
+    expect(outcome.incompatible).toEqual(['sets', 'reps', 'weight_kg'])
+  })
+
+  it('辅助动作采用降低辅助；刷新恢复（持久化会话含 appliedTargets）', () => {
+    begin([{ exercise_id: 'assisted_dip', name: '辅助臂屈伸',
+             measurement: 'assisted_reps' }])
+    const outcome = useApp.getState().applySessionTarget(
+      0, { sets: 3, reps: '8-12', assistance_kg: 17.5 },
+      'consider-increase-load')
+    expect(outcome.applied).toBe(true)
+    expect(entryAt(0).target.weight).toBe(17.5)
+    const persisted = useApp.getState().session!
+    expect(persisted.appliedTargets?.[0]?.from.weight).toBe(60)
+    // 模拟刷新：恢复持久化会话后撤销仍然有效
+    useApp.setState({ uid: 'u', session: normalizeSession(persisted) })
+    expect(useApp.getState().session!.appliedTargets?.[0]?.optionId)
+      .toBe('consider-increase-load')
+    useApp.getState().revertSessionTarget(0)
+    expect(entryAt(0).target.weight).toBe(60)
+  })
+
+  it('移除动作时 appliedTargets 索引同步平移', () => {
+    begin([{}, {}])
+    useApp.getState().applySessionTarget(1, { weight_kg: 65 }, 'opt')
+    useApp.getState().removeEntry(0)
+    expect(useApp.getState().session!.appliedTargets?.[0]?.optionId).toBe('opt')
+    expect(useApp.getState().session!.appliedTargets?.[1]).toBeUndefined()
+  })
+})

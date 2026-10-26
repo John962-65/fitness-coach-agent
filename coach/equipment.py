@@ -206,3 +206,16 @@ def location_payload(db, user_id: str, location_id: int) -> dict:
         raise ValueError("训练地点不存在")
     catalog = equipment_map(db, user_id)
     return location_view(db, user_id, location, catalog)
+
+
+def equipment_version(db, user_id: str) -> str:
+    """器械/地点配置指纹（P5-C2）：任一配置或当前地点变化都要求
+    重新检查候选可执行性——不得沿用旧指纹下的可执行结论。"""
+    eq = db.conn.execute(
+        "SELECT COUNT(*) AS c, COALESCE(MAX(updated_at),'') AS m"
+        " FROM user_equipment WHERE user_id=?", (user_id,)).fetchone()
+    loc = db.conn.execute(
+        "SELECT COUNT(*) AS c, COALESCE(MAX(updated_at),'') AS m,"
+        " COALESCE(MAX(CASE WHEN is_current=1 THEN id END),0) AS cur"
+        " FROM training_locations WHERE user_id=?", (user_id,)).fetchone()
+    return f"eq:{eq['c']}:{eq['m']};loc:{loc['c']}:{loc['m']};cur:{loc['cur']}"

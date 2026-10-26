@@ -1259,6 +1259,47 @@ def register_routes(app) -> None:
         _user_profile(request.app.state.db, uid)
         return get_training_facts(request.app.state.db, uid, window_days)
 
+    @api.get("/users/{uid}/training-progression/{exercise_id}")
+    def training_progression(uid: str, exercise_id: str, request: Request,
+                             plan_id: int | None = Query(None),
+                             plan_version: int | None = Query(None),
+                             planned_day: str | None = Query(None),
+                             index: int | None = Query(None),
+                             planned_exercise_id: str | None = Query(None)):
+        """P5-C2：下一次训练确定性候选（只读）。
+
+        只读取数据，不创建训练完成记录，不直接修改计划；计划上下文参数
+        用于定位当前用户计划中的动作与版本一致性检查——所有读取都按
+        user_id 过滤，伪造他人计划上下文只会得到"过期/不存在"。
+        """
+        from coach.experts import insight_service
+        from coach.training_progression import progression_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        plan_context = {k: v for k, v in {
+            "plan_id": plan_id, "plan_version": plan_version,
+            "planned_day": planned_day, "index": index,
+            "planned_exercise_id": planned_exercise_id}.items()
+            if v is not None}
+        try:
+            result = progression_service.get_next_training_options(
+                db, uid, exercise_id, plan_context or None)
+        except ValueError as e:
+            raise HTTPException(status_code=404,
+                                detail={"error": str(e)}) from None
+        # 附最近一次同动作的 next-training-review 洞察状态（读取时懒失效）
+        related = [i for i in insight_service.list_insights(
+            db, uid, specialist="training_science", limit=10)
+            if i.get("insight_type") == "next-training-review"
+            and str((i.get("input_refs") or {}).get("exercise_id") or "")
+            == exercise_id]
+        result["insight"] = {
+            "id": related[0]["id"], "status": related[0]["status"],
+            "status_reason": related[0].get("status_reason"),
+            "generated_at": related[0]["generated_at"],
+        } if related else None
+        return result
+
     @api.post("/users/{uid}/checkins/{checkin_id}/correct")
     def correct_checkin(uid: str, checkin_id: int, request: Request,
                         payload: dict = Body(...)):
@@ -1631,7 +1672,13 @@ def register_routes(app) -> None:
         specialist = str(payload.get("specialist") or "")
         task_type = str(payload.get("task_type") or "post-workout-review")
         params = payload.get("params") or {}
-        if not params.get("checkin_id"):
+        if task_type == "next-training-review":
+            if not params.get("exercise_id"):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "params.exercise_id 必填"
+                            "（下一次训练解读针对指定动作）"})
+        elif not params.get("checkin_id"):
             raise HTTPException(status_code=422,
                                 detail={"error": "params.checkin_id 必填（暂支持对指定训练做回顾）"})
         try:

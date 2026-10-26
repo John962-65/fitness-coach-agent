@@ -2,16 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, BookMarked, BookOpen, Check, ChevronDown, ChevronUp, MapPin,
-  Plus, Repeat2, Timer,
+  Plus, Repeat2, Timer, TrendingUp, Undo2,
 } from 'lucide-react'
 import { api, ApiError } from '../api'
-import { Button, ErrorBox, Sheet, Spinner, SuccessBlock } from '../components/Bits'
+import { Button, ErrorBox, Sheet, Spinner, SuccessBlock, Tag } from '../components/Bits'
 import ExercisePicker from '../components/ExercisePicker'
 import { enqueueCheckin, newSubmissionId, queuedCount } from '../offline'
 import { parseTrainingNumber, validateSetDraft } from '../lib/validate'
 import CardioTimer, { createCardioState } from '../components/workout/CardioTimer'
 import HiitRunner, { createHiitRun, createIdleHiitRun, HiitPlanner } from '../components/workout/HiitRunner'
 import ExerciseSubstituteSheet from '../components/workout/ExerciseSubstituteSheet'
+import NextTrainingAdvice, { type PlanAdviceContext } from '../components/workout/NextTrainingAdvice'
 import { hiitPlanExerciseId } from '../lib/hiit'
 import { formatSetCompact, formatSetRecord } from '../lib/setDisplay'
 import { LoggedSet, SessionEntry, useApp } from '../store'
@@ -30,6 +31,8 @@ export default function Workout() {
   const [locations, setLocations] = useState<LocationsResponse | null>(null)
   const [availability, setAvailability] = useState<Record<string, ExerciseSummary>>({})
   const [substituteIdx, setSubstituteIdx] = useState<number | null>(null)
+  // P5-C2：下一次训练建议面板（每个动作卡独立入口）
+  const [adviceIdx, setAdviceIdx] = useState<number | null>(null)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const [templateNote, setTemplateNote] = useState('')
@@ -281,6 +284,19 @@ export default function Workout() {
         baseVersion: { plan_id: session.planId, plan_version: session.planVersion },
       }
     : undefined
+  // P5-C2：建议面板的计划上下文（只读候选 + 长期提案定位）
+  const adviceEntry = adviceIdx != null ? entries[adviceIdx] : undefined
+  const advicePlanContext: PlanAdviceContext | undefined = adviceEntry
+    && session?.mode === 'planned' && session.planId && session.planVersion
+    ? {
+        planId: session.planId,
+        planVersion: session.planVersion,
+        day: session.day,
+        index: adviceEntry.planIndex ?? null,
+        plannedExerciseId: adviceEntry.replaced_from_id || adviceEntry.exercise_id,
+        baseVersion: { plan_id: session.planId, plan_version: session.planVersion },
+      }
+    : undefined
   // P5-A：复杂组容量=各执行段求和（与后端 exercise_metrics.set_volume 同公式）
   const segVolume = (l: LoggedSet): number => {
     const m = l as { method?: string; segments?: Record<string, number>[] }
@@ -487,6 +503,9 @@ export default function Workout() {
         {entries.map((e, idx) => (
           <ExerciseBlock key={idx} idx={idx} entry={e} isFree={isFree}
                          availability={availability[e.replace_exercise_id || e.exercise_id]}
+                         adviceApplied={!!session?.appliedTargets?.[idx]}
+                         onRevertAdvice={() => useApp.getState().revertSessionTarget(idx)}
+                         onOpenAdvice={() => setAdviceIdx(idx)}
                          onPickReplace={() => setSubstituteIdx(idx)}
                          onRemove={() => removeEntry(idx)} />
         ))}
@@ -567,6 +586,14 @@ export default function Workout() {
                             candidate.measurement)
           }}
         />
+      )}
+      {adviceEntry && (
+        <NextTrainingAdvice
+          uid={uid}
+          entry={adviceEntry}
+          entryIdx={adviceIdx as number}
+          planContext={advicePlanContext}
+          onClose={() => setAdviceIdx(null)} />
       )}
       {addingFree && (
         <ExercisePicker uid={uid} strengthOnly locationId={currentLocation?.id}
@@ -660,9 +687,13 @@ export default function Workout() {
 }
 
 /** 单个动作卡：大标题 + 教学入口 + 组记录表 + 快速输入 */
-function ExerciseBlock({ idx, entry, isFree, availability, onPickReplace, onRemove }: {
+function ExerciseBlock({ idx, entry, isFree, availability, adviceApplied,
+                         onOpenAdvice, onRevertAdvice, onPickReplace,
+                         onRemove }: {
   idx: number; entry: SessionEntry; isFree: boolean
   availability?: ExerciseSummary
+  adviceApplied?: boolean
+  onOpenAdvice: () => void; onRevertAdvice: () => void
   onPickReplace: () => void; onRemove: () => void
 }) {
   const logSet = useApp((s) => s.logSet)
@@ -741,6 +772,27 @@ function ExerciseBlock({ idx, entry, isFree, availability, onPickReplace, onRemo
           <SupersetBanner idx={idx} entry={entry} />
         </>
       )}
+
+      {/* P5-C2：下一次训练建议入口（所有动作类型；仅本次采用/长期修改在面板内完成） */}
+      <div className="mx-4 mb-3 flex items-center justify-between gap-2 rounded-xl
+                      border border-line bg-canvas/70 px-3 py-2">
+        {adviceApplied ? (
+          <>
+            <Tag tone="brand">已按建议调整本次目标（仅本次）</Tag>
+            <button className="btn-plain shrink-0 text-xs" onClick={onRevertAdvice}>
+              <Undo2 size={13} /> 撤销
+            </button>
+          </>
+        ) : (
+          <p className="min-w-0 truncate text-2xs text-muted">
+            基于真实记录与当前计划的下一次候选
+          </p>
+        )}
+        <button className="btn-plain shrink-0 text-xs font-medium text-accent-deep"
+                onClick={onOpenAdvice}>
+          <TrendingUp size={14} /> 查看下一次训练建议
+        </button>
+      </div>
 
       {/* 已记录组 */}
       {entry.logged.length > 0 && (

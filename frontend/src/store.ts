@@ -57,6 +57,15 @@ export interface WorkoutSession {
   planVersion?: number
   drafts?: Record<number, SetDraftValues>  // M6.4-B：entryIdx → 未提交输入
   supersetConfig?: Record<string, SupersetConfig>  // P5-A：按组标签
+  /** P5-C2：仅本次采用的目标调整（entryIdx → 原目标 + 来源候选）。
+   *  只覆盖 entry.target，绝不触碰已记录组/组法/超组/计时器/有氧 HIIT 状态；
+   *  随会话持久化（刷新恢复），撤销后移除。仅本次——不写长期计划。 */
+  appliedTargets?: Record<number, AppliedTargetRecord>
+}
+
+export interface AppliedTargetRecord {
+  from: SessionEntry['target']
+  optionId: string
 }
 
 export interface Settings {
@@ -74,6 +83,49 @@ const today = () => {
 
 const hasProgress = (s: WorkoutSession | null) =>
   !!s && s.entries.some((e) => e.logged.length > 0 || !!e.cardio || !!e.hiitRun)
+
+/** P5-C2：候选目标 → 适用于该动作卡结构的目标补丁。
+ *
+ *  不兼容字段被剔除而不是硬套（普通力量负重不能覆盖递减组各段重量，
+ *  次数/负重目标不适用于有氧/HIIT/时长/距离记录）。返回 patch 为空 +
+ *  incompatible 非空 = 该候选对当前结构只能看方向。 */
+export function compatibleTargetPatch(
+  entry: Pick<SessionEntry, 'activity' | 'measurement' | 'logged'> | undefined,
+  targets: Record<string, number | string>,
+  draftMethod?: string,
+): { patch: Partial<SessionEntry['target']>; incompatible: string[] } {
+  const patch: Partial<SessionEntry['target']> = {}
+  const incompatible: string[] = []
+  if (!entry) return { patch, incompatible }
+  const strengthLike = !entry.activity || entry.activity === 'strength'
+  const measurement = entry.measurement || 'weight_reps'
+  const logged = entry.logged.filter((l) => !l.warmup)
+  const lastMethod =
+    (logged[logged.length - 1] as { method?: string } | undefined)?.method
+  const complex = !!draftMethod && draftMethod !== 'straight_set'
+    ? draftMethod : lastMethod && lastMethod !== 'straight_set' ? lastMethod : ''
+  if (targets.sets != null && targets.sets !== '') {
+    if (strengthLike) patch.sets = targets.sets
+    else incompatible.push('sets')
+  }
+  if (targets.reps != null && targets.reps !== '') {
+    if (strengthLike && measurement !== 'duration'
+        && measurement !== 'distance_time' && !complex) patch.reps = targets.reps
+    else incompatible.push('reps')
+  }
+  if (targets.weight_kg != null) {
+    if (strengthLike && measurement === 'weight_reps' && !complex) {
+      patch.weight = Number(targets.weight_kg)
+    } else incompatible.push('weight_kg')
+  }
+  if (targets.assistance_kg != null) {
+    // 辅助重量走同一个"建议重量"通道（SetForm 的辅助输入预填）
+    if (strengthLike && measurement === 'assisted_reps' && !complex) {
+      patch.weight = Number(targets.assistance_kg)
+    } else incompatible.push('assistance_kg')
+  }
+  return { patch, incompatible }
+}
 
 /** 兼容旧持久化数据：补 id / mode / drafts（升级前创建的进行中会话） */
 export function normalizeSession(s: WorkoutSession | null): WorkoutSession | null {
@@ -114,6 +166,13 @@ interface AppState {
   removeLastSet: (entryIdx: number) => void
   replaceExercise: (entryIdx: number, newName: string, exerciseId?: string,
                     measurement?: import('./types').MeasurementType) => void
+  /** P5-C2：仅本次采用候选目标（只改目标，不碰已记录组/组法/超组/计时器/
+   *  有氧 HIIT 状态；不兼容字段被拒绝；可撤销；随会话持久化；不改长期计划）。 */
+  applySessionTarget: (entryIdx: number,
+                       targets: Record<string, number | string>,
+                       optionId: string) =>
+    { applied: boolean; incompatible: string[] }
+  revertSessionTarget: (entryIdx: number) => boolean
   setSessionNotes: (notes: string) => void
   setSupersetConfig: (group: string, cfg: Partial<SupersetConfig>) => void
   /** M6.4-B B4.2：逐组输入草稿写入（教学页往返/刷新不丢） */
@@ -201,7 +260,14 @@ export const useApp = create<AppState>()((set) => ({
         if (i === entryIdx) continue
         drafts[i > entryIdx ? i - 1 : i] = v
       }
-      return { session: { ...st.session, drafts,
+      // P5-C2：仅本次目标调整同样按索引平移
+      const appliedTargets: Record<number, AppliedTargetRecord> = {}
+      for (const [k, v] of Object.entries(st.session.appliedTargets || {})) {
+        const i = Number(k)
+        if (i === entryIdx) continue
+        appliedTargets[i > entryIdx ? i - 1 : i] = v
+      }
+      return { session: { ...st.session, drafts, appliedTargets,
         entries: st.session.entries.filter((_, i) => i !== entryIdx) } }
     }),
   setEntryDraft: (entryIdx, patch) =>
@@ -239,6 +305,45 @@ export const useApp = create<AppState>()((set) => ({
           }) }
         : st.session,
     })),
+  applySessionTarget: (entryIdx, targets, optionId) => {
+    const st = useApp.getState()
+    const session = st.session
+    const entry = session?.entries[entryIdx]
+    if (!session || !entry) return { applied: false, incompatible: ['no-entry'] }
+    const { patch, incompatible } = compatibleTargetPatch(
+      entry, targets, session.drafts?.[entryIdx]?.method)
+    if (Object.keys(patch).length === 0) {
+      return { applied: false, incompatible }
+    }
+    set((s) => (s.session
+      ? { session: {
+          ...s.session,
+          appliedTargets: {
+            ...(s.session.appliedTargets || {}),
+            [entryIdx]: { from: entry.target, optionId } },
+          entries: s.session.entries.map((e, i) =>
+            i === entryIdx ? { ...e, target: { ...e.target, ...patch } } : e),
+        } }
+      : s))
+    return { applied: true, incompatible }
+  },
+  revertSessionTarget: (entryIdx) => {
+    const st = useApp.getState()
+    const record = st.session?.appliedTargets?.[entryIdx]
+    if (!st.session || !record) return false
+    set((s) => {
+      if (!s.session) return s
+      const appliedTargets = { ...(s.session.appliedTargets || {}) }
+      delete appliedTargets[entryIdx]
+      return { session: {
+        ...s.session,
+        appliedTargets,
+        entries: s.session.entries.map((e, i) =>
+          i === entryIdx ? { ...e, target: record.from } : e),
+      } }
+    })
+    return true
+  },
   setSessionNotes: (notes) =>
     set((st) => (st.session ? { session: { ...st.session, notes } } : st)),
   setSupersetConfig: (group, cfg) =>

@@ -514,3 +514,291 @@ def _knowledge_refs(db, user_id: str, names: list[str]) -> list[dict]:
                          "title": hit.get("title"),
                          "provenance": hit.get("provenance")})
     return refs[:4]
+
+
+# ---------------------------------------------------------------------------
+# P5-C2：下一次训练进阶解读（next-training-review）
+#
+# 边界：解释对象是 P5-C 确定性候选引擎的输出。本分析器只做解释、适用条件
+# 说明、方案取舍比较与数据不足标注——不产生候选之外的可执行数值，不编造
+# 历史成绩，不修改计划（提案必须经 ChangeProposal 确认协议），不把估算
+# e1RM 表述为实测。所有数值都来自确定性上下文（同源口径，构造保证）。
+# ---------------------------------------------------------------------------
+
+NEXT_TRAINING_EXPIRE_DAYS = 3   # 候选与"下一次"绑定，有效期短于训练后回顾
+
+_ATTAINMENT_TEXT = {
+    "at_top": "最近一次已达到目标次数上沿",
+    "met_min": "最近一次达到目标次数下沿（尚未全部到上沿）",
+    "below_target": "最近一次低于目标次数",
+    "above_range": "最近一次超出目标次数范围",
+    "insufficient_data": "目标达成情况数据不足",
+}
+
+
+def _fact_id_for(context: dict, metric: str) -> str | None:
+    return next((f["fact_id"] for f in context.get("fact_refs") or []
+                 if f.get("metric") == metric), None)
+
+
+def _fact_ids_for(context: dict, metrics: list[str]) -> list[str]:
+    out = [fid for fid in (_fact_id_for(context, m) for m in metrics) if fid]
+    return list(dict.fromkeys(out))
+
+
+def _recent_performance_text(context: dict) -> str:
+    perf = context.get("last_actual_performance") or {}
+    name = (context.get("planned_exercise") or {}).get("name") \
+        or context.get("exercise_id")
+    date = perf.get("date") or "未知日期"
+    classes = perf.get("activity_classes") or []
+    if perf.get("interval_planned_rounds"):
+        return (f"{name}：最近一次（{date}）HIIT 完成 "
+                f"{perf.get('interval_completed_rounds', 0)}"
+                f"/{perf.get('interval_planned_rounds', 0)} 轮"
+                f"（跳过 {perf.get('interval_skipped_rounds', 0)} 轮），"
+                f"工作 {perf.get('interval_work_seconds', 0)} 秒、"
+                f"休息 {perf.get('interval_rest_seconds', 0)} 秒。")
+    if perf.get("steady_cardio_seconds"):
+        dist = perf.get("steady_cardio_distance_m")
+        pace = perf.get("pace_sec_per_km")
+        return (f"{name}：最近一次（{date}）持续有氧 "
+                f"{perf['steady_cardio_seconds']} 秒"
+                + (f"、{dist} 米" if dist else "（未记录距离）")
+                + (f"，配速约 {pace} 秒/公里" if pace and dist else "")
+                + "。")
+    reps = perf.get("rep_values") or []
+    best = perf.get("best_set") or {}
+    text = f"{name}：最近一次（{date}）{perf.get('working_sets', 0)} 组"
+    if reps:
+        text += f"，各组次数 {reps}"
+    if best.get("weight_kg") is not None:
+        text += f"，最佳组 {best['weight_kg']:g}kg×{best.get('reps')} 次"
+    if 'mixed' in classes:
+        text += "（记录混有多个活动类别，口径受限）"
+    return text + "。"
+
+
+def _option_detail(option: dict) -> str:
+    parts = []
+    if option.get("proposed_targets"):
+        parts.append("候选目标：" + "、".join(
+            f"{k}={v}" for k, v in option["proposed_targets"].items())
+            + "（候选值，不是已完成记录）")
+    t = option.get("tradeoffs") or {}
+    if t.get("benefits"):
+        parts.append(f"收益：{t['benefits']}")
+    if t.get("costs"):
+        parts.append(f"代价：{t['costs']}")
+    if t.get("conditions"):
+        parts.append(f"适用条件：{t['conditions']}")
+    if option.get("limitations"):
+        parts.append("限制：" + "；".join(option["limitations"]))
+    return "。".join(parts) + "。"
+
+
+def _next_confidence(context: dict, result: dict) -> tuple[str, str]:
+    """按数据充分性给置信度（确定性规则，不取模型主观值）。"""
+    dq = context.get("data_quality") or {}
+    n = dq.get("comparable_session_count", 0)
+    if not result.get("recommendations_allowed"):
+        return "low", ("候选生成被安全/器械/口径条件阻断，"
+                       "本次只提供事实与限制说明")
+    if n >= 3 and dq.get("latest_session_comparable") \
+            and not dq.get("plan_context_stale"):
+        return "high", f"可比记录 {n} 次，最近一次结构可比，计划上下文为当前版本"
+    if n >= 2:
+        return "medium", f"可比记录 {n} 次（不足 high 档要求的 3 次）"
+    return "low", f"可比记录仅 {n} 次：只支持维持与观察，不支持进阶结论"
+
+
+def analyze_next_training(db, user_id: str, input_refs: dict) -> dict:
+    """UserRequested → 下一次训练进阶解读（确定性打包，无 LLM）。
+
+    input_refs: {"exercise_id": str, 以及可选计划上下文
+                 plan_id / plan_version / planned_day / index /
+                 planned_exercise_id}
+    返回 ExpertInsight 载荷（id/user_id/task_id 由 insight_service 补齐）。
+    """
+    from ..training_progression import progression_service
+
+    exercise_id = str(input_refs.get("exercise_id") or "")
+    if not exercise_id:
+        raise ValueError("input_refs.exercise_id 必填")
+    plan_context = {k: input_refs[k] for k in (
+        "plan_id", "plan_version", "planned_day", "index",
+        "planned_exercise_id") if input_refs.get(k) is not None}
+    result = progression_service.get_next_training_options(
+        db, user_id, exercise_id, plan_context or None)
+    context = result["context"]
+    dq = context.get("data_quality") or {}
+
+    # ---- 事实快照：与确定性引擎同源的 fact_refs + 恢复事实 ----
+    recovery = context.get("recovery_context") or {}
+    snapshot_facts = list(context.get("fact_refs") or []) + list(
+        recovery.get("facts") or [])
+
+    findings: list[dict] = []
+    src_all = [f"checkin:{cid}:revision:{rev}"
+               for cid, rev in (context.get("source_revisions") or {})
+               .get("checkins", {}).items()]
+
+    # ---- 发现 1：最近表现（仅真实记录） ----
+    perf_metrics = {
+        "strength": ["working-sets", "volume", "sessions"],
+        "interval": ["interval-work-seconds", "interval-rounds"],
+        "steady_cardio": ["steady-cardio-seconds", "steady-cardio-distance"],
+    }.get(context.get("activity_class"), ["working-sets", "sessions"])
+    findings.append({
+        "finding_id": "f-next-recent",
+        "kind": "session-baseline",
+        "text": _recent_performance_text(context),
+        "fact_ids": _fact_ids_for(context, perf_metrics),
+        "source_ids": src_all[:6],
+    })
+
+    # ---- 发现 2：目标达成情况（结构可比记录的分类结果） ----
+    comparability = context.get("comparability") or {}
+    attainment = comparability.get("target_attainment") or {}
+    if attainment:
+        latest_id = next(iter(attainment))
+        att = attainment[latest_id]
+        text = f"目标达成：{_ATTAINMENT_TEXT.get(att.get('level'), att.get('level'))}"
+        if att.get("reps"):
+            text += f"（各组 {att['reps']}，目标 {att.get('target_min')}" \
+                    f"-{att.get('target_max')} 次）"
+        if att.get("note"):
+            text += f"；{att['note']}"
+        findings.append({
+            "finding_id": "f-next-attainment",
+            "kind": "comparison",
+            "text": text,
+            "fact_ids": _fact_ids_for(context, perf_metrics[:1]),
+            "source_ids": src_all[:1],
+        })
+
+    # ---- 发现 3：逐候选解释（文本全部来自候选自身字段） ----
+    for option in result.get("options") or []:
+        findings.append({
+            "finding_id": f"f-next-option-{option['option_id']}",
+            "kind": "candidate-explanation",
+            "text": f"候选「{option['title']}」：{_option_detail(option)}",
+            "fact_ids": [fid for fid in option.get("basis_fact_ids") or []],
+            "source_ids": option.get("source_ids") or [],
+        })
+
+    # ---- 发现 4：数据不足 / 限制 ----
+    gaps = []
+    if dq.get("comparable_session_count", 0) < 2:
+        gaps.append(f"可比记录仅 {dq.get('comparable_session_count', 0)} 次："
+                    "只能维持并继续观察，不构成增长或加重依据")
+    if dq.get("recovery_missing"):
+        gaps.append("近期没有恢复记录：恢复状态未知，不代表恢复良好")
+    if dq.get("plan_context_stale"):
+        gaps.append("计划上下文不是当前版本：候选未引用旧计划目标")
+    if dq.get("latest_session_comparable") is False:
+        gaps.append("最近一次训练结构口径不同：未纳入同口径比较")
+    if result.get("blocked_reasons"):
+        gaps.append("；".join(result["blocked_reasons"]))
+    if gaps:
+        findings.append({
+            "finding_id": "f-next-gaps",
+            "kind": "data-gap",
+            "text": "数据与限制：" + "；".join(gaps) + "。",
+            "fact_ids": [],
+            "source_ids": [],
+        })
+
+    # ---- 恢复事实（有记录才呈现；独立信息，不做过度训练推断） ----
+    if recovery.get("signals"):
+        lines = [f"{s['metric']}={s['value']}（{s['note']}）"
+                 for s in recovery["signals"]]
+        findings.append({
+            "finding_id": "f-next-recovery",
+            "kind": "recovery-context",
+            "text": "近期恢复自报：" + "；".join(lines)
+                    + "。以上是主观记录事实，与训练表现不是确定因果关系；"
+                      "候选中的恢复观察方向由确定性规则给出。",
+            "fact_ids": [f["fact_id"] for f in recovery.get("facts") or []][:4],
+            "source_ids": [],
+        })
+
+    # ---- 方案：镜像确定性候选（不含候选之外的可执行数值） ----
+    options = []
+    for option in result.get("options") or []:
+        entry = {
+            "option_id": option["option_id"],
+            "title": option["title"],
+            "detail": _option_detail(option),
+            "basis": option.get("basis_fact_ids") or [],
+            "tradeoffs": {
+                "收益": (option.get("tradeoffs") or {}).get("benefits", ""),
+                "代价": (option.get("tradeoffs") or {}).get("costs", ""),
+                "适用条件": (option.get("tradeoffs") or {}).get("conditions", ""),
+            },
+            "proposed_targets": option.get("proposed_targets") or {},
+            "limitations": option.get("limitations") or [],
+            "action": "advisory",
+        }
+        proposal = option.get("plan_proposal")
+        if proposal:
+            entry["action"] = "proposal"
+            entry["proposal_hint"] = {
+                "target": "plan",
+                "operations": proposal["operations"],
+            }
+        options.append(entry)
+
+    confidence, confidence_basis = _next_confidence(context, result)
+    name = (context.get("planned_exercise") or {}).get("name") or exercise_id
+    plan_version = context.get("plan_version")
+    summary = (
+        f"{name}：基于 {dq.get('comparable_session_count', 0)} 次结构可比记录"
+        + (f"与当前计划 v{plan_version}" if plan_version else "（无生效计划上下文）")
+        + f"，确定性引擎给出 {len(options)} 个候选方向"
+        + ("；" + "、".join(o["title"] for o in options) if options
+           else "（当前条件不允许生成候选，原因见限制）")
+        + "。候选不是处方，是否采用由你决定。")
+    limitations = list(result.get("blocked_reasons") or [])
+    limitations.append("候选与解释由确定性规则生成（依据与取舍见各项）；"
+                       "修改长期计划必须经确认协议，确认时会重新校验")
+    if any(f.get("best_e1rm") for f in [context.get("last_actual_performance")]):
+        limitations.append("e1RM 为 Epley 公式估算值（1-12 次区间），非实测极限")
+
+    checkins_rev = (context.get("source_revisions") or {}).get("checkins") or {}
+    recovery_records = (context.get("source_revisions") or {}).get("recovery") or {}
+    source_revision: dict = {
+        "checkins": {str(k): v for k, v in checkins_rev.items()},
+        # 与既有洞察约定一致：限制版本存于 "restrictions" 键（懒失效共用）
+        "restrictions": (context.get("source_revisions") or {})
+        .get("restrictions_version"),
+        "equipment": (context.get("source_revisions") or {}).get("equipment"),
+        "rules_version": progression_service.PROGRESSION_RULES_VERSION,
+        "recovery_records": {str(k): v for k, v in recovery_records.items()},
+    }
+    if plan_version is not None:
+        source_revision["plan_version"] = plan_version
+
+    return {
+        "specialist": "training_science",
+        "insight_type": "next-training-review",
+        "title": f"下一次训练建议 · {name}",
+        "summary": summary,
+        "findings": findings,
+        "evidence_refs": sorted({fid for f in findings for fid in f["fact_ids"]}),
+        "facts_snapshot": {
+            "facts": snapshot_facts,
+            "caliber": "与确定性候选引擎同源（P5-C 上下文 fact_refs + 恢复事实）",
+        },
+        "knowledge_refs": _knowledge_refs(db, user_id, [name]),
+        "options": options,
+        "limitations": limitations,
+        "confidence": confidence,
+        "confidence_basis": confidence_basis,
+        "generated_at": _now(),
+        "expires_at": (datetime.now()
+                       + timedelta(days=NEXT_TRAINING_EXPIRE_DAYS)
+                       ).isoformat(timespec="seconds"),
+        "source_revision": source_revision,
+        "input_refs": {"exercise_id": exercise_id, **plan_context},
+    }

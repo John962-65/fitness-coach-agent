@@ -1006,3 +1006,116 @@ export interface HiitRun {
   pendingPhaseConfirm?: number
   totalRounds?: number
 }
+
+// ---- P5-C2：下一次训练确定性候选（训练科学顾问） ----
+
+export interface ProgressionFactRef {
+  fact_id: string
+  metric: string
+  status: string
+  value?: unknown
+  unit?: string
+}
+
+export interface ProgressionPerformance {
+  checkin_id?: number
+  date?: string
+  activity_classes?: string[]
+  working_sets?: number
+  rep_values?: number[]
+  best_set?: { weight_kg?: number; reps?: number } | null
+  best_e1rm?: number | null
+  steady_cardio_seconds?: number | null
+  steady_cardio_distance_m?: number | null
+  pace_sec_per_km?: number | null
+  interval_planned_rounds?: number
+  interval_completed_rounds?: number
+  interval_skipped_rounds?: number
+  interval_work_seconds?: number
+  interval_rest_seconds?: number
+  interval_elapsed_seconds?: number
+  interval_ended_early?: boolean
+  sets?: unknown[]
+}
+
+export interface ProgressionAttainment {
+  level: string            // at_top/met_min/below_target/above_range/insufficient_data
+  label?: string
+  note?: string
+  reps?: number[]
+  target_min?: number
+  target_max?: number
+}
+
+export interface ProgressionContext {
+  user_id?: string
+  exercise_id: string
+  activity_class: string
+  measurement_type: string
+  plan_id?: number | null
+  plan_version?: number | null
+  planned_day?: string | null
+  planned_index?: number | null
+  planned_exercise?: { name?: string; exercise_id?: string } | null
+  plan_prescription_applies: boolean
+  current_prescription: Record<string, unknown>
+  recent_sessions?: unknown[]
+  comparable_sessions?: unknown[]
+  comparability?: {
+    structurally_comparable?: string[]
+    target_attainment?: Record<string, ProgressionAttainment>
+    comparison_limitations?: Record<string, string[]>
+  }
+  last_actual_performance?: ProgressionPerformance | null
+  recovery_context?: {
+    records_count?: number
+    signals?: { metric: string; value: number; note?: string }[]
+  }
+  safety_context?: {
+    recommendations_allowed?: boolean
+    active_restrictions?: unknown[]
+    summary_lines?: string[]
+  }
+  equipment_context?: Record<string, unknown>
+  data_quality: {
+    comparable_session_count?: number
+    recent_session_count?: number
+    latest_session_comparable?: boolean
+    plan_context_stale?: boolean
+    comparable_exclusions?: Record<string, string[]>
+    recovery_missing?: boolean
+    superset?: boolean
+    methods?: string[]
+    temporary_replacement?: boolean
+  } & Record<string, unknown>
+  source_revisions: Record<string, unknown>
+  fact_refs: ProgressionFactRef[]
+}
+
+export interface ProgressionOption {
+  option_id: string
+  category: string         // maintain/complete-target-reps/increase-load/adjust-volume/observe-recovery
+  title: string
+  proposed_targets: Record<string, number | string>
+  basis_fact_ids: string[]
+  source_ids: string[]
+  data_quality: Record<string, unknown>
+  limitations: string[]
+  tradeoffs: { benefits?: string; costs?: string; conditions?: string }
+  action_scope: string[]
+  requires_confirmation: boolean
+  plan_proposal?: { day: string; index: number; operations: PlanOp[] } | null
+}
+
+export interface ProgressionResult {
+  rules_version: string
+  context: ProgressionContext
+  options: ProgressionOption[]
+  recommendations_allowed: boolean
+  blocked_reasons: string[]
+  source_revisions: Record<string, unknown>
+  caliber: string
+  requires_user_confirmation: boolean
+  insight?: { id: string; status: string; status_reason?: string;
+              generated_at?: string } | null
+}

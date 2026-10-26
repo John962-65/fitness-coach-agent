@@ -15,6 +15,7 @@ from ..analytics.activity_class import (
 )
 from ..analytics.exercise_metrics import exercise_sessions
 from ..analytics.fact_service import get_training_facts
+from ..equipment import equipment_version
 from ..recovery import recovery_metrics
 from ..rehab import restriction_service, safety_integration
 from .comparability import (
@@ -35,6 +36,7 @@ class NextTrainingContext:
     plan_id: int | None = None
     plan_version: int | None = None
     planned_day: str | None = None
+    planned_index: int | None = None
     planned_exercise: dict | None = None
     plan_prescription_applies: bool = False
     recent_sessions: list = field(default_factory=list)
@@ -308,6 +310,7 @@ def build_next_training_context(db, user_id: str, exercise_id: str,
                  if plan_record else None),
         "restrictions_version": db.restrictions_version(user_id),
         "activity_class_version": ACTIVITY_CLASS_VERSION,
+        "equipment": equipment_version(db, user_id),
     }
     recovery_context = _recovery_context(db, user_id)
     source_revisions["recovery"] = {
@@ -345,6 +348,7 @@ def build_next_training_context(db, user_id: str, exercise_id: str,
         plan_id=plan_record["id"] if plan_record else None,
         plan_version=plan_record["version"] if plan_record else None,
         planned_day=located["day"] if located else None,
+        planned_index=located["index"] if located else None,
         planned_exercise=entry,
         plan_prescription_applies=plan_applies,
         recent_sessions=recent,
