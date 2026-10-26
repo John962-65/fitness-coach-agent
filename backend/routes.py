@@ -1754,6 +1754,57 @@ def register_routes(app) -> None:
             "pending_tasks": db.list_expert_tasks(uid, status="pending", limit=5),
         }
 
+    @api.post("/users/{uid}/collaboration/analysis")
+    def collaboration_analysis(uid: str, request: Request,
+                               payload: dict = Body(...)):
+        """P6：用户主动请求跨专家联合分析（UserRequested；确定性，无 LLM）。"""
+        from coach.collaboration.coordinator import SCENARIOS
+        from coach.experts import task_dispatcher
+        db = request.app.state.db
+        _user_profile(db, uid)
+        scenario = str(payload.get("scenario") or "")
+        if not scenario:
+            raise HTTPException(status_code=422,
+                                detail={"error": "scenario 必填"})
+        if scenario not in SCENARIOS:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": f"未知协作场景 {scenario!r}（可选："
+                                 f"{sorted(SCENARIOS)}）"})
+        params = {"scenario": scenario}
+        if payload.get("exercise_id"):
+            params["exercise_id"] = str(payload["exercise_id"])
+        if payload.get("window_days"):
+            params["window_days"] = int(payload["window_days"])
+        try:
+            task = task_dispatcher.enqueue(db, uid, "collaboration",
+                                           "collaboration-review",
+                                           "UserRequested", params)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+        if not task:
+            raise HTTPException(status_code=429,
+                                detail={"error": "同类分析正在进行或频率受限，请稍后再试"})
+        return task_dispatcher.run_task(db, task)
+
+    @api.post("/users/{uid}/collaboration/{insight_id}/decision")
+    def collaboration_decision(uid: str, insight_id: str, request: Request,
+                               payload: dict = Body(...)):
+        """P6：联合报告的用户决策（ignore/observe/propose；propose 走确认协议）。"""
+        from coach.collaboration import decision_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return decision_service.record_decision(
+                db, uid, insight_id, str(payload.get("decision") or ""),
+                payload.get("option_id"))
+        except ProposalRejected as e:
+            raise _reject(e) from None
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+
     @api.get("/users/{uid}/experts/settings")
     def experts_settings(uid: str, request: Request):
         _user_profile(request.app.state.db, uid)

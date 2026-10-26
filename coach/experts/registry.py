@@ -24,6 +24,7 @@ TRIGGERS = ("WorkoutSaved", "MealRecorded", "RecoveryRecorded",
 TASK_TYPES: dict[str, str] = {
     "post-workout-review": "coach.experts.training_science.analyze_post_workout",
     "next-training-review": "coach.experts.training_science.analyze_next_training",
+    "collaboration-review": "coach.collaboration.coordinator.analyze_collaboration",
     "daily-nutrition-review": "coach.nutrition.nutrition_analysis.analyze_daily_nutrition",
     "recovery-review": "coach.recovery.recovery_analysis.analyze_recovery",
     "symptom-review": "coach.rehab.analysis.analyze_symptom_review",
@@ -92,6 +93,19 @@ SPECIALISTS: dict[str, dict] = {
         "workbench_path": "/experts/movement",
         "triggers": {"VideoAnalysisCompleted": ["movement-review"],
                      "UserRequested": ["movement-review"]},
+    },
+    # P6：主教练跨专家协作（共享事实 → 各自观点 → 保留分歧 → 用户决定）
+    "collaboration": {
+        "label": "主教练 · 跨专家协作",
+        "domain": "联合分析：训练/营养/恢复/康复/动作的交叉问题",
+        "data_sources": ["各领域已授权事实包（只读，按场景圈定范围）",
+                         "各专业顾问的确定性领域观点"],
+        "tools": ["跨领域事实包（P6 同源口径）",
+                  "确定性冲突裁决（分歧并列，不投票）",
+                  "统一确认协议（ChangeProposal）"],
+        "workbench": "ready",
+        "workbench_path": "/experts/collaboration",
+        "triggers": {"UserRequested": ["collaboration-review"]},
     },
 }
 
