@@ -8,7 +8,7 @@
 //   同步开始时重置回 pending；
 // - 4xx 永久失败先写失败库、后删原记录（目标写入成功前绝不删除）；
 // - 服务端 submission_id 幂等不变（重复投递不重复入库）。
-import { del, get, set } from 'idb-keyval'
+import { del, get, keys, set } from 'idb-keyval'
 
 const QUEUE_KEY = 'fc-offline-queue-v1'        // string[]：待同步 ID 顺序表
 const FAILED_KEY = 'fc-offline-failed-v1'      // FailedCheckin[]
@@ -197,5 +197,21 @@ export async function retryFailed(send: Send): Promise<SyncResult> {
       await writeFailed([])
     }
     return syncLocked(send)
+  })
+}
+
+
+/** 账户删除后清空可归属本机的离线数据（队列、失败记录、锁）。 */
+export async function clearOfflineData(): Promise<void> {
+  await withTabLock(LOCK_KEY, async () => {
+    try {
+      const all = await keys()
+      for (const key of all) {
+        const name = String(key)
+        if (name.startsWith('fc-offline-')) await del(key)
+      }
+    } catch {
+      // IndexedDB 不可用时不阻塞账户删除
+    }
   })
 }

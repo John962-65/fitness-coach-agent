@@ -22,6 +22,55 @@ export class ApiError extends Error {
   }
 }
 
+export interface ImportPreview {
+  kind: string
+  target_user: string
+  exported_for?: string | null
+  counts: Record<string, { total?: number; to_insert?: number; duplicates?: number; note?: string }>
+  duplicates: unknown[]
+  conflicts: unknown[]
+  profile_conflict: boolean
+  profile_restore_default: boolean
+  safety_review: { items: { kind: string; detail: string }[]; requires_accept_safety_import: boolean }
+  media_report: {
+    checked: number; ok: unknown[]; missing: unknown[]; corrupt: unknown[];
+    unverified: unknown[]; unsafe_path: unknown[]; note: string
+  }
+  source_active_plan_version?: number | null
+  can_activate_plan: boolean
+  activation_blockers: string[]
+  requires_confirmation: boolean
+}
+
+export interface ImportApplyResult {
+  kind: string
+  inserted: Record<string, number>
+  skipped: string[]
+  warnings: string[]
+  needs_review: string[]
+  safety_review: ImportPreview['safety_review']
+  media_report: ImportPreview['media_report']
+  activated_plan: { plan_id: number; version: number; mode: string } | null
+  activation_blocked: string[]
+  mode: 'archive' | 'executable'
+  note: string
+}
+
+export interface DeleteAccountResult {
+  deleted: boolean
+  complete: boolean
+  user: string
+  rows: Record<string, number>
+  media_files_removed: number
+  trash_path?: string | null
+  outside_media_not_deleted: string[]
+  cleanup_errors: string[]
+  backup_retention_days: number
+  backup_notice: string
+  legal_retention: string
+  note: string
+}
+
 function accessToken(): string {
   try { return localStorage.getItem('fc-access-token') || '' } catch { return '' }
 }
@@ -485,4 +534,46 @@ export const api = {
   logCareActivity: (uid: string, aid: number, payload: {
     local_date: string; completed: boolean; feedback?: string }) =>
     post<{ log_id: number }>(`/users/${uid}/care-activities/${aid}/log`, payload),
+
+  // ---- RC-FIX：完整导出 / 预览恢复 / 删除账户 ----
+  exportData: async (uid: string, format: 'json' | 'csv' = 'json') => {
+    let res: Response
+    try {
+      res = await fetch(`/api/users/${uid}/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken() ? { 'X-Access-Token': accessToken() } : {}),
+        },
+        body: JSON.stringify({ format, confirm: true }),
+      })
+    } catch {
+      throw new ApiError(0, '网络不可用')
+    }
+    if (!res.ok) {
+      let detail: { error?: string; details?: string[] } | string | undefined
+      try { detail = (await res.json()).detail } catch { /* ignore */ }
+      throw new ApiError(res.status,
+        typeof detail === 'string' ? detail
+          : detail?.error || `请求失败（${res.status}）`,
+        typeof detail === 'object' ? detail?.details || [] : [])
+    }
+    const blob = await res.blob()
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    return {
+      blob,
+      filename: `fitness-coach-${uid}-${stamp}.${format === 'csv' ? 'zip' : 'json'}`,
+    }
+  },
+  importPreview: (uid: string, backup: unknown) =>
+    post<ImportPreview>(`/users/${uid}/import/preview`, backup),
+  importApply: (uid: string, backup: unknown, opts: {
+    restore_profile?: boolean; activate_plan?: boolean;
+    replace_active_plan?: boolean; accept_safety_import?: boolean;
+    require_media_integrity?: boolean;
+  }) => post<ImportApplyResult>(`/users/${uid}/import/apply`,
+    { backup, confirmed: true, ...opts }),
+  deleteAccount: (uid: string) =>
+    req<DeleteAccountResult>(`/users/${uid}/account?confirm=DELETE`,
+      { method: 'DELETE' }),
 }

@@ -1,0 +1,10 @@
+{
+ "ok": true,
+ "exported_file": "/tmp/coach-rcfix-w3qSZz/downloads/fitness-coach-rcfix-a-1793081361386-2026-10-27T06-09-32.json",
+ "uidA": "rcfix-a-1793081361386",
+ "uidB": "rcfix-b-1793081361386",
+ "b_deleted": true,
+ "a_intact": true,
+ "local_keys_after": [],
+ "screenshot": "docs/rc-fix-shots/rc-fix-e2e-delete-welcome.png"
+}
