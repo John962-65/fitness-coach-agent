@@ -205,7 +205,7 @@ export default function NextTrainingAdvice({ uid, entry, entryIdx, planContext,
     try {
       // 语义门要求明确的肯定表述：不回填候选标题（可能含"考虑"等模糊词）
       const done = await api.confirmChange(
-        uid, proposalId, '确认采用：把这条长期修改落实到计划')
+        uid, proposalId, `确认采用提案 ${proposalId}：把这条长期修改落实到计划`)
       setProposalStatus(done.status)
       setNotice(done.status === 'applied'
         ? '长期计划已更新为新版本；本次训练目标未自动改动'

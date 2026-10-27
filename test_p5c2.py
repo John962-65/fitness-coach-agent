@@ -436,6 +436,6 @@ def test_proposal_rejected_when_plan_changes_before_confirmation(client):
     day["exercises"][pctx["index"]]["note"] = "确认前被改动"
     db.create_plan("u", content)
     confirmed = c.post(f"/api/users/u/changes/{proposal_id}/confirm", json={
-        "message": "确认采用"})
+        "message": f"确认采用提案 {proposal_id}"})
     assert confirmed.status_code == 422
     assert c.get("/api/users/u/plan").json()["version"] == plan["version"] + 1

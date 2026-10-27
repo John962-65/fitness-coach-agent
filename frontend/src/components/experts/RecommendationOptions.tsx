@@ -43,7 +43,8 @@ export default function RecommendationOptions({ insight, onChanged }:
     if (!staged) return
     setBusy('confirm'); setError(''); setResult('')
     try {
-      const resp = await api.confirmChange(uid, staged.proposalId, message)
+      const resp = await api.confirmChange(
+        uid, staged.proposalId, `${message}（提案 ${staged.proposalId}）`)
       if (resp.decision === 'unclear') {
         setResult('你的表述还不够明确，提案仍在等待确认。可以输入「确认」或「不同意」。')
       } else {

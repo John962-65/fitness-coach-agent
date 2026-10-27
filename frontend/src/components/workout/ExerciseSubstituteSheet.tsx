@@ -73,7 +73,7 @@ export default function ExerciseSubstituteSheet({
     setBusy('confirm'); setError('')
     try {
       const result = await api.confirmChange(
-        uid, proposalId, `确认长期计划替换：${entry.replaced_with || entry.name}`)
+        uid, proposalId, `确认采用提案 ${proposalId}：长期计划替换为 ${entry.replaced_with || entry.name}`)
       setProposalState(result.status)
       setNotice(result.status === 'applied'
         ? '长期计划已确认更新；本次训练动作未被自动修改'

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import uuid
 
 from .approach import apply_operations as apply_approach_ops
@@ -402,6 +403,59 @@ def stage_ai(db, user_id: str, target: str, operations, reason: str,
             "warnings": prepared.get("warnings", [])}
 
 
+_REFERENCE_PHRASE = re.compile(
+    r"(这个|该|这条|上述|刚才的?|上面的?).{0,4}(提案|修改|方案|调整)"
+    r"|按(这个|该|上述|刚才的?|上面的?).{0,4}(提案|修改|方案|调整)"
+    r"|(提案|修改|方案|调整)\s*(ID|id|编号)\s*[：:]?\s*\S+"
+)
+_STRUCTURE_ALIASES = {
+    "full_body": ("全身",), "upper_lower": ("上下肢", "上下身"),
+    "ppl": ("推拉腿", "推拉"),
+}
+
+
+def _iter_proposal_tokens(value, out: set[str]) -> None:
+    if isinstance(value, dict):
+        for v in value.values():
+            _iter_proposal_tokens(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _iter_proposal_tokens(v, out)
+    elif isinstance(value, str):
+        v = value.strip()
+        if len(v) >= 2:
+            out.add(v)
+            for alias in _STRUCTURE_ALIASES.get(v, ()):
+                out.add(alias)
+            # 中文短语拆 2-6 字 n-gram，匹配“改为哑铃卧推”“加重建议”这类确认
+            for run in re.findall(r"[\u4e00-\u9fff]{2,}", v):
+                for n in range(2, min(6, len(run)) + 1):
+                    for i in range(0, len(run) - n + 1):
+                        out.add(run[i:i + n])
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        out.add(str(value))
+
+
+def proposal_is_referenced(text: str, proposal: dict) -> bool:
+    """确认必须指向提案本身，不能只凭裸“好/确认”。"""
+    text = str(text or "").strip()
+    if not text:
+        return False
+    if proposal.get("id") and str(proposal["id"]) in text:
+        return True
+    if _REFERENCE_PHRASE.search(text):
+        return True
+    tokens: set[str] = set()
+    for op in proposal.get("operations") or []:
+        _iter_proposal_tokens(op, tokens)
+    _iter_proposal_tokens(proposal.get("reason") or "", tokens)
+    _iter_proposal_tokens(proposal.get("target") or "", tokens)
+    for token in tokens:
+        if len(token) >= 2 and token in text:
+            return True
+    return False
+
+
 def confirm_proposal(db, user_id: str, proposal_id: str, message: str,
                      already_recorded: bool = False) -> dict:
     """用户确认 AI 提案：语义门（同意/拒绝/含糊）→ 引用消歧 → 重校验 → 提交。
@@ -439,6 +493,11 @@ def confirm_proposal(db, user_id: str, proposal_id: str, message: str,
         raise ProposalRejected([
             "当前有多条待确认提案，请在消息中注明要确认的提案 ID："
             + "、".join(p["id"] for p in pending)])
+    if not proposal_is_referenced(text, proposal):
+        return {"proposal_id": proposal_id, "status": "pending",
+                "decision": "unclear",
+                "note": ("确认必须指向该提案：请注明提案 ID 或具体修改内容；"
+                         "裸“好/确认”不会执行")}
 
     if already_recorded:
         # 对话场景：本轮原话已在库，直接作为最新用户消息依据

@@ -15,6 +15,10 @@ import difflib
 import hashlib
 import re
 
+MAX_PDF_BYTES = 20 * 1024 * 1024
+MAX_PDF_PAGES = 200
+MAX_KNOWLEDGE_CHARS = 2_000_000
+
 # 高风险关键词：命中即隔离（与出卡线"从严剔除"口径一致，可扩展）
 RISK_KEYWORDS = (
     "类固醇", "激素", "禁药", "兴奋剂", "利尿剂", "脱水剂", "克仑特罗",
@@ -44,13 +48,20 @@ def content_hash(content: str) -> str:
 
 def extract_pdf_text(data: bytes) -> str:
     """PDF 文本提取（pymupdf）。失败抛 ValueError，由调用方如实返回。"""
+    if not isinstance(data, (bytes, bytearray)) or len(data) > MAX_PDF_BYTES:
+        raise ValueError(f"PDF 超过 {MAX_PDF_BYTES // (1024*1024)}MB 上限")
     try:
         import fitz  # pymupdf
     except ImportError as e:
         raise ValueError("服务器未安装 pymupdf，暂不支持 PDF 导入") from e
     try:
         doc = fitz.open(stream=data, filetype="pdf")
-        return "\n".join(page.get_text() for page in doc)
+        if doc.page_count > MAX_PDF_PAGES:
+            raise ValueError(f"PDF 页数超过 {MAX_PDF_PAGES} 页上限")
+        text = "\n".join(page.get_text() for page in doc)
+        if len(text) > MAX_KNOWLEDGE_CHARS:
+            raise ValueError("PDF 提取文本超过知识导入上限")
+        return text
     except Exception as e:  # noqa: BLE001 解析失败统一如实上报
         raise ValueError(f"PDF 解析失败：{e}") from e
 
@@ -198,6 +209,8 @@ def import_knowledge(db, user_id: str, title: str, kind: str, content: str,
     content = str(content or "").strip()
     if len(content) < 20:
         return {"error": "内容太短（至少 20 字）"}
+    if len(content) > MAX_KNOWLEDGE_CHARS:
+        return {"error": f"内容超过知识导入上限（{MAX_KNOWLEDGE_CHARS} 字）"}
     if kind not in ("text", "markdown", "pdf", "article"):
         return {"error": "kind 必须是 text/markdown/pdf/article"}
     chash = content_hash(content)

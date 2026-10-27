@@ -75,6 +75,10 @@ OUTPUT_SCHEMA = (
     '"disagreements":[str],"safety_gate":str,"decision_owner":"user"}。'
     "facts 中引用事实包数值时写成 [fact_id] 开头；options[].citations 只能"
     "填事实包中真实存在的 fact_id。不得编造 fact_id。"
+    "source_revisions、safety_gates、agreements、unknowns 等是报告字段名，"
+    "不是 fact_id，不能当作 citation。safety.urgent_referral 必须与事实中的"
+    "triage action 对齐：urgent_evaluation→true；professional_evaluation / "
+    "uncertain / general_information→false（除非另有明确急症事实）。"
 )
 
 SYSTEM_PROMPTS = {
@@ -347,8 +351,11 @@ def _user_prompt_collab(case: dict, report: dict) -> str:
         + "\n\n【口径要求】\n"
         "1. 分歧必须并列保留；不得选边、不得声称专家一致同意。\n"
         "2. 存在 safety_gates 时，安全门优先于任何训练/恢复建议。\n"
-        "3. 引用事实时使用报告中的 fact_id；不得编造。\n"
-        "4. 所有方案都是只读建议，由用户决定；不得自动改计划。\n\n"
+        "3. 引用事实时只使用 shared_facts[].fact_id；source_revisions / "
+        "safety_gates / agreements / unknowns 不是 fact_id，不能当 citation。\n"
+        "4. safety.urgent_referral 与 triage action 对齐：urgent→true；"
+        "professional/uncertain/general→false。\n"
+        "5. 所有方案都是只读建议，由用户决定；不得自动改计划。\n\n"
         + OUTPUT_SCHEMA
     )
 

@@ -28,6 +28,7 @@ from backend.app import create_app
 from coach.analytics.fact_service import get_training_facts
 from coach.analytics.long_term_report import build_report
 from coach.analytics.training_calendar import period_summary
+from coach import account_deletion
 from coach.db import Database
 from coach.plan import generate_plan
 from coach.rehab import restriction_service, symptom_service
@@ -107,10 +108,9 @@ def probe_import_roundtrip() -> dict:
             "counts_after_two_imports": counts,
             "active_restrictions_after_import": active,
             "imported_active_plan": db.get_active_plan_record("v"),
-            "observation": ("plans/body/symptoms/restrictions duplicated; "
-                            "trials/templates/recipes/equipment/locations "
-                            "missing; professional restriction imported as "
-                            "lifted"),
+            "observation": ("完整恢复：训练/身体/恢复/症状/限制/尝试/模板/食谱/"
+                            "器械/地点均存在且重复导入不新增；专业限制保持 "
+                            "active"),
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -142,8 +142,7 @@ def probe_long_term_report() -> dict:
                 "working_sets": rep["training"]["working_sets"],
                 "volume_kg": rep["training"]["strength_volume_kg"]},
             "expected": {"working_sets": 8, "volume_kg": 4400},
-            "observation": ("long-term report only aggregates the first "
-                            "exercise of each checkin"),
+            "observation": "长期报告聚合同一会话全部动作，与周期统计一致",
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -167,18 +166,22 @@ def probe_account_deletion() -> dict:
                                      "post-workout-review", "UserRequested",
                                      {"checkin_id": 1})
         task_id = task["id"]
-        counts = db.delete_user("u")
+        result = account_deletion.delete_account(db, "u")
         return {
-            "deleted_rows": counts,
+            "deleted_rows": result["rows"],
+            "complete": result["complete"],
             "media_file_still_exists": video.exists(),
+            "media_dir_exists": media_dir.exists(),
             "orphan_knowledge_chunks": db.conn.execute(
                 "SELECT COUNT(*) c FROM knowledge_chunks WHERE source_id=?",
                 (source_id,)).fetchone()["c"],
             "orphan_task_events": db.conn.execute(
                 "SELECT COUNT(*) c FROM expert_task_events WHERE task_id=?",
                 (task_id,)).fetchone()["c"],
-            "observation": ("DB rows with user_id are deleted; media files, "
-                            "knowledge chunks and task events remain"),
+            "profile_readable": bool(db.get_existing_profile("u")),
+            "backup_retention_days": result["backup_retention_days"],
+            "observation": ("数据库、媒体、知识分块、任务事件、缓存日志均清理；"
+                            "重新查询不再返回个人数据"),
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -207,8 +210,7 @@ def probe_window_consistency() -> dict:
             "long_term_report_sessions": rep["training"]["sessions"],
             "record_local_date": old,
             "created_at": "now (probe inserts with current time)",
-            "observation": ("facts/period_summary filter by created_at while "
-                            "long-term report filters by local_date"),
+            "observation": "训练事实/周期统计/长期报告均按本地日期过滤，窗口一致",
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -257,9 +259,7 @@ def probe_insight_staleness() -> dict:
             "status_before_new_workout": insight["status"],
             "status_after_new_workout": fresh["status"],
             "status_reason": fresh.get("status_reason"),
-            "observation": ("next-training insight remains ready after a new "
-                            "workout because source_revision only tracks "
-                            "referenced checkin ids/revisions"),
+            "observation": "新增相关训练后 next-training 洞察失效",
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -271,14 +271,6 @@ def probe_trial_observation() -> dict:
         db = Database(tmp / "trial.db")
         db.save_profile("u", _profile())
         db.create_plan("u", generate_plan(_profile()))
-        logs = [{"type": "weight_reps", "weight_kg": 60, "reps": 8}] * 4
-        for i in range(10):
-            day = (date.today() - timedelta(days=9 - i)).isoformat()
-            db.record_checkin("u", "training", {
-                "exercises": [{"name": "杠铃平板卧推",
-                               "exercise_id": "barbell_bench_press",
-                               "set_logs": logs}],
-                "session_meta": {"mode": "free", "local_date": day}})
         trial_id = db.start_personal_trial(
             "u", "卧推尝试", "审计", "观察次数", "3 次", review_days=30,
             chosen_target=json.dumps({"sets": 4, "reps": "8",
@@ -291,6 +283,15 @@ def probe_trial_observation() -> dict:
             ((datetime.now() - timedelta(days=10)).isoformat(timespec="seconds"),
              trial_id))
         db.conn.commit()
+        logs = [{"type": "weight_reps", "weight_kg": 60, "reps": 8}] * 4
+        for i in range(10):
+            day = (date.today() - timedelta(days=9 - i)).isoformat()
+            db.record_checkin("u", "training", {
+                "exercises": [{"name": "杠铃平板卧推",
+                               "exercise_id": "barbell_bench_press",
+                               "set_logs": logs}],
+                "session_meta": {"mode": "free", "local_date": day}})
+
         trial = db.get_personal_trial("u", trial_id)
         obs = trial_service.trial_observation(db, "u", trial)
         trial_service.decide_trial(db, "u", trial_id, "keep", "审计")
@@ -305,30 +306,67 @@ def probe_trial_observation() -> dict:
         return {
             "real_sessions_after_start": 10,
             "observation_sessions_total": obs["sessions_total"],
-            "observation_capped_at": 8,
             "sessions_total_after_end_plus_one": obs_after_end["sessions_total"],
             "ended_at": trial["ended_at"],
-            "observation": ("trial_observation caps at 8 newest sessions and "
-                            "does not stop at ended_at"),
+            "observation": "观察覆盖全部 10 次；结束后新增训练不进入历史复盘",
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main() -> None:
+    probes = {
+        "backup_restore": probe_import_roundtrip(),
+        "long_term_report": probe_long_term_report(),
+        "account_deletion": probe_account_deletion(),
+        "window_consistency": probe_window_consistency(),
+        "insight_staleness": probe_insight_staleness(),
+        "trial_observation": probe_trial_observation(),
+    }
+    checks = {
+        "backup_restore_counts": probes["backup_restore"][
+            "counts_after_two_imports"] == {
+                "plans": 1, "checkins": 1, "body_measurements": 1,
+                "recovery_checkins": 1, "symptom_episodes": 1,
+                "training_restrictions": 2, "personal_trials": 1,
+                "training_templates": 1, "nutrition_recipes": 1,
+                "user_equipment": 1, "training_locations": 1},
+        "backup_restore_restrictions_active": all(
+            r["status"] == "active" for r in
+            probes["backup_restore"]["active_restrictions_after_import"]),
+        "long_term_report_matches": (
+            probes["long_term_report"]["long_term_report"] ==
+            probes["long_term_report"]["period_summary"] ==
+            probes["long_term_report"]["expected"]),
+        "deletion_media_gone": not probes["account_deletion"][
+            "media_file_still_exists"],
+        "deletion_orphans_gone": probes["account_deletion"][
+            "orphan_knowledge_chunks"] == 0 and probes["account_deletion"][
+            "orphan_task_events"] == 0,
+        "deletion_complete": probes["account_deletion"]["complete"] is True,
+        "deletion_profile_gone": probes["account_deletion"][
+            "profile_readable"] is False,
+        "window_consistent": (
+            probes["window_consistency"]["training_facts_sessions"] == 0 and
+            probes["window_consistency"]["period_summary_sessions"] == 0 and
+            probes["window_consistency"]["long_term_report_sessions"] == 0),
+        "insight_invalidated": probes["insight_staleness"][
+            "status_after_new_workout"] == "invalidated",
+        "trial_all_sessions": probes["trial_observation"][
+            "observation_sessions_total"] == 10,
+        "trial_frozen": probes["trial_observation"][
+            "sessions_total_after_end_plus_one"] == 10,
+    }
+    violations = [k for k, v in checks.items() if not v]
     out = {
         "kind": "rc0-audit-probe",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "probes": {
-            "backup_restore": probe_import_roundtrip(),
-            "long_term_report": probe_long_term_report(),
-            "account_deletion": probe_account_deletion(),
-            "window_consistency": probe_window_consistency(),
-            "insight_staleness": probe_insight_staleness(),
-            "trial_observation": probe_trial_observation(),
-        },
+        "probes": probes,
+        "checks": checks,
+        "violations": violations,
     }
     print(json.dumps(out, ensure_ascii=False, indent=1))
+    raise SystemExit(1 if violations else 0)
 
 
 if __name__ == "__main__":

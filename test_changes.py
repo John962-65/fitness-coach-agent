@@ -206,7 +206,8 @@ def test_multiple_pending_requires_id_in_message(tmp_path):
     assert ok["status"] == "applied"
     # p2 的 base 已漂移（revision 1→2），确认时应判 expired
     with pytest.raises(ProposalRejected, match="不一致"):
-        confirm_proposal(db, "chg", p2["proposal_id"], "同意")
+        confirm_proposal(db, "chg", p2["proposal_id"],
+                         f"同意 {p2['proposal_id']}")
 
 
 def test_ai_proposal_base_drift_marks_expired(tmp_path):
@@ -219,7 +220,8 @@ def test_ai_proposal_base_drift_marks_expired(tmp_path):
                   [{"op": "rename_day", "day": "周一", "new_name": "推A日"}],
                   "手动先改", plan_base(db))
     with pytest.raises(ProposalRejected, match="不一致"):
-        confirm_proposal(db, "chg", staged["proposal_id"], "同意")
+        confirm_proposal(db, "chg", staged["proposal_id"],
+                         f"同意 {staged['proposal_id']}")
     assert db.get_proposal("chg", staged["proposal_id"])["status"] == "expired"
 
 
