@@ -24,7 +24,8 @@ def triage(text, onset=None, **kw):
 def test_urgent_symptoms_trigger_urgent_evaluation():
     # P9-B 审计后补齐的召回缺口：晕倒/胸部剧痛（原先漏判为 uncertain）
     for text in ("深吸气时胸部剧烈疼痛，出冷汗", "运动中突然晕倒",
-                 "小腿肿胀发热明显"):
+                 "小腿肿胀发热明显", "胸口有点痛，今天还能练吗",
+                 "心口疼，有点喘"):
         t = triage(text)
         assert t["action"] == "urgent_evaluation", (text, t["action"])
         assert t["restriction_hint"]

@@ -177,7 +177,8 @@ CONFIRM_PROPOSAL_TOOL = {
             "用户在对话中明确同意某个待确认提案后调用（须是提案提交之后的"
             "下一轮用户消息，同轮自批会被拒绝）。系统会用本轮用户原话做"
             "语义确认（同意/拒绝/含糊），拒绝或含糊都不会执行。传 propose_change"
-            "返回的 proposal_id。"
+            "返回的 proposal_id。用户明确拒绝某提案时也应调用本工具关闭提案"
+            "（不会修改计划），不要只在口头答应。"
         ),
         "parameters": {
             "type": "object",
@@ -675,6 +676,9 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
 {plan}
 {plan_fence}
 
+# 当前生效训练限制（服务端安全视图；优先级高于任何训练建议）
+{restrictions}
+
 # 近期动态（打卡数据摘要，相关时引用）
 {dynamic}
 
@@ -738,7 +742,12 @@ SYSTEM_TEMPLATE = """你是一位专业的私人健身教练 Agent——"独属�
     与用户协商出明确修改方案后，调 propose_change 提交待确认提案（target/operations/
     reason）；提案在用户同意前不生效。用户在网页提案卡确认，或在对话中明确同意后
     （下一轮）调用 confirm_proposal 执行——同轮提案同轮确认会被系统拒绝；
+    用户明确拒绝某提案时也调用 confirm_proposal 关闭提案（不会修改计划）；
     在生效前绝不能声称"已修改"。
+16. 回答训练/加重/动作/恢复建议前，必须检查「当前生效训练限制」：不得建议被
+    限制的动作或负荷；限制是并集，不能因某个专家没提到就忽略。限制解除只能在
+    康复工作台按纪律处理（professional 限制需专业人员说明），不能在对话中自行
+    解除或建议用户"先练着看"。
 """
 
 # R3：输出侧数字承诺兜底（"30 天瘦 5 斤"类）
@@ -809,10 +818,37 @@ class CoachAgent:
                 "⚠️ 当前计划已隔离：" + self.profile["plan_fence"]["reason"]
                 + "。" + followup if self.profile.get("plan_fence")
                 else ""),
+            restrictions=self._restrictions_text(),
             dynamic=dynamic,
             principles=self.kb.l1_principles,
             knowledge_index=self.kb.l2_index,
         )
+
+    def _restrictions_text(self) -> str:
+        """当前生效训练限制（P3 统一视图）：chat 也必须看到，不能只靠计划门。"""
+        try:
+            from .rehab import restriction_service
+            rows = restriction_service.effective_restrictions(
+                self.db, self.user_id)
+        except Exception:
+            return "（限制读取失败：涉及伤病/疼痛时先停止并建议专业评估）"
+        if not rows:
+            return "（无生效训练限制）"
+        label = {"user_reported": "用户自行报告",
+                 "professional": "专业人员给出",
+                 "triage_recommended": "系统安全分流（待确认）"}
+        lines = ["以下限制正在生效，优先级高于任何训练/营养/恢复建议；"
+                 "不得建议违反，解除必须走康复工作台纪律："]
+        for r in rows:
+            aff = r.get("affected_activities") or {}
+            regions = "、".join(aff.get("regions") or []) or "指定动作"
+            movements = "、".join(aff.get("movements") or [])
+            scope = regions + (f"；动作：{movements}" if movements else "")
+            lines.append(
+                f"- [{r['id']}|{label.get(r['source_type'], r['source_type'])}] "
+                f"{scope}：{r['restriction_description']}"
+                f"（生效 {str(r.get('effective_at') or '')[:10]}）")
+        return "\n".join(lines)
 
     def _exercise_feedback_text(self) -> str:
         rows = self.db.exercise_feedback_rows(self.user_id)

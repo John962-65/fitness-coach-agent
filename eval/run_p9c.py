@@ -19,8 +19,16 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
 
 CASES_PATH = Path(__file__).resolve().parent / "p9c-expert-eval-cases.json"
 
@@ -41,10 +49,10 @@ def _has_real_llm() -> tuple[bool, str]:
     if os.getenv("FC_LLM_API_KEY"):
         return True, "FC_LLM_API_KEY"
     try:
-        from coach.llm import LLM
-        llm = LLM()
+        from coach.llm import LLMClient
+        llm = LLMClient()
         if getattr(llm, "fake", True) is False and getattr(llm, "api_key", ""):
-            return True, "coach.llm 配置"
+            return True, f"coach.llm 配置（{llm.model}）"
     except Exception:
         pass
     return False, "未检测到真实模型凭据（FAKE/未配置）"
@@ -82,8 +90,8 @@ def main() -> int:
                 "note": "T4 层不能以 FAKE LLM 冒充；真实运行需配置模型凭据",
             })
             continue
-        from coach.llm import LLM
-        llm = LLM()
+        from coach.llm import LLMClient
+        llm = LLMClient()
         prompt = (
             "你是 Fitness Coach 的专家顾问。只使用【授权事实】中的数据；"
             "违反【期望边界】的输出视为错误。\n"

@@ -1,0 +1,257 @@
+{
+ "kind": "rc0-audit-probe",
+ "generated_at": "2026-10-27T11:10:02",
+ "probes": {
+  "backup_restore": {
+   "export_sections": [
+    "body_measurements",
+    "checkin_revisions",
+    "checkins",
+    "custom_foods",
+    "expert_insights_index",
+    "meals",
+    "motion_analyses_index",
+    "personal_trials",
+    "plans",
+    "profile",
+    "recipes",
+    "recovery_checkins",
+    "symptom_episodes",
+    "training_locations",
+    "training_restrictions",
+    "training_templates",
+    "user_equipment"
+   ],
+   "counts_after_two_imports": {
+    "plans": 3,
+    "checkins": 1,
+    "body_measurements": 2,
+    "recovery_checkins": 1,
+    "symptom_episodes": 2,
+    "training_restrictions": 4,
+    "personal_trials": 0,
+    "training_templates": 0,
+    "nutrition_recipes": 0,
+    "user_equipment": 0,
+    "training_locations": 0
+   },
+   "active_restrictions_after_import": [
+    {
+     "source_type": "triage_recommended",
+     "status": "lifted"
+    },
+    {
+     "source_type": "professional",
+     "status": "lifted"
+    },
+    {
+     "source_type": "triage_recommended",
+     "status": "lifted"
+    },
+    {
+     "source_type": "professional",
+     "status": "lifted"
+    }
+   ],
+   "imported_active_plan": {
+    "id": 2,
+    "version": 1,
+    "content": {
+     "template": "老炮周期化三分化（RPE 驱动 + 高级技术）",
+     "medical_status": "allowed",
+     "level": "advanced",
+     "days_per_week": 3,
+     "requested_days_per_week": 3,
+     "time_budget_minutes": 60,
+     "goal_version": 0,
+     "schedule": [
+      {
+       "day": "周一",
+       "focus": "推",
+       "exercises": [
+        {
+         "exercise_id": "barbell_bench_press",
+         "name": "杠铃平板卧推",
+         "role": "main",
+         "sets": 4,
+         "reps": "5-8",
+         "note": "RPE 8，第 3 周加重",
+         "why": "水平推模式主推"
+        },
+        {
+         "exercise_id": "incline_bench_press",
+         "name": "杠铃上斜卧推",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "8-10",
+         "note": "RPE 8",
+         "why": "水平推模式主推"
+        },
+        {
+         "exercise_id": "overhead_press",
+         "name": "站姿推举",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "6-10",
+         "note": "RPE 8",
+         "why": "垂直推模式主推"
+        },
+        {
+         "exercise_id": "lateral_raise",
+         "name": "侧平举",
+         "role": "accessory",
+         "sets": 3,
+         "reps": "12-20",
+         "note": "最后一组递减组",
+         "why": "孤立模式主推"
+        }
+       ],
+       "estimated_minutes": 44
+      },
+      {
+       "day": "周三",
+       "focus": "拉",
+       "exercises": [
+        {
+         "exercise_id": "deadlift",
+         "name": "硬拉",
+         "role": "main",
+         "sets": 3,
+         "reps": "3-6",
+         "note": "RPE 8-9，周期化加重",
+         "why": "髋铰链模式主推"
+        },
+        {
+         "exercise_id": "weighted_pull_up",
+         "name": "负重引体向上",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "6-10",
+         "note": "RPE 8",
+         "why": "垂直拉模式主推"
+        },
+        {
+         "exercise_id": "face_pull",
+         "name": "面拉",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "10-12",
+         "note": "顶峰收缩 1 秒",
+         "why": "按你的数据选了面拉"
+        },
+        {
+         "exercise_id": "face_pull",
+         "name": "面拉",
+         "role": "accessory",
+         "sets": 3,
+         "reps": "15-20",
+         "note": "后束+肩袖健康",
+         "why": "水平拉模式主推"
+        }
+       ],
+       "estimated_minutes": 42
+      },
+      {
+       "day": "周六",
+       "focus": "蹲",
+       "exercises": [
+        {
+         "exercise_id": "barbell_back_squat",
+         "name": "杠铃深蹲",
+         "role": "main",
+         "sets": 4,
+         "reps": "5-8",
+         "note": "RPE 8，周期化加重",
+         "why": "蹲模式主推"
+        },
+        {
+         "exercise_id": "romanian_deadlift",
+         "name": "罗马尼亚硬拉",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "8-10",
+         "note": "腘绳肌主导",
+         "why": "髋铰链模式主推"
+        },
+        {
+         "exercise_id": "bulgarian_split_squat",
+         "name": "保加利亚分腿蹲",
+         "role": "secondary",
+         "sets": 3,
+         "reps": "8-12/侧",
+         "note": "单侧纠正",
+         "why": "单侧蹲模式主推"
+        },
+        {
+         "exercise_id": "lying_leg_curl",
+         "name": "俯卧腿弯举",
+         "role": "accessory",
+         "sets": 3,
+         "reps": "12-15",
+         "why": "孤立模式主推"
+        }
+       ],
+       "estimated_minutes": 44
+      }
+     ],
+     "notes": [
+      "每次训练先热身 5-10 分钟，主力动作从小重量组开始",
+      "第 1-2 周：RPE 8（每组留 2 次余量）；第 3 周：RPE 9 冲击；第 4 周卸载",
+      "孤立动作最后一组用递减组；主力动作按周加重 2.5kg",
+      "监控恢复：晨起静息心率升高 5+ 或持续疲劳 → 提前卸载"
+     ]
+    }
+   },
+   "observation": "plans/body/symptoms/restrictions duplicated; trials/templates/recipes/equipment/locations missing; professional restriction imported as lifted"
+  },
+  "long_term_report": {
+   "period_summary": {
+    "working_sets": 8,
+    "volume_kg": 4400
+   },
+   "long_term_report": {
+    "working_sets": 4,
+    "volume_kg": 2400
+   },
+   "expected": {
+    "working_sets": 8,
+    "volume_kg": 4400
+   },
+   "observation": "long-term report only aggregates the first exercise of each checkin"
+  },
+  "account_deletion": {
+   "deleted_rows": {
+    "expert_tasks": 1,
+    "knowledge_sources": 1,
+    "media_assets": 1,
+    "users": 1
+   },
+   "media_file_still_exists": true,
+   "orphan_knowledge_chunks": 1,
+   "orphan_task_events": 1,
+   "observation": "DB rows with user_id are deleted; media files, knowledge chunks and task events remain"
+  },
+  "window_consistency": {
+   "training_facts_sessions": 1,
+   "period_summary_sessions": 1,
+   "long_term_report_sessions": 0,
+   "record_local_date": "2026-09-26",
+   "created_at": "now (probe inserts with current time)",
+   "observation": "facts/period_summary filter by created_at while long-term report filters by local_date"
+  },
+  "insight_staleness": {
+   "status_before_new_workout": "ready",
+   "status_after_new_workout": "ready",
+   "status_reason": null,
+   "observation": "next-training insight remains ready after a new workout because source_revision only tracks referenced checkin ids/revisions"
+  },
+  "trial_observation": {
+   "real_sessions_after_start": 10,
+   "observation_sessions_total": 8,
+   "observation_capped_at": 8,
+   "sessions_total_after_end_plus_one": 8,
+   "ended_at": "2026-10-27T11:10:08",
+   "observation": "trial_observation caps at 8 newest sessions and does not stop at ended_at"
+  }
+ }
+}

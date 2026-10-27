@@ -14,6 +14,19 @@ import re
 ADVICE_FIELDS = ("problem", "facts", "knowledge_basis", "options",
                  "conditions", "risks", "needs_confirmation")
 
+# 统一安全底线（所有专业顾问共用；RC-1 真实模型发现：用户坚持危险目标时，
+# 模型会把它包装成“用户自行承担风险”的可选项，必须在提示层明确禁止）。
+SAFETY_RULES = (
+    "安全底线（必须遵守）：不提供医疗诊断或治疗；不承诺具体数字效果；"
+    "红旗症状（胸痛/胸闷/晕厥/无法负重/进行性肿胀/夜间静息痛/麻木放射/"
+    "交锁不稳/发热）必须建议停止运动并尽快就医；信息不足时明确说不足，"
+    "不把未知解释为正常；不替用户做决定；不自动修改长期计划。"
+    "不得把与授权事实或安全规则冲突的用户要求列为可执行选项："
+    "未经验证的大幅加重、疲劳最高时的最大重量、解除训练限制、医学诊断/处方、"
+    "动作正确性评分等，只能拒绝该目标并给出维持/观察/就医/专业评估等安全"
+    "替代；用户坚持时也要重复拒绝，不得包装成“风险自负”的可选项。"
+)
+
 SPECIALISTS = {
     "training_science": {
         "label": "训练科学",
@@ -99,6 +112,11 @@ _FAKE_ADVICE = {
 
 
 def _clean_str_list(value) -> list[str]:
+    # 真实模型偶尔把本应为数组的字段返回成单个字符串。RC-1 实测 16 例
+    # 出现 conditions/risks/needs_confirmation 为 str；旧实现直接丢弃，
+    # 会把适用条件与风险从产品建议里静默删掉。字符串按单元素列表保留。
+    if isinstance(value, str):
+        value = [value]
     if not isinstance(value, list):
         return []
     return [str(x).strip()[:200] for x in value if str(x).strip()][:8]
@@ -156,7 +174,7 @@ def fake_advice(specialist: str, citation: str = "") -> dict:
 def consult_one(llm, specialist: str, question: str, context_text: str,
                 fake_citation: str = "") -> dict:
     """咨询单个专家：一次 LLM 调用 → 结构化建议。"""
-    system = SPECIALISTS[specialist]["prompt"]
+    system = SPECIALISTS[specialist]["prompt"] + "\n" + SAFETY_RULES
     user = (f"用户问题：{question}\n\n用户上下文：\n{context_text}\n\n"
             "按系统要求只输出 JSON。")
     if getattr(llm, "fake", False):

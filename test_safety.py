@@ -46,6 +46,13 @@ def test_block_emergency_chest():
     assert "120" in hit.response and "就医" in hit.response
 
 
+def test_block_mild_chest_pain_phrasing():
+    """RC-1 真实对话发现：'胸口有点痛' 未命中旧词表，被当成普通问题追问。"""
+    for text in ("胸口有点痛，今天还能练吗", "胸口隐隐作痛", "心口疼"):
+        hit = check_red_flags(text)
+        assert hit and hit.mode == "block" and hit.tier == "emergency", text
+
+
 def test_block_emergency_rhabdo_synonym():
     """同义词扩召回：不说'酱油色尿'也要命中"""
     hit = check_red_flags("练完腿第二天尿变成酱油色了")

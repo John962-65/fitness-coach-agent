@@ -38,6 +38,27 @@ def test_route_question(question, expected):
     assert route_question(question) == expected
 
 
+def test_parse_advice_keeps_single_string_safety_fields():
+    """RC-1 真实模型发现：字段被返回成字符串时，旧实现会静默丢弃。"""
+    raw = json.dumps({
+        "problem": "问题",
+        "facts": "单条事实",
+        "knowledge_basis": "单条依据",
+        "options": [{"title": "维持", "detail": "观察",
+                     "citations": "kb:1"}],
+        "conditions": "无红旗症状",
+        "risks": "继续训练可能加重",
+        "needs_confirmation": "由用户决定",
+    }, ensure_ascii=False)
+    advice = parse_advice(raw, "training_science")
+    assert advice["facts"] == ["单条事实"]
+    assert advice["knowledge_basis"] == ["单条依据"]
+    assert advice["conditions"] == ["无红旗症状"]
+    assert advice["risks"] == ["继续训练可能加重"]
+    assert advice["needs_confirmation"] == ["由用户决定"]
+    assert advice["options"][0]["citations"] == ["kb:1"]
+
+
 def test_route_is_ordered_and_covers_all_specialists():
     assert set(SPECIALISTS) == {"training_science", "nutrition", "recovery",
                                 "movement", "knowledge"}
@@ -65,7 +86,8 @@ def test_parse_advice_accepts_valid_json():
 def test_parse_advice_degrades_bad_output():
     assert parse_advice("这不是 JSON", "nutrition")["options"] == []
     assert parse_advice('{"problem": 123}', "nutrition")["problem"] == ""
-    assert parse_advice('{"facts": "不是列表"}', "nutrition")["facts"] == []
+    # RC-1：单字符串字段不再静默丢弃（安全条件/风险可能以字符串返回）
+    assert parse_advice('{"facts": "不是列表"}', "nutrition")["facts"] == ["不是列表"]
     assert parse_advice('{"options": [{"no_title": 1}, "x"]}', "nutrition")["options"] == []
 
 
@@ -186,3 +208,19 @@ def test_propose_invalid_operations_reports_error(tmp_path):
                                    "reason": "x"}))
     assert any("提案未创建" in r for r in a._turn_tool_results)
     assert a.db.list_proposals("ag") == []
+
+
+def test_agent_system_prompt_contains_active_restrictions(tmp_path):
+    """RC-1 agent 探针：chat 曾看不到 TrainingRestriction，建议了受限动作。"""
+    from coach.rehab import restriction_service
+    a = make_agent(tmp_path, uid="restriction-prompt")
+    restriction_service.create_restriction(a.db, a.user_id, {
+        "source_type": "professional",
+        "source_evidence": "专业人员要求暂不卧推",
+        "restriction_description": "暂不做杠铃卧推",
+        "affected_activities": {"regions": [],
+                                "movements": ["barbell_bench_press"]}})
+    prompt = a._build_system_prompt()
+    assert "暂不做杠铃卧推" in prompt
+    assert "当前生效训练限制" in prompt
+    assert "不得建议违反" in prompt
