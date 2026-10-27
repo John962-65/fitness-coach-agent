@@ -634,7 +634,10 @@ class Database:
                       ("chosen_target", "TEXT"), ("observation_metric", "TEXT"),
                       ("observation_window_days", "TEXT"),
                       ("min_sessions", "TEXT"),
-                      ("baseline_source_revisions", "TEXT"))
+                      ("baseline_source_revisions", "TEXT"),
+                      ("review_snapshot", "TEXT"),
+                      ("start_checkin_id", "TEXT"),
+                      ("end_checkin_id", "TEXT"))
         have = {r["name"] for r in self.conn.execute("PRAGMA table_info(personal_trials)")}
         for col, decl in trial_cols:
             if col not in have:
@@ -677,6 +680,19 @@ class Database:
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         counts: dict = {}
         with self.conn:
+            # 无直接 user_id、通过父记录归属的子表（RC-FIX-B）
+            cur = self.conn.execute(
+                "DELETE FROM knowledge_chunks WHERE source_id IN"
+                " (SELECT id FROM knowledge_sources WHERE user_id=?)",
+                (user_id,))
+            if cur.rowcount:
+                counts["knowledge_chunks"] = cur.rowcount
+            cur = self.conn.execute(
+                "DELETE FROM expert_task_events WHERE task_id IN"
+                " (SELECT id FROM expert_tasks WHERE user_id=?)",
+                (user_id,))
+            if cur.rowcount:
+                counts["expert_task_events"] = cur.rowcount
             for t in sorted(tables):
                 cols = [r["name"] for r in self.conn.execute(
                     f"PRAGMA table_info({t})").fetchall()]
@@ -1141,13 +1157,16 @@ class Database:
         if review_days:
             review = (datetime.now() + timedelta(days=review_days)
                       ).isoformat(timespec="seconds")
+        start_checkin = self.conn.execute(
+            "SELECT COALESCE(MAX(id),0) AS m FROM checkins WHERE user_id=?",
+            (user_id,)).fetchone()["m"]
         cur = self.conn.execute(
             "INSERT INTO personal_trials(user_id, change_desc, reason, observe,"
             " stop_rule, review_at, baseline, origin, exercise_id, plan_id,"
             " plan_version, chosen_target, observation_metric,"
             " observation_window_days, min_sessions, baseline_source_revisions,"
-            " status, created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?)",
+            " start_checkin_id, status, created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?)",
             (user_id, change_desc, reason, observe, stop_rule, review,
              baseline, origin, exercise_id,
              str(plan_id) if plan_id is not None else None,
@@ -1155,7 +1174,7 @@ class Database:
              chosen_target, observation_metric,
              str(observation_window_days) if observation_window_days is not None else None,
              str(min_sessions) if min_sessions is not None else None,
-             baseline_source_revisions, _now()))
+             baseline_source_revisions, str(start_checkin), _now()))
         self.conn.commit()
         return cur.lastrowid
 
@@ -1190,13 +1209,19 @@ class Database:
         return cur.rowcount > 0
 
     def end_personal_trial(self, user_id: str, trial_id: int,
-                           outcome: str, decision: str) -> bool:
+                           outcome: str, decision: str,
+                           review_snapshot: str | None = None) -> bool:
         if decision not in ("keep", "stop", "adjust"):
             raise ValueError("decision 必须是 keep/stop/adjust 之一")
+        end_checkin = self.conn.execute(
+            "SELECT COALESCE(MAX(id),0) AS m FROM checkins WHERE user_id=?",
+            (user_id,)).fetchone()["m"]
         cur = self.conn.execute(
-            "UPDATE personal_trials SET status='ended', outcome=?, decision=?, ended_at=?"
+            "UPDATE personal_trials SET status='ended', outcome=?, decision=?,"
+            " ended_at=?, review_snapshot=?, end_checkin_id=?"
             " WHERE user_id=? AND id=? AND status='active'",
-            (outcome, decision, _now(), user_id, trial_id))
+            (outcome, decision, _now(), review_snapshot, str(end_checkin),
+             user_id, trial_id))
         self.conn.commit()
         return cur.rowcount > 0
 

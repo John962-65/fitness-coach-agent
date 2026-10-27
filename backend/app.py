@@ -76,6 +76,28 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
                         content={"detail": {"error": "需要访问令牌（在「我的 → 数据与设置」配置）"}})
             return await call_next(request)
 
+    # RC-FIX-D：请求体上限（Content-Length 预检；分块上传由路由的流式上限兜底）
+    from fastapi import Request as _Request
+
+    @app.middleware("http")
+    async def _limit_body(request: _Request, call_next):
+        path = request.url.path
+        if path.startswith("/api"):
+            raw = request.headers.get("content-length")
+            if raw:
+                try:
+                    length = int(raw)
+                except ValueError:
+                    length = 0
+                upload = path.endswith(("/media/videos", "/motion-analyses"))
+                limit = 200 * 1024 * 1024 if upload else 50 * 1024 * 1024
+                if length > limit:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": {
+                            "error": f"请求体过大（上限 {limit // (1024*1024)}MB）"}})
+        return await call_next(request)
+
     register_routes(app)
 
     dist = Path(frontend_dist) if frontend_dist else FRONTEND_DIST
@@ -84,7 +106,12 @@ def create_app(db_path=None, frontend_dist: Path | None = None,
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):  # noqa: ANN202
             candidate = (dist / full_path).resolve()
-            if full_path and candidate.is_file() and str(candidate).startswith(str(dist.resolve())):
+            root = dist.resolve()
+            try:
+                contained = candidate == root or root in candidate.parents
+            except (OSError, ValueError):
+                contained = False
+            if full_path and candidate.is_file() and contained:
                 return FileResponse(candidate)
             return FileResponse(dist / "index.html")
     return app

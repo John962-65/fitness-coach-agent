@@ -58,6 +58,8 @@ def _log_unmatched(request: Request, uid: str, raw_name: str) -> None:
 MAX_VIDEO_BYTES = 200 * 1024 * 1024          # 单文件 200MB（测试可 monkeypatch）
 MAX_USER_MEDIA_BYTES = 2 * 1024 * 1024 * 1024  # 每用户媒体总量 2GB
 MAX_USER_MEDIA_FILES = 200                   # 每用户文件数
+MAX_SUBTITLE_BYTES = 2 * 1024 * 1024          # 字幕单文件 2MB
+MAX_PDF_BYTES = 20 * 1024 * 1024              # 知识 PDF 20MB
 _UPLOAD_CHUNK = 1024 * 1024
 # 媒体处理串行化（本地 CPU 单任务，避免多个重任务竞争）
 import threading as _threading
@@ -95,6 +97,18 @@ async def _stream_upload_to(upload, dest: Path, max_bytes: int) -> int:
         dest.unlink(missing_ok=True)
         raise UploadRejected(422, "空文件")
     return total
+
+
+async def _read_upload_limited(upload, max_bytes: int) -> bytes:
+    data = bytearray()
+    while True:
+        chunk = await upload.read(_UPLOAD_CHUNK)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > max_bytes:
+            raise UploadRejected(422, f"文件超过大小限制（{max_bytes // 1024}KB）")
+    return bytes(data)
 
 
 def _user_media_usage(media_dir: Path) -> tuple[int, int]:
@@ -212,7 +226,13 @@ def register_routes(app) -> None:
             raise HTTPException(status_code=422,
                                 detail={"error": "backup（备份 JSON）必填"})
         try:
-            return import_service.apply_import(db, uid, body)
+            return import_service.apply_import(
+                db, uid, body,
+                restore_profile=payload.get("restore_profile") is True,
+                activate_plan=payload.get("activate_plan") is True,
+                replace_active_plan=payload.get("replace_active_plan") is True,
+                accept_safety_import=payload.get("accept_safety_import") is True,
+                require_media_integrity=payload.get("require_media_integrity") is True)
         except ValueError as e:
             raise HTTPException(status_code=422,
                                 detail={"error": str(e)}) from None
@@ -226,9 +246,13 @@ def register_routes(app) -> None:
             raise HTTPException(
                 status_code=422,
                 detail={"error": "删除账户不可逆：需要 confirm=DELETE 显式确认"})
-        counts = db.delete_user(uid)
-        return {"deleted": True, "user": uid, "rows": counts,
-                "note": "该用户的全部数据已删除；媒体文件由部署级清理回收"}
+        from coach import account_deletion
+        try:
+            return account_deletion.delete_account(db, uid)
+        except Exception as e:  # noqa: BLE001 删除失败不得谎报成功
+            raise HTTPException(
+                status_code=500,
+                detail={"error": f"账户删除未完成：{e}"}) from None
 
     @api.post("/users/{uid}/device-import/preview")
     def device_import_preview(uid: str, request: Request,
@@ -652,7 +676,11 @@ def register_routes(app) -> None:
                                     detail={"error": "媒体访问需要令牌头或有效签名"})
         base = (request.app.state.db.path.parent / "media" / uid).resolve()
         target = (base / name).resolve()
-        if not str(target).startswith(str(base)) or not target.is_file():
+        try:
+            contained = target == base or base in target.parents
+        except (OSError, ValueError):
+            contained = False
+        if not contained or not target.is_file():
             raise HTTPException(status_code=404, detail={"error": "文件不存在"})
         return FileResponse(target)
 
@@ -690,7 +718,7 @@ def register_routes(app) -> None:
                 video_path.unlink(missing_ok=True)
                 raise HTTPException(status_code=422, detail={"error": "字幕仅支持 srt/vtt"})
             subtitle_path = media_dir / f"s{stamp}_{Path(subtitle.filename).name}"
-            subtitle_path.write_bytes(await subtitle.read())
+            subtitle_path.write_bytes(await _read_upload_limited(subtitle, MAX_SUBTITLE_BYTES))
         asset_id = db.add_media_asset(uid, title, str(video_path),
                                       str(subtitle_path) if subtitle_path else None)
         # §10.4：媒体处理不阻塞请求——后台线程（独立 DB 连接+串行信号量）
@@ -1098,10 +1126,30 @@ def register_routes(app) -> None:
         if not outcome:
             raise HTTPException(status_code=422,
                                 detail={"error": "复盘需要记录尝试期间的感受/执行情况"})
-        if not db.end_personal_trial(uid, trial_id, outcome, decision):
+        from coach.training_progression import trial_service
+        if not db.get_personal_trial(uid, trial_id):
             raise HTTPException(status_code=404,
-                                detail={"error": "尝试不存在或已结束"})
-        return {"trial_id": trial_id, "status": "ended", "decision": decision}
+                                detail={"error": "尝试不存在"})
+        try:
+            result = trial_service.decide_trial(db, uid, trial_id, decision,
+                                               outcome)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
+        return {"trial_id": trial_id, "status": "ended",
+                "decision": decision, "review": result.get("review")}
+
+    @api.post("/users/{uid}/trials/{trial_id}/rereview")
+    def trial_rereview(uid: str, trial_id: int, request: Request):
+        """已结束尝试的历史纠错复核：保留原快照，返回当前证据草稿。"""
+        from coach.training_progression import trial_service
+        db = request.app.state.db
+        _user_profile(db, uid)
+        try:
+            return trial_service.rereview_ended_trial(db, uid, trial_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422,
+                                detail={"error": str(e)}) from None
 
     @api.get("/users/{uid}/approach/revisions/{revision}")
     def approach_revision_content(uid: str, revision: int, request: Request):
