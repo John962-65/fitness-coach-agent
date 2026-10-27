@@ -697,3 +697,40 @@ def exercise_progress(db, user_id: str, exercise_id: str,
         "series": series,
         "caliber": facts["caliber"],
     }
+
+
+def training_scope_signature(db, user_id: str, exercise_id: str | None,
+                             start: str, end: str) -> dict:
+    """RC-FIX-C：训练数据版本（用于专家洞察按事实依赖范围失效）。
+
+    只统计窗口内的训练记录；新增/删除/纠错都会改变签名。exercise_id 为空时
+    代表整个训练窗口（协作分析），否则只统计该动作的会话。
+    """
+    if exercise_id:
+        sessions = [
+            s for s in exercise_sessions(db, user_id, exercise_id)
+            if start <= s["date"] <= end
+        ]
+        return {
+            "count": len(sessions),
+            "last_checkin_id": max((s["checkin_id"] for s in sessions), default=None),
+            "revision_total": sum(int(s.get("revision") or 0) for s in sessions),
+        }
+    rows = db.conn.execute(
+        "SELECT id, created_at, data,"
+        " (SELECT COUNT(*) FROM checkin_revisions r WHERE r.checkin_id=checkins.id)"
+        " AS revision FROM checkins WHERE user_id=? AND type='training'",
+        (user_id,)).fetchall()
+    selected = []
+    for row in rows:
+        try:
+            data = json.loads(row["data"])
+        except (ValueError, TypeError):
+            continue
+        if start <= session_local_date(row["created_at"], data) <= end:
+            selected.append(row)
+    return {
+        "count": len(selected),
+        "last_checkin_id": max((r["id"] for r in selected), default=None),
+        "revision_total": sum(int(r["revision"] or 0) for r in selected),
+    }

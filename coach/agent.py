@@ -2259,11 +2259,11 @@ class CoachAgent:
             if not outcome:
                 return "结束尝试必须记录观察结果（outcome）。"
             try:
-                ok = self.db.end_personal_trial(self.user_id, trial_id, outcome, decision)
+                from .training_progression import trial_service
+                trial_service.decide_trial(
+                    self.db, self.user_id, int(trial_id), decision, outcome)
             except ValueError as e:
                 return str(e)
-            if not ok:
-                return f"没有找到 active 状态的尝试 #{trial_id}。"
             self._refresh_system_prompt()
             return (f"尝试 #{trial_id} 已结束：{outcome}（决定：{decision}）。"
                     "这是带混杂因素的个人观察，仅适用于本人。")

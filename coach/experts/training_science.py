@@ -19,7 +19,7 @@ from ..analytics.activity_class import (
     CLASS_INTERVAL, CLASS_STEADY_CARDIO, CLASS_STRENGTH,
 )
 from ..analytics.exercise_metrics import entry_identity, exercise_sessions
-from ..analytics.fact_service import get_training_facts
+from ..analytics.fact_service import get_training_facts, training_scope_signature
 from ..analytics.progress_analysis import analyze_progress
 
 WINDOW_DAYS = 60          # 分析窗口：与趋势分析一致
@@ -777,6 +777,15 @@ def analyze_next_training(db, user_id: str, input_refs: dict) -> dict:
         "recovery_records": {str(k): v for k, v in recovery_records.items()},
         # 新增恢复记录也要使旧洞察失效（不只盯已引用的记录）
         "recovery_records_count": len(recovery_records),
+    }
+    scope_end = date.today().isoformat()
+    scope_start = (date.today() - timedelta(days=WINDOW_DAYS - 1)).isoformat()
+    source_revision["training_scope"] = {
+        "exercise_id": exercise_id,
+        "window_start": scope_start,
+        "window_end": scope_end,
+        "signature": training_scope_signature(
+            db, user_id, exercise_id, scope_start, scope_end),
     }
     if plan_version is not None:
         source_revision["plan_version"] = plan_version

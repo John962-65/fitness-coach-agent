@@ -212,7 +212,8 @@ def _sessions_in(db, user_id: str, start_d: str, end_d: str) -> list[dict]:
         "SELECT id, data, created_at FROM checkins WHERE user_id=?"
         " AND type='training' ORDER BY created_at DESC", (user_id,)
     ).fetchall()
-    from .exercise_metrics import session_local_date, _working_sets
+    from .exercise_metrics import entry_identity, session_local_date, _working_sets
+    from .. import exercise_service
     out = []
     for row in rows:
         try:
@@ -222,24 +223,38 @@ def _sessions_in(db, user_id: str, start_d: str, end_d: str) -> list[dict]:
         local_date = session_local_date(row["created_at"], data)
         if not (start_d <= local_date <= end_d):
             continue
+        classes: set[str] = set()
+        working_sets = 0
+        volume = 0
+        steady_seconds = 0
+        steady_distance = 0
+        has_work = False
         for ex in data.get("exercises") or []:
             logs = [l for l in (ex.get("set_logs") or []) if isinstance(l, dict)]
-            working = _working_sets(logs)
+            ex_id = entry_identity(db, user_id, ex)
+            doc = exercise_service.get_exercise(db, user_id, ex_id) if ex_id else None
+            working = _working_sets(logs, doc)
             if not working:
                 continue
-            classes = sorted({s["activity_class"] for s in working})
+            has_work = True
+            classes.update(s["activity_class"] for s in working)
             strength = [s for s in working if s["activity_class"] == "strength"]
+            working_sets += len(strength)
+            volume += sum(s.get("volume") or 0 for s in strength)
+            steady_seconds += sum(
+                s.get("duration_seconds") or 0 for s in working
+                if s.get("activity_class") not in ("strength", "interval"))
+            steady_distance += sum(
+                s.get("distance_m") or 0 for s in working
+                if s.get("activity_class") == "steady_cardio")
+        if has_work:
+            # 每个打卡计一次会话（频率口径），但指标聚合该会话的全部动作
             out.append({
                 "checkin_id": row["id"], "date": local_date,
-                "activity_classes": classes,
-                "working_sets": len(strength),
-                "volume": sum(s.get("volume") or 0 for s in strength),
-                "steady_cardio_seconds": sum(
-                    s.get("duration_seconds") or 0 for s in working
-                    if s.get("activity_class") not in ("strength", "interval")),
-                "steady_cardio_distance_m": sum(
-                    s.get("distance_m") or 0 for s in working
-                    if s.get("activity_class") == "steady_cardio"),
+                "activity_classes": sorted(classes),
+                "working_sets": working_sets,
+                "volume": volume,
+                "steady_cardio_seconds": steady_seconds,
+                "steady_cardio_distance_m": steady_distance,
             })
-            break  # 每个打卡计一次会话（频率口径）
     return out

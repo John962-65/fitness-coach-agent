@@ -1,0 +1,9 @@
+{
+ "ok": true,
+ "uid": "rcfix-c-1793080826551",
+ "insight_invalidated": true,
+ "trial_id": 1,
+ "trial_sessions": 10,
+ "review_frozen": true,
+ "screenshot": "docs/rc-fix-shots/rc-fix-e2e-trial-frozen.png"
+}

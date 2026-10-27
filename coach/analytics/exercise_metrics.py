@@ -252,6 +252,7 @@ def exercise_sessions(db, user_id: str, exercise_id: str) -> list[dict]:
             sessions.append({
                 "checkin_id": row["id"],
                 "revision": row["revision"],
+                "created_at": row["created_at"],
                 "date": session_local_date(row["created_at"], data),
                 "activity_class": classes[0] if len(classes) == 1 else "mixed",
                 "activity_classes": classes,

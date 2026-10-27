@@ -218,14 +218,21 @@ def _session_duration_min(data: dict, stamps: list[str]) -> float | None:
 def period_summary(db, user_id: str, days: int = 30) -> dict:
     """周期统计：统一类别口径 + 兼容字段别名。"""
     days = max(1, min(int(days), _MAX_SCAN_DAYS))
-    since = (datetime.now() - timedelta(days=days)).isoformat()
+    # RC-FIX-C：与训练事实/长期报告使用同一窗口口径——按会话本地日期过滤，
+    # 不用 created_at 预筛（导入旧备份/跨时区/纠错后日期可能与创建时间不同）。
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days - 1)
+    start, end = start_date.isoformat(), end_date.isoformat()
     metrics = _empty_metrics()
     durations: list[float] = []
     session_dates: set[str] = set()
     classification_rows = []
-    for row, data in _load_training_rows(db, user_id, since=since):
+    for row, data in _load_training_rows(db, user_id):
+        local = session_local_date(row["created_at"], data)
+        if not (start <= local <= end):
+            continue
         metrics["training_sessions"] += 1
-        session_dates.add(session_local_date(row["created_at"], data))
+        session_dates.add(local)
         stamps: list[str] = []
         session_classes: set[str] = set()
         for doc, log, cls in _iter_classified_sets(db, user_id, data):

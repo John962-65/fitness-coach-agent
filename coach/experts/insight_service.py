@@ -41,6 +41,19 @@ def _revision_drift(db, user_id: str, insight: dict) -> str | None:
     （P1）——任何一类漂移都意味着分析基于旧数据。
     """
     rev = insight.get("source_revision") or {}
+    scope = rev.get("training_scope")
+    if isinstance(scope, dict) and scope.get("window_start") and scope.get("window_end"):
+        try:
+            from ..analytics.fact_service import training_scope_signature
+            current = training_scope_signature(
+                db, user_id, scope.get("exercise_id"),
+                scope["window_start"], scope["window_end"])
+        except Exception:
+            return "训练数据版本核对失败，旧分析可能已过期，请重新分析"
+        if current != (scope.get("signature") or {}):
+            target = scope.get("exercise_id") or "训练窗口"
+            return (f"{target} 的训练记录在分析后新增/删除/纠错，"
+                    "该分析基于旧数据，请重新分析")
     for cid, stored in (rev.get("checkins") or {}).items():
         row = db.conn.execute(
             "SELECT (SELECT COUNT(*) FROM checkin_revisions r"

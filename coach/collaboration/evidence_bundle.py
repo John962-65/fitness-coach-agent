@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from ..analytics.fact_service import get_training_facts
+from ..analytics.fact_service import get_training_facts, training_scope_signature
 from ..body import body_metrics
 from ..equipment import equipment_version
 from ..recovery import recovery_metrics
@@ -22,9 +22,11 @@ SUPPORTED_DOMAINS = DOMAINS
 def _rev(checkins: dict, plan_record, meals: dict, recovery_count: int,
          recovery_records: dict, restrictions: str, equipment: str,
          motion: str, body: dict, symptoms: str = "",
-         targets_updated_at: str = "") -> dict:
+         targets_updated_at: str = "", training_scope: dict | None = None) -> dict:
     rev: dict = {"checkins": checkins, "recovery_records_count": recovery_count,
                  "restrictions": restrictions, "equipment": equipment}
+    if training_scope:
+        rev["training_scope"] = training_scope
     if recovery_records:
         rev["recovery_records"] = recovery_records
     if symptoms:
@@ -236,6 +238,15 @@ def build_evidence_bundle(db, user_id: str, domains: list[str],
                 calculation="既有动作技术分析记录",
                 data_quality={}, limitations=["保守观察，不构成动作正确性评分"]))
 
+    training_scope = None
+    if "training" in domains:
+        training_scope = {
+            "exercise_id": exercise_id,
+            "window_start": window["start"],
+            "window_end": window["end"],
+            "signature": training_scope_signature(
+                db, user_id, exercise_id, window["start"], window["end"]),
+        }
     source_revisions = _rev(
         checkins_rev, plan_record, meals_rev,
         recovery_count if "recovery" in domains else 0,
@@ -247,7 +258,8 @@ def build_evidence_bundle(db, user_id: str, domains: list[str],
         symptom_service.symptoms_version(db, user_id)
         if "rehabilitation" in domains else "",
         (db.get_nutrition_targets(user_id) or {}).get("updated_at") or ""
-        if "nutrition" in domains else "")
+        if "nutrition" in domains else "",
+        training_scope)
     return {"kind": "cross_domain_evidence_bundle_v1",
             "domains": list(domains), "window": window,
             "exercise_id": exercise_id,

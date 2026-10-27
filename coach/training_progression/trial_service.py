@@ -208,10 +208,29 @@ def _session_meets(session: dict, metric: str, target, chosen: dict) -> bool | N
     return None
 
 
+def _ts(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(
+            tzinfo=None)
+    except (ValueError, TypeError):
+        return None
+
+
 def trial_observation(db, user_id: str, trial: dict) -> dict:
-    """观察期进展：真实训练记录 × 观察指标（确定性）。"""
+    """观察期进展：真实训练记录 × 观察指标（确定性）。
+
+    RC-FIX-5：使用尝试开始/结束的完整时间；观察全部符合条件的记录（不截断
+    8 条）；结束后不再吸收新训练；临时替换掉本动作的会话不混入。
+    """
     exercise_id = trial.get("exercise_id")
-    start = str(trial.get("created_at") or "")[:10]
+    created = str(trial.get("created_at") or "")
+    start_ts = _ts(created) or _ts(created[:10] + "T00:00:00")
+    ended = str(trial.get("ended_at") or "")
+    end_ts = _ts(ended) if trial.get("status") == "ended" and ended else datetime.now()
+    if start_ts is None:
+        start_ts = datetime.now()
+    if end_ts is None:
+        end_ts = datetime.now()
     metric = trial.get("observation_metric") or "records"
     target = _parse_target_from_trial(trial)
     chosen = trial.get("chosen_target")
@@ -221,14 +240,40 @@ def trial_observation(db, user_id: str, trial: dict) -> dict:
         except (ValueError, TypeError):
             chosen = {}
     chosen = chosen or {}
-    sessions = [s for s in (exercise_sessions(db, user_id, exercise_id)
-                            if exercise_id else [])
-                if s["date"] >= start]
+    start_id = _int_or_none(trial.get("start_checkin_id"))
+    end_id = _int_or_none(trial.get("end_checkin_id"))         if trial.get("status") == "ended" else None
+    sessions = []
+    for s in (exercise_sessions(db, user_id, exercise_id)
+              if exercise_id else []):
+        cid = s.get("checkin_id")
+        if start_id is not None and cid is not None and cid <= start_id:
+            continue
+        if end_id is not None and cid is not None and cid > end_id:
+            continue
+        cts = _ts(s.get("created_at"))
+        if cts is not None:
+            if not (start_ts <= cts <= end_ts):
+                continue
+        else:
+            # 老记录没有 created_at：退回本地日期边界（仍不会吸收结束后的记录）
+            try:
+                from datetime import date as _date
+                d = _date.fromisoformat(s["date"])
+                if not (start_ts.date() <= d <= end_ts.date()):
+                    continue
+            except (ValueError, TypeError):
+                continue
+        repl = s.get("replacement") or {}
+        if isinstance(repl, dict) and repl.get("planned_exercise_id") == exercise_id:
+            # 该会话把尝试动作临时替换掉了，不能算作尝试动作的执行
+            continue
+        sessions.append(s)
     results = []
-    for s in sessions[:8]:
+    for s in sessions:
         meets = _session_meets(s, metric, target, chosen)
         results.append({
             "checkin_id": s["checkin_id"], "date": s["date"],
+            "created_at": s.get("created_at"),
             "revision": s.get("revision") or 0,
             "meets": meets,
             **({"attainment": target_attainment(s, target)}
@@ -254,6 +299,8 @@ def trial_observation(db, user_id: str, trial: dict) -> dict:
         "sessions_met": sum(1 for r in results if r["meets"] is True),
         "sessions_unmet": sum(1 for r in results if r["meets"] is False),
         "sessions": results,
+        "observation_start": start_ts.isoformat(timespec="seconds"),
+        "observation_end": end_ts.isoformat(timespec="seconds"),
         "window_elapsed": window_elapsed,
         "review_at": review_at,
         "min_sessions": min_sessions,
@@ -263,8 +310,44 @@ def trial_observation(db, user_id: str, trial: dict) -> dict:
     }
 
 
-def trial_review(db, user_id: str, trial: dict) -> dict:
-    """复盘草稿：比较真实记录；区分已观察 / 可能解释 / 无法确认。"""
+def trial_review(db, user_id: str, trial: dict,
+                 *, use_frozen: bool = True) -> dict:
+    """复盘草稿：比较真实记录；已结束尝试默认返回冻结快照。
+
+    RC-FIX-5：结束时的复盘写入 review_snapshot；之后新增训练不改变历史。
+    如果历史纠错改变了已结束尝试的证据，返回 frozen 快照 + needs_rereview/
+    post_end_changes，由用户走 rereview 流程，不静默覆盖。
+    """
+    if use_frozen and trial.get("status") == "ended" and trial.get("review_snapshot"):
+        try:
+            snapshot = json.loads(trial["review_snapshot"])
+        except (ValueError, TypeError):
+            snapshot = None
+        frozen = (snapshot or {}).get("review")
+        if isinstance(frozen, dict):
+            current = trial_observation(db, user_id, trial)
+            old = {str(s["checkin_id"]): s.get("revision")
+                   for s in (frozen.get("observation") or {}).get("sessions") or []}
+            fresh = {str(s["checkin_id"]): s.get("revision")
+                     for s in current.get("sessions") or []}
+            changes = []
+            for cid, rev in old.items():
+                if cid not in fresh:
+                    changes.append(f"训练记录 #{cid} 已不存在")
+                elif fresh[cid] != rev:
+                    changes.append(f"训练记录 #{cid} 已纠错（修订 {rev} → {fresh[cid]}）")
+            for cid in fresh:
+                if cid not in old:
+                    changes.append(f"新增历史记录 #{cid}")
+            out = json.loads(json.dumps(frozen, ensure_ascii=False))
+            out["frozen"] = True
+            out["frozen_at"] = (snapshot or {}).get("frozen_at")
+            out["post_end_changes"] = changes
+            out["needs_rereview"] = bool(changes)
+            if changes:
+                out["rereview_note"] = ("原复盘快照保留不变；历史数据发生变化，"
+                                        "请查看重新复核结果后再决定是否更新结论")
+            return out
     observation = trial_observation(db, user_id, trial)
     baseline = trial.get("baseline")
     if isinstance(baseline, str):
@@ -358,6 +441,25 @@ def _decision_note(decision: str) -> str:
     return "保持尝试进行中，延长观察窗口，稍后复盘"
 
 
+def rereview_ended_trial(db, user_id: str, trial_id: int) -> dict:
+    """已结束尝试的显式重新复核：保留原快照，返回当前证据草稿供用户决定。"""
+    trial = db.get_personal_trial(user_id, trial_id)
+    if not trial:
+        raise ValueError("尝试不存在")
+    if trial.get("status") != "ended":
+        raise ValueError("只有已结束的尝试需要重新复核")
+    previous = trial_review(db, user_id, trial)
+    current = trial_review(db, user_id, trial, use_frozen=False)
+    return {
+        "trial_id": trial_id,
+        "previous": previous,
+        "current": current,
+        "requires_user_decision": True,
+        "note": ("原复盘快照不会自动改写；如接受新证据，请由用户明确记录决定，"
+                 "系统不静默覆盖历史结论"),
+    }
+
+
 def decide_trial(db, user_id: str, trial_id: int, decision: str,
                  note: str = "") -> dict:
     """用户决策。任何分支都不自动修改长期计划。"""
@@ -379,7 +481,10 @@ def decide_trial(db, user_id: str, trial_id: int, decision: str,
     outcome = note.strip() or "；".join(
         review["sections"]["observed"][:3]
         + review["sections"]["unconfirmed"][:2])
-    if not db.end_personal_trial(user_id, trial_id, outcome, decision):
+    frozen = json.dumps({"frozen_at": datetime.now().isoformat(timespec="seconds"),
+                         "review": review}, ensure_ascii=False)
+    if not db.end_personal_trial(user_id, trial_id, outcome, decision,
+                                 review_snapshot=frozen):
         raise ValueError("尝试已结束或不存在")
     fresh = db.get_personal_trial(user_id, trial_id)
     hint = ""
